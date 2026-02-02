@@ -1,27 +1,47 @@
 [project]
 name = "valence"
-version = "0.1.0"
-description = "AI agent infrastructure for user sovereignty"
+version = "1.0.0"
+description = "Personal knowledge substrate for AI agents - beliefs, conversations, patterns"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
     {name = "Chris Jacobs"}
 ]
+keywords = [
+    "knowledge-base",
+    "ai",
+    "claude",
+    "mcp",
+    "agent",
+    "memory",
+]
 
 dependencies = [
     "mcp>=1.0",
+    "matrix-nio>=0.24",
+    "openai>=1.0",
+    "psycopg2-binary>=2.9",
+    "numpy>=1.24",
+    "pgvector>=0.2",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",
+    "pytest-cov>=4.0",
+    "pytest-mock>=3.10",
+    "pytest-timeout>=2.2",
     "ruff>=0.1",
+    "mypy>=1.0",
+    "black>=24.0",
 ]
 
 [project.scripts]
-valence-mcp = "valence.mcp_server:run"
+valence-substrate = "valence.substrate.mcp_server:run"
+valence-vkb = "valence.vkb.mcp_server:run"
+valence-matrix = "valence.agents.matrix_bot:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -40,3 +60,27 @@ select = ["E", "F", "I", "N", "W", "UP"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "unit: Unit tests (fast, no external dependencies)",
+    "integration: Integration tests (may need database/mocks)",
+    "slow: Tests that take a long time to run",
+]
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["src/valence"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+show_missing = true

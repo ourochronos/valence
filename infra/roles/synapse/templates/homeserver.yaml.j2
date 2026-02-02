@@ -9,15 +9,9 @@ listeners:
     tls: false
     type: http
     x_forwarded: true
+    bind_addresses: ['127.0.0.1']
     resources:
       - names: [client, federation]
-        compress: false
-
-  - port: 8448
-    tls: true
-    type: http
-    resources:
-      - names: [federation]
         compress: false
 
 # Database configured in conf.d/database.yaml

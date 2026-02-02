@@ -1,0 +1,205 @@
+---
+# Verify role - post-deployment health checks
+# This role runs after all other roles to verify the deployment
+# NOTE: This role is skipped in check mode as it requires actual service state
+
+- name: Skip verification in check mode
+  meta: end_play
+  when: ansible_check_mode
+
+- name: Wait for services to stabilize
+  pause:
+    seconds: 5
+  when: verify_wait | default(true)
+
+# === Service Status Checks ===
+- name: Check PostgreSQL service
+  service_facts:
+  register: service_facts
+
+- name: Verify PostgreSQL is running
+  assert:
+    that:
+      - "'postgresql.service' in ansible_facts.services"
+      - "ansible_facts.services['postgresql.service'].state == 'running'"
+    fail_msg: "PostgreSQL service is not running"
+    success_msg: "PostgreSQL service is running"
+
+- name: Verify nginx is running
+  assert:
+    that:
+      - "'nginx.service' in ansible_facts.services"
+      - "ansible_facts.services['nginx.service'].state == 'running'"
+    fail_msg: "nginx service is not running"
+    success_msg: "nginx service is running"
+
+- name: Verify Matrix Synapse is running
+  assert:
+    that:
+      - "'matrix-synapse.service' in ansible_facts.services"
+      - "ansible_facts.services['matrix-synapse.service'].state == 'running'"
+    fail_msg: "Matrix Synapse service is not running"
+    success_msg: "Matrix Synapse service is running"
+
+- name: Verify VKB service is running
+  assert:
+    that:
+      - "'vkb.service' in ansible_facts.services"
+      - "ansible_facts.services['vkb.service'].state == 'running'"
+    fail_msg: "VKB service is not running"
+    success_msg: "VKB service is running"
+
+# === Database Connectivity ===
+- name: Test PostgreSQL connectivity
+  become_user: postgres
+  shell: psql -c "SELECT 1 AS test" -t
+  register: pg_test
+  changed_when: false
+
+- name: Verify PostgreSQL connection
+  assert:
+    that:
+      - pg_test.rc == 0
+      - "'1' in pg_test.stdout"
+    fail_msg: "PostgreSQL is not accepting connections"
+    success_msg: "PostgreSQL is accepting connections"
+
+- name: Check valence database exists
+  become_user: postgres
+  shell: psql -lqt | cut -d \| -f 1 | grep -qw valence
+  register: db_exists
+  changed_when: false
+  failed_when: false
+
+- name: Verify valence database
+  assert:
+    that:
+      - db_exists.rc == 0
+    fail_msg: "Valence database does not exist"
+    success_msg: "Valence database exists"
+
+- name: Check pgvector extension
+  become_user: postgres
+  shell: psql -d valence -t -c "SELECT 1 FROM pg_extension WHERE extname='vector'"
+  register: pgvector_check
+  changed_when: false
+
+- name: Verify pgvector extension
+  assert:
+    that:
+      - "'1' in pgvector_check.stdout"
+    fail_msg: "pgvector extension is not installed"
+    success_msg: "pgvector extension is installed"
+
+- name: Count schema tables
+  become_user: postgres
+  shell: psql -d valence -t -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'"
+  register: table_count
+  changed_when: false
+
+- name: Verify schema has tables
+  assert:
+    that:
+      - table_count.stdout | int > 0
+    fail_msg: "Schema appears empty"
+    success_msg: "Schema has {{ table_count.stdout | trim }} tables"
+
+# === HTTP Endpoint Checks ===
+- name: Check Matrix well-known server endpoint
+  uri:
+    url: "https://{{ synapse_server_name }}/.well-known/matrix/server"
+    return_content: no
+    status_code: 200
+    validate_certs: yes
+  register: wellknown_server
+  retries: 3
+  delay: 5
+  until: wellknown_server is succeeded
+  failed_when: false
+
+- name: Verify Matrix server well-known endpoint
+  assert:
+    that:
+      - wellknown_server.status == 200
+    fail_msg: "Matrix server well-known endpoint not accessible"
+    success_msg: "Matrix server well-known endpoint is accessible"
+  when: wellknown_server is defined
+
+- name: Check Matrix client versions endpoint
+  uri:
+    url: "https://{{ synapse_server_name }}/_matrix/client/versions"
+    return_content: yes
+    status_code: 200
+    validate_certs: yes
+  register: matrix_versions
+  retries: 3
+  delay: 5
+  until: matrix_versions is succeeded
+  failed_when: false
+
+- name: Verify Matrix Synapse responding
+  assert:
+    that:
+      - matrix_versions.status == 200
+      - "'versions' in matrix_versions.content"
+    fail_msg: "Matrix Synapse is not responding correctly"
+    success_msg: "Matrix Synapse is responding"
+  when: matrix_versions is defined
+
+# === Log Error Check ===
+- name: Check VKB logs for recent errors
+  shell: journalctl -u vkb --since "10 minutes ago" --no-pager 2>/dev/null | grep -ci error || echo 0
+  register: vkb_errors
+  changed_when: false
+  failed_when: false
+
+- name: Warn about VKB errors
+  debug:
+    msg: "WARNING: Found {{ vkb_errors.stdout }} error(s) in recent VKB logs"
+  when: vkb_errors.stdout | int > 0
+
+# === Resource Checks ===
+- name: Check disk space
+  shell: df -h / | tail -1 | awk '{print $5}' | tr -d '%'
+  register: disk_usage
+  changed_when: false
+
+- name: Warn if disk usage high
+  debug:
+    msg: "WARNING: Disk usage at {{ disk_usage.stdout }}%"
+  when: disk_usage.stdout | int > 80
+
+- name: Check available memory
+  shell: free -m | awk '/Mem:/ {print $7}'
+  register: mem_free
+  changed_when: false
+
+- name: Warn if memory low
+  debug:
+    msg: "WARNING: Available memory only {{ mem_free.stdout }}MB"
+  when: mem_free.stdout | int < 500
+
+# === Summary ===
+- name: Deployment verification complete
+  debug:
+    msg: |
+      Deployment verification completed successfully!
+
+      Services:
+        - PostgreSQL: running
+        - nginx: running
+        - Matrix Synapse: running
+        - VKB: running
+
+      Database:
+        - Valence DB: exists
+        - pgvector: installed
+        - Tables: {{ table_count.stdout | trim }}
+
+      Endpoints:
+        - https://{{ synapse_server_name }}/.well-known/matrix/server: accessible
+        - https://{{ synapse_server_name }}/_matrix/client/versions: responding
+
+      Resources:
+        - Disk: {{ disk_usage.stdout }}% used
+        - Memory: {{ mem_free.stdout }}MB available

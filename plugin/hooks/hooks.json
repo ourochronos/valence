@@ -1,0 +1,14 @@
+{
+  "hooks": [
+    {
+      "event": "SessionStart",
+      "command": "python3 ./session-start.py",
+      "description": "Inject relevant context and behavioral conditioning at session start"
+    },
+    {
+      "event": "Stop",
+      "command": "python3 ./session-end.py",
+      "description": "Close VKB session and extract patterns when Claude session ends"
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "mcpServers": {
+    "valence-substrate": {
+      "command": "python",
+      "args": ["-m", "valence.substrate.mcp_server"],
+      "env": {
+        "VKB_DB_HOST": "${VKB_DB_HOST:-localhost}",
+        "VKB_DB_NAME": "${VKB_DB_NAME:-valence}",
+        "VKB_DB_USER": "${VKB_DB_USER:-valence}",
+        "VKB_DB_PASSWORD": "${VKB_DB_PASSWORD:-}"
+      },
+      "description": "Valence knowledge substrate - beliefs, entities, tensions"
+    },
+    "valence-vkb": {
+      "command": "python",
+      "args": ["-m", "valence.vkb.mcp_server"],
+      "env": {
+        "VKB_DB_HOST": "${VKB_DB_HOST:-localhost}",
+        "VKB_DB_NAME": "${VKB_DB_NAME:-valence}",
+        "VKB_DB_USER": "${VKB_DB_USER:-valence}",
+        "VKB_DB_PASSWORD": "${VKB_DB_PASSWORD:-}"
+      },
+      "description": "Valence conversation tracking - sessions, exchanges, patterns"
+    }
+  }
+}

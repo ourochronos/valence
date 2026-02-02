@@ -1,0 +1,21 @@
+{
+  "name": "valence",
+  "version": "1.0.0",
+  "description": "Personal knowledge substrate for Claude Code - store beliefs, track conversations, learn patterns",
+  "author": "zonk1024",
+  "homepage": "https://github.com/zonk1024/valence",
+  "license": "MIT",
+  "claude_code_version": ">=1.0.0",
+  "capabilities": {
+    "hooks": true,
+    "skills": true,
+    "mcp_servers": true
+  },
+  "keywords": [
+    "knowledge-base",
+    "memory",
+    "conversations",
+    "beliefs",
+    "patterns"
+  ]
+}

@@ -24,3 +24,18 @@ Thumbs.db
 *.sqlite
 *.sqlite.bak
 *.db
+
+# Infrastructure secrets - NEVER commit these!
+infra/.env.pod
+infra/.env.*
+!infra/.env.example
+
+# General environment files
+.env
+.env.local
+.env.*.local
+
+# Credentials and keys
+*.pem
+*.key
+credentials.json

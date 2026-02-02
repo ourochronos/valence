@@ -23,6 +23,16 @@
     state: directory
     mode: '0755'
 
+- name: Set server_name in conf.d (override Debian package default)
+  copy:
+    content: |
+      # Server name configuration
+      # Managed by Ansible
+      server_name: "{{ synapse_server_name }}"
+    dest: /etc/matrix-synapse/conf.d/server_name.yaml
+    mode: '0644'
+  notify: restart synapse
+
 - name: Generate Synapse config
   template:
     src: homeserver.yaml.j2
@@ -43,32 +53,51 @@
   args:
     creates: /etc/matrix-synapse/{{ synapse_server_name }}.signing.key
 
-- name: Configure nginx for Synapse
+- name: Configure nginx for Synapse (HTTP only for cert acquisition)
   template:
     src: nginx-synapse.conf.j2
     dest: /etc/nginx/sites-available/synapse
     mode: '0644'
-  notify: reload nginx
 
 - name: Enable nginx site
   file:
     src: /etc/nginx/sites-available/synapse
     dest: /etc/nginx/sites-enabled/synapse
     state: link
-  notify: reload nginx
 
 - name: Remove default nginx site
   file:
     path: /etc/nginx/sites-enabled/default
     state: absent
-  notify: reload nginx
+
+- name: Reload nginx for HTTP config
+  service:
+    name: nginx
+    state: reloaded
+
+- name: Create webroot for certbot
+  file:
+    path: /var/www/html/.well-known/acme-challenge
+    state: directory
+    mode: '0755'
 
 - name: Obtain SSL certificate
   command: >
-    certbot --nginx -d {{ domain }} -d matrix.{{ domain }}
+    certbot certonly --webroot -w /var/www/html
+    -d {{ domain }}
     --non-interactive --agree-tos --email {{ letsencrypt_email }}
   args:
     creates: /etc/letsencrypt/live/{{ domain }}/fullchain.pem
+
+- name: Configure nginx for Synapse (SSL enabled)
+  template:
+    src: nginx-synapse-ssl.conf.j2
+    dest: /etc/nginx/sites-available/synapse
+    mode: '0644'
+  notify: reload nginx
+
+- name: Flush handlers to apply SSL nginx config
+  meta: flush_handlers
 
 - name: Ensure Synapse is running
   service:

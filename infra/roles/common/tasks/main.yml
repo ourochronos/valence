@@ -31,12 +31,26 @@
     group: valence
     mode: '0755'
 
-- name: Clone Valence repo
-  git:
-    repo: "https://github.com/{{ lookup('env', 'GITHUB_USER') }}/valence.git"
-    dest: /opt/valence/repo
-    version: main
-  become_user: valence
+- name: Sync Valence code to server
+  synchronize:
+    src: "{{ playbook_dir }}/../"
+    dest: /opt/valence/repo/
+    rsync_opts:
+      - "--exclude=.git"
+      - "--exclude=__pycache__"
+      - "--exclude=*.pyc"
+      - "--exclude=.venv"
+      - "--exclude=venv"
+      - "--exclude=*.sqlite"
+      - "--exclude=*.db"
+      - "--exclude=infra/.env.*"
+
+- name: Set ownership of Valence repo
+  file:
+    path: /opt/valence/repo
+    owner: valence
+    group: valence
+    recurse: yes
 
 - name: Create Python venv
   command: python3 -m venv /opt/valence/venv
@@ -46,9 +60,10 @@
 
 - name: Install Claude Code
   shell: |
-    curl -fsSL https://claude.ai/install.sh | sh
+    curl -fsSL https://claude.ai/install.sh | bash
   args:
     creates: /home/valence/.claude/bin/claude
+    executable: /bin/bash
   become_user: valence
 
 - name: Add Claude Code to PATH

@@ -31,9 +31,8 @@ Valence uses modular knowledge bases with clear separation:
 
 ### Schema Modules
 
-- `schema.sql` — Core entries, tags, relationships, modules
-- `schema_conversations.sql` — Session tracking at micro/meso/macro scales
-- `schema_embeddings.sql` — Multi-provider embedding registry
+- `src/valence/substrate/schema.sql` — Unified schema (beliefs, entities, sessions, exchanges, patterns, embeddings)
+- `src/valence/substrate/procedures.sql` — Stored procedures for atomic operations
 
 ## Getting Started
 
@@ -46,7 +45,7 @@ source venv/bin/activate
 pip install -e .
 
 # Initialize schemas (creates local KB)
-python -c "from valence.kb import init_schemas; init_schemas()"
+python -c "from valence.core.db import init_schema; init_schema()"
 ```
 
 ## Development
@@ -59,16 +58,17 @@ This project is developed using its own principles:
 4. **Knowledge capture** → Decisions accumulate in KB
 5. **Reflection** → Did the process follow principles?
 
-## MCP Server
+## MCP Servers
 
 Valence exposes tools via Model Context Protocol for AI agent access:
 
 ```bash
-# Run the MCP server
-./valence-mcp
+# Run the MCP servers
+python -m valence.substrate.mcp_server  # Knowledge substrate (beliefs, entities, tensions)
+python -m valence.vkb.mcp_server        # Conversation tracking (sessions, exchanges, patterns)
 ```
 
-Tools include session management, exchange capture, insight extraction, and pattern tracking.
+Tools include belief management, entity tracking, session management, exchange capture, insight extraction, and pattern tracking.
 
 ## Status
 

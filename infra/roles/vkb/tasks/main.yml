@@ -34,25 +34,31 @@
     group: valence
     mode: '0600'
 
+- name: Check if schema is already initialized
+  stat:
+    path: /opt/valence/.schema_initialized
+  register: schema_marker
+
 - name: Initialize VKB database schema
   shell: |
     source /opt/valence/venv/bin/activate
     cd /opt/valence/repo
-    psql -h localhost -U {{ postgres_user }} -d {{ postgres_db }} -f schema.sql
-    psql -h localhost -U {{ postgres_user }} -d {{ postgres_db }} -f schema_conversations.sql
-    psql -h localhost -U {{ postgres_user }} -d {{ postgres_db }} -f schema_embeddings.sql
+    psql -h localhost -U {{ postgres_user }} -d {{ postgres_db }} -f src/valence/substrate/schema.sql
+    psql -h localhost -U {{ postgres_user }} -d {{ postgres_db }} -f src/valence/substrate/procedures.sql
   environment:
     PGPASSWORD: "{{ postgres_password }}"
-  args:
-    creates: /opt/valence/.schema_initialized
   become_user: valence
+  when: not schema_marker.stat.exists
+  register: schema_init
 
 - name: Mark schema initialized
   file:
     path: /opt/valence/.schema_initialized
     state: touch
     owner: valence
-  when: true
+    group: valence
+    mode: '0644'
+  when: schema_init.changed | default(false)
 
 - name: Create VKB systemd service
   template:
@@ -73,6 +79,7 @@
   command: >
     register_new_matrix_user -c /etc/matrix-synapse/homeserver.yaml
     -u valence-bot -p "{{ lookup('env', 'VALENCE_BOT_PASSWORD') }}"
+    --no-admin
   args:
     creates: /opt/valence/.bot_user_created
   register: bot_created

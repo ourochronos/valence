@@ -26,11 +26,14 @@
     state: started
     enabled: yes
 
-- name: Create Valence database
+- name: Create Valence database with C collation (required by Synapse)
   become_user: postgres
   postgresql_db:
     name: "{{ postgres_db }}"
     encoding: UTF-8
+    lc_collate: C
+    lc_ctype: C
+    template: template0
     state: present
 
 - name: Create Valence database user
@@ -41,6 +44,21 @@
     db: "{{ postgres_db }}"
     priv: ALL
     state: present
+
+- name: Grant schema permissions (PostgreSQL 15+ requirement)
+  become_user: postgres
+  postgresql_privs:
+    db: "{{ postgres_db }}"
+    privs: ALL
+    type: schema
+    objs: public
+    role: "{{ postgres_user }}"
+
+- name: Make user owner of database (needed for Synapse)
+  become_user: postgres
+  postgresql_owner:
+    db: "{{ postgres_db }}"
+    new_owner: "{{ postgres_user }}"
 
 - name: Enable pgvector extension
   become_user: postgres

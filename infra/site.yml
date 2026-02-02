@@ -28,6 +28,10 @@
     - role: vkb
       tags: [vkb]
 
+    - role: verify
+      tags: [verify]
+      when: verify_deployment | default(true)
+
   post_tasks:
     - name: Display connection info
       debug:
