@@ -13,12 +13,137 @@ psql -c "CREATE DATABASE valence;"
 psql -d valence -f src/valence/substrate/schema.sql
 psql -d valence -f src/valence/substrate/procedures.sql
 
-# Run MCP servers (for development)
+# Run HTTP MCP server (recommended for remote access)
+valence-server  # Starts on http://127.0.0.1:8420
+
+# Or run stdio MCP servers (for local Claude Code)
 python -m valence.substrate.mcp_server  # Knowledge substrate
 python -m valence.vkb.mcp_server        # Conversation tracking
 
 # Run Matrix bot
 MATRIX_PASSWORD=xxx python -m valence.agents.matrix_bot
+```
+
+## HTTP MCP Server
+
+The unified HTTP MCP server provides remote access to all Valence tools from any Claude client.
+
+### Token Management
+
+```bash
+# Create a new token
+valence-token create --client-id "claude-code-laptop" --description "My laptop"
+
+# List tokens
+valence-token list
+
+# Revoke a token
+valence-token revoke --client-id "claude-code-laptop"
+
+# Verify a token
+valence-token verify vt_xxxxxxxxxxxx
+```
+
+### Client Configuration
+
+**Claude Code (native HTTP support):**
+```bash
+claude mcp add --transport http valence https://your-domain.com/mcp \
+  --header "Authorization: Bearer vt_xxxxxxxxxxxx"
+```
+
+**Claude Desktop (requires mcp-remote bridge):**
+
+Claude Desktop only supports stdio transport. Use `mcp-remote` to bridge:
+
+```json
+{
+  "mcpServers": {
+    "valence": {
+      "command": "npx",
+      "args": [
+        "mcp-remote@latest",
+        "--http",
+        "https://your-domain.com/mcp",
+        "--header",
+        "Authorization: Bearer vt_xxxxxxxxxxxx"
+      ]
+    }
+  }
+}
+```
+
+Config location:
+- macOS/Linux: `~/.config/claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+
+### Security
+
+**Two authentication methods** are supported:
+
+1. **Bearer Tokens** (for Claude Code): Simple token-based auth
+   - Tokens are 256-bit random (unguessable)
+   - Stored as SHA-256 hashes (safe at rest)
+
+2. **OAuth 2.1 with PKCE** (for Claude mobile/web): Standards-compliant OAuth
+   - Dynamic Client Registration (RFC 7591)
+   - Authorization Code flow with PKCE
+   - JWT access tokens
+
+**Optional IP allowlist** for additional security:
+
+In your Ansible inventory or group_vars:
+```yaml
+valence_allowed_ips:
+  - 1.2.3.4        # Your home IP
+  - 5.6.7.8/24     # Your office network
+```
+
+This restricts access at the nginx level before token verification.
+
+### OAuth 2.1 Setup (for Claude Mobile/Web)
+
+OAuth allows Claude mobile app and claude.ai to authenticate with your Valence server.
+
+**1. Set a password:**
+```bash
+export VALENCE_OAUTH_PASSWORD="your-secure-password"
+```
+
+**2. Optionally configure:**
+```bash
+export VALENCE_OAUTH_USERNAME="admin"  # Default: admin
+export VALENCE_OAUTH_JWT_SECRET="..."  # Auto-generated if not set
+export VALENCE_EXTERNAL_URL="https://your-domain.com"  # Required for OAuth
+```
+
+**3. Start the server:**
+```bash
+valence-server
+```
+
+**4. Discovery endpoints:**
+- `/.well-known/oauth-protected-resource` - RFC 9728 metadata
+- `/.well-known/oauth-authorization-server` - RFC 8414 metadata
+
+**5. Configure Claude:**
+Claude clients that support OAuth will automatically discover and use these endpoints.
+The server URL is: `https://your-domain.com/mcp`
+
+### Local Development
+
+```bash
+# Start server locally
+VALENCE_TOKEN_FILE=./tokens.json valence-server
+
+# Create a test token
+valence-token --token-file ./tokens.json create -c test
+
+# Test with curl
+curl -X POST http://localhost:8420/mcp \
+  -H "Authorization: Bearer vt_xxxx" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":"1","method":"tools/list","params":{}}'
 ```
 
 ## Architecture
@@ -83,15 +208,29 @@ Key tables:
 ## Environment Variables
 
 ```bash
+# Database
 VKB_DB_HOST=localhost
 VKB_DB_NAME=valence
 VKB_DB_USER=valence
 VKB_DB_PASSWORD=
 
+# HTTP Server
+VALENCE_HOST=127.0.0.1
+VALENCE_PORT=8420
+VALENCE_EXTERNAL_URL=https://your-domain.com  # For OAuth redirects
+
+# OAuth 2.1 (for Claude mobile/web)
+VALENCE_OAUTH_PASSWORD=xxx        # REQUIRED for OAuth
+VALENCE_OAUTH_USERNAME=admin      # Default: admin
+VALENCE_OAUTH_JWT_SECRET=xxx      # Auto-generated if not set
+VALENCE_OAUTH_ENABLED=true        # Default: true
+
+# Matrix bot
 MATRIX_HOMESERVER=https://matrix.example.com
 MATRIX_USER=@bot:example.com
 MATRIX_PASSWORD=xxx
 
+# OpenAI
 OPENAI_API_KEY=xxx  # For embeddings
 ```
 
@@ -146,7 +285,8 @@ source .env.pod
 - **Security**: UFW firewall, SSH key auth, fail2ban, auto-updates
 - **Database**: PostgreSQL 16 + pgvector for embeddings
 - **Matrix**: Synapse homeserver with nginx + SSL
-- **VKB**: MCP server running as systemd service
+- **Valence HTTP MCP**: Remote MCP server at /mcp endpoint with token auth
+- **VKB**: Legacy stdio MCP server running as systemd service
 
 ### Idempotent Re-deployment
 

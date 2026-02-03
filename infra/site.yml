@@ -22,11 +22,14 @@
     - role: postgresql
       tags: [postgresql, db]
 
-    - role: synapse
-      tags: [synapse, matrix]
-
     - role: vkb
       tags: [vkb]
+
+    - role: backup
+      tags: [backup]
+
+    - role: playwright
+      tags: [playwright]
 
     - role: verify
       tags: [verify]
@@ -38,10 +41,10 @@
         msg: |
           Valence Pod deployed successfully!
 
-          Matrix homeserver: https://{{ domain }}
+          MCP Server: https://{{ domain }}/mcp
+          Health: https://{{ domain }}/health
           PostgreSQL: localhost:5432/{{ postgres_db }}
 
           Next steps:
-          1. SSH in and authenticate Claude Code
-          2. Connect Element to {{ domain }}
-          3. Verify VKB MCP is responding
+          1. Create a token: valence-token create -c my-client
+          2. Add to Claude Code: claude mcp add --transport http valence https://{{ domain }}/mcp --header "Authorization: Bearer <token>"

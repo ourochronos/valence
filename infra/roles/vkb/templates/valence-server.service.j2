@@ -1,0 +1,26 @@
+[Unit]
+Description=Valence HTTP MCP Server
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=valence
+Group=valence
+WorkingDirectory=/opt/valence/repo
+EnvironmentFile=/opt/valence/config/vkb.env
+Environment=VALENCE_HOST=127.0.0.1
+Environment=VALENCE_PORT=8420
+Environment=VALENCE_TOKEN_FILE=/opt/valence/config/tokens.json
+ExecStart=/opt/valence/venv/bin/valence-server
+Restart=always
+RestartSec=5
+
+# Security
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/opt/valence
+
+[Install]
+WantedBy=multi-user.target

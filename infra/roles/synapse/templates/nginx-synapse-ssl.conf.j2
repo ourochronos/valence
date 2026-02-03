@@ -57,6 +57,9 @@ server {
 
         client_max_body_size 50M;
     }
+
+    # Include Valence MCP configuration
+    include /etc/nginx/conf.d/valence/*.conf;
 }
 
 # Federation listener

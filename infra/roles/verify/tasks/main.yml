@@ -33,21 +33,13 @@
     fail_msg: "nginx service is not running"
     success_msg: "nginx service is running"
 
-- name: Verify Matrix Synapse is running
+- name: Verify Valence HTTP MCP server is running
   assert:
     that:
-      - "'matrix-synapse.service' in ansible_facts.services"
-      - "ansible_facts.services['matrix-synapse.service'].state == 'running'"
-    fail_msg: "Matrix Synapse service is not running"
-    success_msg: "Matrix Synapse service is running"
-
-- name: Verify VKB service is running
-  assert:
-    that:
-      - "'vkb.service' in ansible_facts.services"
-      - "ansible_facts.services['vkb.service'].state == 'running'"
-    fail_msg: "VKB service is not running"
-    success_msg: "VKB service is running"
+      - "'valence-server.service' in ansible_facts.services"
+      - "ansible_facts.services['valence-server.service'].state == 'running'"
+    fail_msg: "Valence HTTP MCP server is not running"
+    success_msg: "Valence HTTP MCP server is running"
 
 # === Database Connectivity ===
 - name: Test PostgreSQL connectivity
@@ -105,58 +97,59 @@
     success_msg: "Schema has {{ table_count.stdout | trim }} tables"
 
 # === HTTP Endpoint Checks ===
-- name: Check Matrix well-known server endpoint
+- name: Check Valence health endpoint
   uri:
-    url: "https://{{ synapse_server_name }}/.well-known/matrix/server"
-    return_content: no
-    status_code: 200
-    validate_certs: yes
-  register: wellknown_server
-  retries: 3
-  delay: 5
-  until: wellknown_server is succeeded
-  failed_when: false
-
-- name: Verify Matrix server well-known endpoint
-  assert:
-    that:
-      - wellknown_server.status == 200
-    fail_msg: "Matrix server well-known endpoint not accessible"
-    success_msg: "Matrix server well-known endpoint is accessible"
-  when: wellknown_server is defined
-
-- name: Check Matrix client versions endpoint
-  uri:
-    url: "https://{{ synapse_server_name }}/_matrix/client/versions"
+    url: "https://{{ domain }}/health"
     return_content: yes
     status_code: 200
     validate_certs: yes
-  register: matrix_versions
+  register: health_check
   retries: 3
   delay: 5
-  until: matrix_versions is succeeded
+  until: health_check is succeeded
   failed_when: false
 
-- name: Verify Matrix Synapse responding
+- name: Verify Valence health endpoint
   assert:
     that:
-      - matrix_versions.status == 200
-      - "'versions' in matrix_versions.content"
-    fail_msg: "Matrix Synapse is not responding correctly"
-    success_msg: "Matrix Synapse is responding"
-  when: matrix_versions is defined
+      - health_check.status == 200
+      - "'healthy' in health_check.content"
+    fail_msg: "Valence health endpoint not accessible"
+    success_msg: "Valence health endpoint is accessible"
+  when: health_check is defined
+
+- name: Check Valence info endpoint
+  uri:
+    url: "https://{{ domain }}/"
+    return_content: yes
+    status_code: 200
+    validate_certs: yes
+  register: info_check
+  retries: 3
+  delay: 5
+  until: info_check is succeeded
+  failed_when: false
+
+- name: Verify Valence info endpoint
+  assert:
+    that:
+      - info_check.status == 200
+      - "'tools' in info_check.content"
+    fail_msg: "Valence info endpoint not responding correctly"
+    success_msg: "Valence info endpoint is responding"
+  when: info_check is defined
 
 # === Log Error Check ===
-- name: Check VKB logs for recent errors
-  shell: journalctl -u vkb --since "10 minutes ago" --no-pager 2>/dev/null | grep -ci error || echo 0
-  register: vkb_errors
+- name: Check valence-server logs for recent errors
+  shell: journalctl -u valence-server --since "10 minutes ago" --no-pager 2>/dev/null | grep -ci error || echo 0
+  register: server_errors
   changed_when: false
   failed_when: false
 
-- name: Warn about VKB errors
+- name: Warn about valence-server errors
   debug:
-    msg: "WARNING: Found {{ vkb_errors.stdout }} error(s) in recent VKB logs"
-  when: vkb_errors.stdout | int > 0
+    msg: "WARNING: Found {{ server_errors.stdout }} error(s) in recent valence-server logs"
+  when: server_errors.stdout | int > 0
 
 # === Resource Checks ===
 - name: Check disk space
@@ -188,8 +181,7 @@
       Services:
         - PostgreSQL: running
         - nginx: running
-        - Matrix Synapse: running
-        - VKB: running
+        - Valence MCP Server: running
 
       Database:
         - Valence DB: exists
@@ -197,8 +189,8 @@
         - Tables: {{ table_count.stdout | trim }}
 
       Endpoints:
-        - https://{{ synapse_server_name }}/.well-known/matrix/server: accessible
-        - https://{{ synapse_server_name }}/_matrix/client/versions: responding
+        - https://{{ domain }}/health: accessible
+        - https://{{ domain }}/: responding
 
       Resources:
         - Disk: {{ disk_usage.stdout }}% used

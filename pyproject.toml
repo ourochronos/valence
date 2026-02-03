@@ -24,6 +24,11 @@ dependencies = [
     "psycopg2-binary>=2.9",
     "numpy>=1.24",
     "pgvector>=0.2",
+    "starlette>=0.40.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic-settings>=2.0.0",
+    "PyJWT>=2.8.0",
+    "playwright>=1.40",
 ]
 
 [project.optional-dependencies]
@@ -42,6 +47,8 @@ dev = [
 valence-substrate = "valence.substrate.mcp_server:run"
 valence-vkb = "valence.vkb.mcp_server:run"
 valence-matrix = "valence.agents.matrix_bot:main"
+valence-server = "valence.server.app:run"
+valence-token = "valence.server.cli:main"
 
 [build-system]
 requires = ["hatchling"]

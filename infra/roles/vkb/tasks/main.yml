@@ -6,8 +6,10 @@
     name:
       - psycopg2-binary
       - mcp
-      - matrix-nio
       - openai
+      - starlette
+      - uvicorn[standard]
+      - pydantic-settings
     virtualenv: /opt/valence/venv
   become_user: valence
 
@@ -60,6 +62,7 @@
     mode: '0644'
   when: schema_init.changed | default(false)
 
+# Legacy stdio-based VKB service (kept for backwards compatibility)
 - name: Create VKB systemd service
   template:
     src: vkb.service.j2
@@ -75,17 +78,98 @@
     state: started
     enabled: yes
 
-- name: Create Matrix bot user
-  command: >
-    register_new_matrix_user -c /etc/matrix-synapse/homeserver.yaml
-    -u valence-bot -p "{{ lookup('env', 'VALENCE_BOT_PASSWORD') }}"
-    --no-admin
-  args:
-    creates: /opt/valence/.bot_user_created
-  register: bot_created
-
-- name: Mark bot user created
+# HTTP MCP Server
+- name: Create token storage file with secure permissions
   file:
-    path: /opt/valence/.bot_user_created
+    path: /opt/valence/config/tokens.json
     state: touch
-  when: bot_created.changed
+    owner: valence
+    group: valence
+    mode: '0600'
+    modification_time: preserve
+    access_time: preserve
+
+- name: Initialize empty token store if not exists
+  copy:
+    content: '{"tokens": []}'
+    dest: /opt/valence/config/tokens.json
+    owner: valence
+    group: valence
+    mode: '0600'
+    force: no
+
+- name: Create Valence HTTP MCP server systemd service
+  template:
+    src: valence-server.service.j2
+    dest: /etc/systemd/system/valence-server.service
+    mode: '0644'
+  notify:
+    - reload systemd
+    - restart valence-server
+
+- name: Enable and start Valence HTTP MCP server
+  service:
+    name: valence-server
+    state: started
+    enabled: yes
+
+# Nginx configuration
+- name: Create nginx config directory for includes
+  file:
+    path: /etc/nginx/conf.d/valence
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Create webroot for certbot
+  file:
+    path: /var/www/html
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: '0755'
+
+- name: Deploy base nginx site config
+  template:
+    src: nginx-valence-site.conf.j2
+    dest: /etc/nginx/sites-available/valence
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - reload nginx
+
+- name: Enable nginx site
+  file:
+    src: /etc/nginx/sites-available/valence
+    dest: /etc/nginx/sites-enabled/valence
+    state: link
+  notify:
+    - reload nginx
+
+- name: Remove default nginx site
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify:
+    - reload nginx
+
+- name: Obtain SSL certificate
+  command: >
+    certbot certonly --webroot -w /var/www/html
+    -d {{ domain }}
+    --email {{ letsencrypt_email }}
+    --agree-tos --non-interactive
+  args:
+    creates: /etc/letsencrypt/live/{{ domain }}/fullchain.pem
+
+- name: Deploy Valence MCP nginx configuration
+  template:
+    src: nginx-valence.conf.j2
+    dest: /etc/nginx/conf.d/valence/mcp.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - reload nginx

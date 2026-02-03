@@ -1,0 +1,68 @@
+# Nginx configuration for Valence HTTP MCP Server
+# Managed by Ansible - do not edit manually
+#
+# This configuration adds the /mcp endpoint to the existing Synapse config
+# Include this in the main server block or as a separate file
+#
+# NOTE: Rate limiting zone must be defined in nginx.conf http context:
+#   limit_req_zone $binary_remote_addr zone=mcp_limit:10m rate=10r/s;
+
+# Valence MCP endpoint
+location /mcp {
+{% if valence_allowed_ips is defined and valence_allowed_ips | length > 0 %}
+    # IP allowlist - only these IPs can access the MCP endpoint
+{% for ip in valence_allowed_ips %}
+    allow {{ ip }};
+{% endfor %}
+    deny all;
+
+{% endif %}
+    # Proxy to Valence server
+    proxy_pass http://127.0.0.1:8420/mcp;
+    proxy_http_version 1.1;
+
+    # Headers
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    # Pass through Authorization header
+    proxy_set_header Authorization $http_authorization;
+
+    # MCP session handling
+    proxy_set_header Mcp-Session-Id $http_mcp_session_id;
+
+    # Timeouts for potentially long tool calls
+    proxy_connect_timeout 30s;
+    proxy_send_timeout 60s;
+    proxy_read_timeout 60s;
+
+    # Response buffering
+    proxy_buffering on;
+    proxy_buffer_size 16k;
+    proxy_buffers 4 32k;
+
+    # Max request body size (for large tool inputs)
+    client_max_body_size 10M;
+}
+
+# Valence health check endpoint (no auth required)
+location /mcp/health {
+    proxy_pass http://127.0.0.1:8420/health;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+# Valence info endpoint (no auth required)
+location = /mcp/ {
+    proxy_pass http://127.0.0.1:8420/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}

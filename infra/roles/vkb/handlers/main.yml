@@ -7,3 +7,13 @@
   service:
     name: vkb
     state: restarted
+
+- name: restart valence-server
+  service:
+    name: valence-server
+    state: restarted
+
+- name: reload nginx
+  service:
+    name: nginx
+    state: reloaded

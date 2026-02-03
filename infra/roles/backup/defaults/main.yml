@@ -1,0 +1,12 @@
+---
+# Backup role default variables
+
+# Enable scheduled backups (daily at 3am)
+enable_scheduled_backups: true
+
+# DigitalOcean Spaces configuration
+# These should be set in inventory or group_vars
+# do_spaces_key: ""
+# do_spaces_secret: ""
+# do_spaces_bucket: "valence-backups"
+# do_spaces_region: "nyc3"

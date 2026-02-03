@@ -1,0 +1,77 @@
+---
+# Backup infrastructure for Valence
+# Backs up database, config, and browser sessions to DigitalOcean Spaces
+
+- name: Install s3cmd
+  apt:
+    name: s3cmd
+    state: present
+
+- name: Create backup directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: valence
+    group: valence
+    mode: "0750"
+  loop:
+    - /opt/valence/scripts
+    - /opt/valence/backups
+
+- name: Configure s3cmd for DO Spaces
+  template:
+    src: s3cfg.j2
+    dest: /opt/valence/config/.s3cfg
+    owner: valence
+    group: valence
+    mode: "0600"
+  when: do_spaces_key is defined and do_spaces_key | length > 0
+
+- name: Create backup script
+  template:
+    src: backup.sh.j2
+    dest: /opt/valence/scripts/backup.sh
+    owner: valence
+    group: valence
+    mode: "0750"
+
+- name: Create restore script
+  template:
+    src: restore.sh.j2
+    dest: /opt/valence/scripts/restore.sh
+    owner: valence
+    group: valence
+    mode: "0750"
+
+- name: Set up daily backup cron job
+  cron:
+    name: "Daily Valence backup"
+    user: valence
+    hour: "3"
+    minute: "0"
+    job: "/opt/valence/scripts/backup.sh >> /var/log/valence/backup.log 2>&1"
+    state: present
+  when: enable_scheduled_backups | default(true)
+
+- name: Create backup log directory
+  file:
+    path: /var/log/valence
+    state: directory
+    owner: valence
+    group: valence
+    mode: "0755"
+
+- name: Set up logrotate for backup logs
+  copy:
+    dest: /etc/logrotate.d/valence-backup
+    content: |
+      /var/log/valence/backup.log {
+          daily
+          rotate 14
+          compress
+          delaycompress
+          missingok
+          notifempty
+          create 0640 valence valence
+      }
+    mode: "0644"

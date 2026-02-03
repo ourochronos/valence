@@ -1,0 +1,73 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Only allow one deployment at a time
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.VALENCE_POD_IP }} >> ~/.ssh/known_hosts
+
+      - name: Install Ansible
+        run: pip install ansible
+
+      - name: Create env file
+        run: |
+          cat > infra/.env.deploy << EOF
+          export VALENCE_POD_IP="${{ secrets.VALENCE_POD_IP }}"
+          export VALENCE_DOMAIN="${{ secrets.VALENCE_DOMAIN }}"
+          export VALENCE_DB_PASSWORD="${{ secrets.VALENCE_DB_PASSWORD }}"
+          export LETSENCRYPT_EMAIL="${{ secrets.LETSENCRYPT_EMAIL }}"
+          export VALENCE_SSH_PUBKEY="${{ secrets.SSH_PUBLIC_KEY }}"
+          export OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}"
+          export VALENCE_OAUTH_PASSWORD="${{ secrets.VALENCE_OAUTH_PASSWORD }}"
+          export DO_SPACES_KEY="${{ secrets.DO_SPACES_KEY }}"
+          export DO_SPACES_SECRET="${{ secrets.DO_SPACES_SECRET }}"
+          export DO_SPACES_BUCKET="${{ secrets.DO_SPACES_BUCKET }}"
+          export DO_SPACES_REGION="${{ secrets.DO_SPACES_REGION }}"
+          EOF
+
+      - name: Backup before deploy
+        run: |
+          ssh -o StrictHostKeyChecking=no valence@${{ secrets.VALENCE_POD_IP }} \
+            "if [ -x /opt/valence/scripts/backup.sh ]; then /opt/valence/scripts/backup.sh; else echo 'Backup script not found, skipping'; fi"
+
+      - name: Deploy
+        run: |
+          cd infra
+          source .env.deploy
+          ./deploy.sh
+
+      - name: Health check
+        run: |
+          sleep 15
+          response=$(curl -sf https://${{ secrets.VALENCE_DOMAIN }}/health)
+          echo "$response" | jq .
+          status=$(echo "$response" | jq -r '.status')
+          if [ "$status" != "healthy" ] && [ "$status" != "degraded" ]; then
+            echo "Health check failed: status=$status"
+            exit 1
+          fi
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Deployment failed - manual intervention may be needed"
+          echo "Check the pod at ${{ secrets.VALENCE_POD_IP }}"

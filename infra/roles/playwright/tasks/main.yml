@@ -1,0 +1,68 @@
+---
+# Playwright role - installs headless Chrome and configures the browser service
+# Browser sessions persist across deployments in /opt/valence/playwright/sessions/
+
+- name: Install Chrome dependencies
+  apt:
+    name:
+      - libnss3
+      - libatk1.0-0
+      - libatk-bridge2.0-0
+      - libcups2
+      - libdrm2
+      - libxkbcommon0
+      - libxcomposite1
+      - libxdamage1
+      - libxfixes3
+      - libxrandr2
+      - libgbm1
+      - libasound2t64  # Ubuntu 24.04+ renamed libasound2
+      - libpango-1.0-0
+      - libcairo2
+      - libatspi2.0-0
+    state: present
+
+- name: Create playwright directories (preserve existing sessions)
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: valence
+    group: valence
+    mode: "0700"
+  loop:
+    - /opt/valence/playwright
+    - /opt/valence/playwright/sessions  # Contains login state - NEVER delete
+
+- name: Install playwright in valence venv
+  become: yes
+  become_user: valence
+  pip:
+    name: playwright>=1.40
+    virtualenv: /opt/valence/venv
+    state: present
+
+- name: Install Chromium browser
+  become: yes
+  become_user: valence
+  command: /opt/valence/venv/bin/playwright install chromium
+  args:
+    creates: /home/valence/.cache/ms-playwright/chromium-*/chrome-linux/chrome
+  environment:
+    HOME: /home/valence
+
+- name: Create playwright environment file
+  template:
+    src: playwright.env.j2
+    dest: /opt/valence/config/playwright.env
+    owner: valence
+    group: valence
+    mode: "0600"
+  notify: Restart valence-server
+
+- name: Ensure playwright dependency in valence package
+  lineinfile:
+    path: /opt/valence/repo/pyproject.toml
+    line: '    "playwright>=1.40",'
+    insertafter: 'dependencies = \['
+    state: present
+  notify: Reinstall valence package

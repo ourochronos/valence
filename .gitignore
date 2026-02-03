@@ -39,3 +39,5 @@ infra/.env.*
 *.pem
 *.key
 credentials.json
+.claude/
+.coverage
