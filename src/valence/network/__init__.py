@@ -13,6 +13,7 @@ from valence.network.crypto import (
     decrypt_message,
 )
 from valence.network.messages import RelayMessage, DeliverPayload
+from valence.network.router import RouterNode, Connection, QueuedMessage
 
 __all__ = [
     "KeyPair",
@@ -22,4 +23,7 @@ __all__ = [
     "decrypt_message",
     "RelayMessage",
     "DeliverPayload",
+    "RouterNode",
+    "Connection",
+    "QueuedMessage",
 ]

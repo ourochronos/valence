@@ -1,1 +1,1 @@
-"""Tests for the Valence network module."""
+"""Tests for valence.network module."""

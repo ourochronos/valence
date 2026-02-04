@@ -57,6 +57,8 @@ valence-matrix = "valence.agents.matrix_bot:main"
 valence-server = "valence.server.app:run"
 valence-token = "valence.server.cli:main"
 valence-federation = "valence.cli.federation:main"
+valence-seed = "valence.cli.seed:main"
+valence-router = "valence.cli.router:main"
 
 [build-system]
 requires = ["hatchling"]
