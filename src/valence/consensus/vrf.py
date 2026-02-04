@@ -195,7 +195,7 @@ class VRF:
     @property
     def public_key_bytes(self) -> bytes:
         """Get the public key as bytes."""
-        return self._public_key.public_key_bytes_raw()
+        return self._public_key.public_bytes_raw()
     
     @property
     def private_key_bytes(self) -> bytes:

@@ -5,6 +5,7 @@ Valence provides:
 - Conversation tracking (sessions, exchanges, patterns)
 - Claude Code integration (plugin, hooks, skills)
 - Multi-platform agents (Matrix, API)
+- Consensus mechanism (VRF-based validator selection)
 """
 
 __version__ = "1.0.0"
@@ -23,3 +24,6 @@ from . import embeddings
 
 # Agent implementations
 from . import agents
+
+# Consensus mechanism
+from . import consensus
