@@ -14,6 +14,7 @@ from valence.network.crypto import (
 )
 from valence.network.messages import RelayMessage, DeliverPayload
 from valence.network.router import RouterNode, Connection, QueuedMessage
+from valence.network.seed import SeedNode, RouterRecord, SeedConfig
 
 __all__ = [
     "KeyPair",
@@ -26,4 +27,7 @@ __all__ = [
     "RouterNode",
     "Connection",
     "QueuedMessage",
+    "SeedNode",
+    "RouterRecord",
+    "SeedConfig",
 ]
