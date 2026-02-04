@@ -8,11 +8,18 @@ Your agent knows you. It represents you—not platforms, not advertisers, not an
 
 This is Valence: the capacity to connect, to affect, to bond.
 
-## Founding Documents
+## Documentation
 
+### Philosophy & Architecture
+- **[VISION.md](docs/VISION.md)** — The epistemic commons. Why this exists.
 - **[PRINCIPLES.md](docs/PRINCIPLES.md)** — The constitution. These constrain what Valence can become.
 - **[SYSTEM.md](docs/SYSTEM.md)** — The architecture. How principles become structure.
 - **[UNKNOWNS.md](docs/UNKNOWNS.md)** — Honest gaps. What we don't know yet.
+
+### Technical Specifications
+- **[spec/](spec/)** — Complete technical specs for all 11 components
+- **[spec/ADOPTION.md](spec/ADOPTION.md)** — Phase-by-phase adoption path
+- **[spec/MANIFESTO.md](spec/MANIFESTO.md)** — The movement framing
 
 ## Knowledge Base Architecture
 
