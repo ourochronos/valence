@@ -169,12 +169,3 @@ def mock_vkb_tools():
         with patch("valence.server.app.handle_vkb_tool") as mock_handler:
             mock_handler.return_value = {"success": True, "data": "test"}
             yield {"tools": mock_vt, "handler": mock_handler}
-
-
-@pytest.fixture
-def mock_playwright_tools():
-    """Mock Playwright tools."""
-    with patch("valence.server.app.PLAYWRIGHT_TOOLS", []) as mock_pt:
-        with patch("valence.server.app.handle_playwright_tool") as mock_handler:
-            mock_handler.return_value = {"success": True, "data": "test"}
-            yield {"tools": mock_pt, "handler": mock_handler}

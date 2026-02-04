@@ -28,9 +28,6 @@
     - role: backup
       tags: [backup]
 
-    - role: playwright
-      tags: [playwright]
-
     - role: verify
       tags: [verify]
       when: verify_deployment | default(true)

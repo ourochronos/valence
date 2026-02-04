@@ -79,7 +79,6 @@ restore_backup() {
     # Stop services
     echo "Stopping services..."
     sudo systemctl stop valence-server 2>/dev/null || true
-    sudo systemctl stop valence-playwright 2>/dev/null || true
 
     # Restore database
     if [ -f "$RESTORE_DIR/database.sql.gz" ]; then
@@ -103,21 +102,12 @@ restore_backup() {
         echo "Config restored"
     fi
 
-    # Restore browser sessions
-    if [ -f "$RESTORE_DIR/browser-sessions.tar.gz" ]; then
-        echo "Restoring browser sessions..."
-        mkdir -p /opt/valence/playwright
-        tar -xzf "$RESTORE_DIR/browser-sessions.tar.gz" -C /opt/valence/playwright
-        echo "Browser sessions restored"
-    fi
-
     # Clean up
     rm -rf "$RESTORE_DIR"
 
     # Restart services
     echo "Starting services..."
     sudo systemctl start valence-server 2>/dev/null || true
-    sudo systemctl start valence-playwright 2>/dev/null || true
 
     echo "=== Restore completed ==="
 }

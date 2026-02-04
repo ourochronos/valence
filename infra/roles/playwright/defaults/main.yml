@@ -1,5 +1,0 @@
----
-# Playwright role default variables
-
-# Session storage directory
-playwright_sessions_dir: /opt/valence/playwright/sessions

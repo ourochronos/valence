@@ -43,15 +43,6 @@ else
     echo "No config directory found, skipping"
 fi
 
-# Browser sessions backup (preserves logins)
-echo "Backing up browser sessions..."
-if [ -d /opt/valence/playwright/sessions ]; then
-    tar -czf "$BACKUP_DIR/browser-sessions.tar.gz" -C /opt/valence/playwright sessions
-    echo "Browser sessions backup complete: $(du -h "$BACKUP_DIR/browser-sessions.tar.gz" | cut -f1)"
-else
-    echo "No browser sessions found, skipping"
-fi
-
 # Create manifest
 cat > "$BACKUP_DIR/manifest.json" << EOF
 {
@@ -60,8 +51,7 @@ cat > "$BACKUP_DIR/manifest.json" << EOF
     "valence_version": "$(cat /opt/valence/version 2>/dev/null || echo 'unknown')",
     "files": {
         "database": "database.sql.gz",
-        "config": "config.tar.gz",
-        "browser_sessions": "browser-sessions.tar.gz"
+        "config": "config.tar.gz"
     }
 }
 EOF

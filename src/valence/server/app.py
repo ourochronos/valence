@@ -322,15 +322,6 @@ async def _dispatch_method(method: str, params: dict[str, Any]) -> Any:
     from ..substrate.tools import SUBSTRATE_TOOLS, handle_substrate_tool
     from ..vkb.tools import VKB_TOOLS, handle_vkb_tool
 
-    # Playwright tools are optional - only load if the module exists
-    try:
-        from ..playwright.tools import PLAYWRIGHT_TOOLS, handle_playwright_tool
-        playwright_available = True
-    except ImportError:
-        PLAYWRIGHT_TOOLS: list = []  # type: ignore[no-redef]
-        handle_playwright_tool = None  # type: ignore[assignment]
-        playwright_available = False
-
     settings = get_settings()
 
     # MCP standard methods
@@ -358,7 +349,7 @@ async def _dispatch_method(method: str, params: dict[str, Any]) -> Any:
 
     elif method == "tools/list":
         tools = []
-        for tool in SUBSTRATE_TOOLS + VKB_TOOLS + PLAYWRIGHT_TOOLS:
+        for tool in SUBSTRATE_TOOLS + VKB_TOOLS:
             # Add version to inputSchema for tool versioning
             schema_with_version = {
                 **tool.inputSchema,
@@ -383,14 +374,11 @@ async def _dispatch_method(method: str, params: dict[str, Any]) -> Any:
         # Route to appropriate handler
         substrate_tool_names = [t.name for t in SUBSTRATE_TOOLS]
         vkb_tool_names = [t.name for t in VKB_TOOLS]
-        playwright_tool_names = [t.name for t in PLAYWRIGHT_TOOLS]
 
         if tool_name in substrate_tool_names:
             result = handle_substrate_tool(tool_name, arguments)
         elif tool_name in vkb_tool_names:
             result = handle_vkb_tool(tool_name, arguments)
-        elif playwright_available and tool_name in playwright_tool_names:
-            result = await handle_playwright_tool(tool_name, arguments)
         else:
             raise MethodNotFoundError(f"Unknown tool: {tool_name}")
 
@@ -603,12 +591,6 @@ def _get_tool_reference() -> str:
     from ..substrate.tools import SUBSTRATE_TOOLS
     from ..vkb.tools import VKB_TOOLS
 
-    # Playwright tools are optional
-    try:
-        from ..playwright.tools import PLAYWRIGHT_TOOLS
-    except ImportError:
-        PLAYWRIGHT_TOOLS: list = []  # type: ignore[no-redef]
-
     lines = ["# Valence Tool Reference\n"]
 
     lines.append("## Knowledge Substrate Tools\n")
@@ -621,12 +603,6 @@ def _get_tool_reference() -> str:
     for tool in VKB_TOOLS:
         desc = tool.description.split("\n")[0]
         lines.append(f"- **{tool.name}**: {desc}")
-
-    if PLAYWRIGHT_TOOLS:
-        lines.append("\n## Browser Automation Tools\n")
-        for tool in PLAYWRIGHT_TOOLS:
-            desc = tool.description.split("\n")[0]
-            lines.append(f"- **{tool.name}**: {desc}")
 
     return "\n".join(lines)
 
@@ -654,12 +630,6 @@ async def info_endpoint(request: Request) -> JSONResponse:
     from ..substrate.tools import SUBSTRATE_TOOLS
     from ..vkb.tools import VKB_TOOLS
 
-    # Playwright tools are optional
-    try:
-        from ..playwright.tools import PLAYWRIGHT_TOOLS
-    except ImportError:
-        PLAYWRIGHT_TOOLS: list = []  # type: ignore[no-redef]
-
     response_data: dict[str, Any] = {
         "server": settings.server_name,
         "version": settings.server_version,
@@ -670,8 +640,7 @@ async def info_endpoint(request: Request) -> JSONResponse:
         "tools": {
             "substrate": len(SUBSTRATE_TOOLS),
             "vkb": len(VKB_TOOLS),
-            "playwright": len(PLAYWRIGHT_TOOLS),
-            "total": len(SUBSTRATE_TOOLS) + len(VKB_TOOLS) + len(PLAYWRIGHT_TOOLS),
+            "total": len(SUBSTRATE_TOOLS) + len(VKB_TOOLS),
         },
         "endpoints": {
             "mcp": "/api/v1/mcp",
@@ -722,15 +691,6 @@ async def lifespan(app: Starlette):
             )
 
     yield
-
-    # Shutdown browser manager if initialized
-    try:
-        from ..playwright.browser_manager import shutdown_browser_manager
-
-        await shutdown_browser_manager()
-        logger.info("Browser manager shut down")
-    except Exception as e:
-        logger.warning(f"Error shutting down browser manager: {e}")
 
     logger.info("Valence MCP server shutting down")
 
