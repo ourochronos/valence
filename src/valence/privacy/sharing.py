@@ -45,26 +45,6 @@ class ShareResult:
 
 
 @dataclass
-class ReshareRequest:
-    """Request to reshare a previously received belief."""
-    
-    original_share_id: str  # The share we received and want to reshare
-    recipient_did: str  # Who we're resharing with
-
-
-@dataclass
-class ReshareResult:
-    """Result of a successful reshare operation."""
-    
-    share_id: str
-    consent_chain_id: str
-    encrypted_for: str
-    created_at: float
-    current_hop: int  # The hop number of this reshare
-    hops_remaining: Optional[int]  # Remaining hops, or None if unlimited
-
-
-@dataclass
 class RevokeRequest:
     """Request to revoke a previously shared belief."""
     
@@ -675,6 +655,13 @@ class SharingService:
             belief_id=original_share.belief_id,
         )
         
+        # Get recipient's domains for audit/tracking
+        recipient_domains: List[str] = []
+        if self.domain_service and allowed_domains:
+            for domain in allowed_domains:
+                if await self.domain_service.is_member(request.recipient_did, domain):
+                    recipient_domains.append(domain)
+        
         # Add hop to consent chain
         hop = {
             "resharer": resharer_did,
@@ -682,6 +669,8 @@ class SharingService:
             "reshared_at": timestamp,
             "hop_number": new_hop_count,
             "from_share_id": request.original_share_id,
+            "new_share_id": share_id,
+            "recipient_domains": recipient_domains,
             "signature": self.identity.sign({
                 "original_share_id": request.original_share_id,
                 "recipient": request.recipient_did,
@@ -921,167 +910,6 @@ class SharingService:
             List of shares that haven't been received yet
         """
         return await self.db.get_pending_shares(recipient_did)
-    
-    async def reshare(
-        self, request: ReshareRequest, resharer_did: str
-    ) -> ReshareResult:
-        """Reshare a previously received belief with a new recipient.
-        
-        Only valid for BOUNDED shares. The new recipient must be a member
-        of at least one of the allowed domains specified in the original
-        share's propagation rules.
-        
-        Args:
-            request: The reshare request containing original share_id and new recipient
-            resharer_did: The DID of the entity resharing (must have received the share)
-            
-        Returns:
-            ReshareResult with new share details and hop number
-            
-        Raises:
-            ValueError: If validation fails (share not found, not received,
-                        policy doesn't allow resharing, max hops exceeded, etc.)
-            PermissionError: If resharer hasn't received the share or recipient
-                            is not in allowed domains
-        """
-        # Get the original share
-        original_share = await self.db.get_share(request.original_share_id)
-        if not original_share:
-            raise ValueError("Original share not found")
-        
-        # Verify resharer is the recipient of the original share
-        if original_share.recipient_did != resharer_did:
-            raise PermissionError("Only the share recipient can reshare")
-        
-        # Verify the share was received (acknowledged)
-        if original_share.received_at is None:
-            raise ValueError("Share must be received before resharing")
-        
-        # Get consent chain
-        consent_chain = await self.db.get_consent_chain(original_share.consent_chain_id)
-        if not consent_chain:
-            raise ValueError("Consent chain not found")
-        
-        # Check if revoked
-        if consent_chain.revoked:
-            raise ValueError("Cannot reshare: original share has been revoked")
-        
-        # Get original policy
-        policy = SharePolicy.from_dict(consent_chain.origin_policy)
-        
-        # Validate: resharing is only allowed for BOUNDED level
-        if policy.level != ShareLevel.BOUNDED:
-            raise ValueError(
-                f"Resharing not allowed for {policy.level.value} shares. "
-                "Only BOUNDED shares can be reshared."
-            )
-        
-        # Validate: check propagation rules
-        if policy.propagation is None:
-            raise ValueError("BOUNDED share missing propagation rules")
-        
-        # Check max_hops if specified
-        current_hop = len(consent_chain.hops)
-        if policy.propagation.max_hops is not None:
-            if current_hop >= policy.propagation.max_hops:
-                raise ValueError(
-                    f"Maximum reshare hops reached ({policy.propagation.max_hops})"
-                )
-        
-        # Check expiration
-        if policy.is_expired():
-            raise ValueError("Share has expired and cannot be reshared")
-        
-        # Validate: new recipient must be member of allowed domains
-        if not policy.propagation.allowed_domains:
-            raise ValueError("No allowed domains specified for BOUNDED share")
-        
-        # Require domain service
-        if self.domain_service is None:
-            raise ValueError("Domain service required for BOUNDED resharing")
-        
-        # Check recipient domain membership
-        recipient_in_domain = False
-        recipient_domains: List[str] = []
-        for domain in policy.propagation.allowed_domains:
-            if await self.domain_service.is_member(request.recipient_did, domain):
-                recipient_in_domain = True
-                recipient_domains.append(domain)
-        
-        if not recipient_in_domain:
-            raise ValueError(
-                f"Recipient {request.recipient_did} is not a member of any allowed domain "
-                f"({', '.join(policy.propagation.allowed_domains)})"
-            )
-        
-        # Get recipient's public key
-        recipient_key = await self.identity.get_public_key(request.recipient_did)
-        if not recipient_key:
-            raise ValueError("Recipient not found or has no public key")
-        
-        # Get the decrypted content from resharer's copy
-        # Note: We need to decrypt from the resharer's perspective first
-        resharer_private_key = await self.identity.get_private_key(resharer_did)
-        if not resharer_private_key:
-            raise ValueError("Resharer private key not available")
-        
-        original_envelope = EncryptionEnvelope.from_dict(original_share.encrypted_envelope)
-        content = EncryptionEnvelope.decrypt(original_envelope, resharer_private_key)
-        
-        # Re-encrypt for new recipient
-        new_envelope = EncryptionEnvelope.encrypt(
-            content=content,
-            recipient_public_key=recipient_key,
-        )
-        
-        # Create reshare record
-        timestamp = time.time()
-        new_share_id = str(uuid.uuid4())
-        
-        await self.db.create_share(
-            id=new_share_id,
-            consent_chain_id=consent_chain.id,  # Same consent chain
-            encrypted_envelope=new_envelope.to_dict(),
-            recipient_did=request.recipient_did,
-            belief_id=consent_chain.belief_id,
-        )
-        
-        # Add reshare hop to consent chain
-        hop_number = current_hop + 1
-        reshare_hop = {
-            "recipient": request.recipient_did,
-            "reshared_by": resharer_did,
-            "reshared_at": timestamp,
-            "from_share_id": request.original_share_id,
-            "new_share_id": new_share_id,
-            "hop_number": hop_number,
-            "recipient_domains": recipient_domains,
-            "signature": self.identity.sign({
-                "original_share_id": request.original_share_id,
-                "new_share_id": new_share_id,
-                "recipient": request.recipient_did,
-                "reshared_at": timestamp,
-            }),
-        }
-        
-        await self.db.add_consent_chain_hop(
-            consent_chain_id=consent_chain.id,
-            hop=reshare_hop,
-        )
-        
-        logger.info(
-            f"Reshared belief from share {request.original_share_id} to {request.recipient_did} "
-            f"(new_share_id={new_share_id}, hop={hop_number}, "
-            f"consent_chain={consent_chain.id})"
-        )
-        
-        return ReshareResult(
-            share_id=new_share_id,
-            consent_chain_id=consent_chain.id,
-            encrypted_for=request.recipient_did,
-            created_at=timestamp,
-            hop_number=hop_number,
-        )
     
     def _get_domain_constraints_from_chain(
         self, consent_chain: ConsentChainEntry

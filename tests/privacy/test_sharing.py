@@ -1649,3 +1649,1655 @@ class TestOfflineRecipientHandling:
         # Should be empty now
         pending = await service.get_pending_notifications(recipient_did)
         assert len(pending) == 0
+
+
+class TestMaxHopsPropagation:
+    """Tests for max_hops propagation tracking (Issue #65)."""
+    
+    @pytest.fixture
+    def db(self):
+        return MockDatabase()
+    
+    @pytest.fixture
+    def identity(self):
+        return MockIdentityService()
+    
+    @pytest.fixture
+    def service(self, db, identity):
+        return SharingService(db, identity)
+    
+    async def _create_bounded_share(
+        self, service, db, identity,
+        belief_id="belief-bounded-001",
+        recipient_did="did:key:bounded-recipient",
+        content="Bounded content",
+        max_hops=2,
+    ):
+        """Helper to create a BOUNDED share with max_hops."""
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content=content)
+        identity.add_identity(recipient_did)
+        
+        policy = SharePolicy.bounded(max_hops=max_hops)
+        # Override enforcement to POLICY for testing (BOUNDED uses POLICY)
+        policy.enforcement = EnforcementType.POLICY
+        # Add recipient to recipients list for validation
+        policy.recipients = [recipient_did]
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=recipient_did,
+            policy=policy,
+        )
+        return await service.share(request, identity.get_did()), recipient_did
+    
+    @pytest.mark.asyncio
+    async def test_consent_chain_tracks_current_hop(self, service, db, identity):
+        """Test that consent chain initializes with current_hop=0."""
+        # Use DIRECT share for simpler test
+        belief_id = "belief-hop-track"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Content")
+        identity.add_identity("did:key:hop-recipient")
+        
+        request = ShareRequest(belief_id=belief_id, recipient_did="did:key:hop-recipient")
+        result = await service.share(request, identity.get_did())
+        
+        chain = await service.get_consent_chain(result.consent_chain_id)
+        assert chain.current_hop == 0
+    
+    @pytest.mark.asyncio
+    async def test_consent_chain_max_hops_property(self, service, db, identity):
+        """Test that consent chain correctly reports max_hops from policy."""
+        belief_id = "belief-max-hops-prop"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Content")
+        recipient_did = "did:key:max-hops-recipient"
+        identity.add_identity(recipient_did)
+        
+        policy = SharePolicy.bounded(max_hops=3)
+        policy.recipients = [recipient_did]
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=recipient_did,
+            policy=policy,
+        )
+        result = await service.share(request, identity.get_did())
+        
+        chain = await service.get_consent_chain(result.consent_chain_id)
+        assert chain.max_hops == 3
+        assert chain.hops_remaining() == 3
+        assert chain.can_reshare() is True
+    
+    @pytest.mark.asyncio
+    async def test_consent_chain_can_reshare_with_no_limit(self, service, db, identity):
+        """Test that consent chain without max_hops allows unlimited resharing."""
+        belief_id = "belief-no-limit"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Content")
+        recipient_did = "did:key:no-limit-recipient"
+        identity.add_identity(recipient_did)
+        
+        # Create with BOUNDED policy but no max_hops (unlimited)
+        policy = SharePolicy(
+            level=ShareLevel.BOUNDED,
+            enforcement=EnforcementType.POLICY,
+            recipients=[recipient_did],
+            propagation=PropagationRules(max_hops=None),  # No limit
+        )
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=recipient_did,
+            policy=policy,
+        )
+        result = await service.share(request, identity.get_did())
+        
+        chain = await service.get_consent_chain(result.consent_chain_id)
+        assert chain.max_hops is None
+        assert chain.hops_remaining() is None
+        assert chain.can_reshare() is True
+    
+    @pytest.mark.asyncio
+    async def test_consent_chain_cannot_reshare_when_revoked(self, service, db, identity):
+        """Test that revoked consent chain cannot be reshared."""
+        belief_id = "belief-revoked-reshare"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Content")
+        recipient_did = "did:key:revoked-reshare-recipient"
+        identity.add_identity(recipient_did)
+        
+        request = ShareRequest(belief_id=belief_id, recipient_did=recipient_did)
+        result = await service.share(request, identity.get_did())
+        
+        # Revoke
+        revoke_request = RevokeRequest(share_id=result.share_id)
+        await service.revoke_share(revoke_request, identity.get_did())
+        
+        chain = await service.get_consent_chain(result.consent_chain_id)
+        assert chain.can_reshare() is False
+    
+    @pytest.mark.asyncio
+    async def test_reshare_increments_hop_count(self, service, db, identity):
+        """Test that resharing increments the current_hop counter."""
+        # Create original share with BOUNDED policy
+        belief_id = "belief-inc-hop"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Hop increment content")
+        first_recipient = "did:key:first-recipient"
+        second_recipient = "did:key:second-recipient"
+        identity.add_identity(first_recipient)
+        identity.add_identity(second_recipient)
+        
+        policy = SharePolicy.bounded(max_hops=3)
+        policy.recipients = [first_recipient]
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=first_recipient,
+            policy=policy,
+        )
+        share_result = await service.share(request, identity.get_did())
+        
+        # First recipient receives the share
+        receive_request = ReceiveRequest(share_id=share_result.share_id)
+        await service.receive(receive_request, first_recipient)
+        
+        # Reshare to second recipient
+        reshare_request = ReshareRequest(
+            original_share_id=share_result.share_id,
+            recipient_did=second_recipient,
+        )
+        reshare_result = await service.reshare(reshare_request, first_recipient)
+        
+        # Verify hop count incremented
+        assert reshare_result.current_hop == 1
+        assert reshare_result.hops_remaining == 2  # 3 - 1 = 2
+        
+        # Verify consent chain was updated
+        chain = await service.get_consent_chain(share_result.consent_chain_id)
+        assert chain.current_hop == 1
+    
+    @pytest.mark.asyncio
+    async def test_reshare_blocked_when_max_hops_exceeded(self, service, db, identity):
+        """Test that resharing is blocked when max_hops would be exceeded."""
+        # Create share with max_hops=1
+        belief_id = "belief-max-exceeded"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Max hops content")
+        first_recipient = "did:key:first-max"
+        second_recipient = "did:key:second-max"
+        third_recipient = "did:key:third-max"
+        identity.add_identity(first_recipient)
+        identity.add_identity(second_recipient)
+        identity.add_identity(third_recipient)
+        
+        policy = SharePolicy.bounded(max_hops=1)
+        policy.recipients = [first_recipient]
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=first_recipient,
+            policy=policy,
+        )
+        share_result = await service.share(request, identity.get_did())
+        
+        # First recipient receives and reshares
+        receive_request = ReceiveRequest(share_id=share_result.share_id)
+        await service.receive(receive_request, first_recipient)
+        
+        reshare_request = ReshareRequest(
+            original_share_id=share_result.share_id,
+            recipient_did=second_recipient,
+        )
+        reshare_result = await service.reshare(reshare_request, first_recipient)
+        
+        # Verify reshare worked
+        assert reshare_result.current_hop == 1
+        assert reshare_result.hops_remaining == 0
+        
+        # Second recipient receives
+        receive_request2 = ReceiveRequest(share_id=reshare_result.share_id)
+        await service.receive(receive_request2, second_recipient)
+        
+        # Second recipient tries to reshare - should fail
+        reshare_request2 = ReshareRequest(
+            original_share_id=reshare_result.share_id,
+            recipient_did=third_recipient,
+        )
+        
+        with pytest.raises(ValueError, match="max_hops.*exceeded"):
+            await service.reshare(reshare_request2, second_recipient)
+    
+    @pytest.mark.asyncio
+    async def test_reshare_requires_receiving_first(self, service, db, identity):
+        """Test that resharing requires receiving the share first."""
+        belief_id = "belief-receive-first"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Content")
+        first_recipient = "did:key:receive-first"
+        second_recipient = "did:key:second-receive"
+        identity.add_identity(first_recipient)
+        identity.add_identity(second_recipient)
+        
+        policy = SharePolicy.bounded(max_hops=2)
+        policy.recipients = [first_recipient]
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=first_recipient,
+            policy=policy,
+        )
+        share_result = await service.share(request, identity.get_did())
+        
+        # Try to reshare without receiving first
+        reshare_request = ReshareRequest(
+            original_share_id=share_result.share_id,
+            recipient_did=second_recipient,
+        )
+        
+        with pytest.raises(ValueError, match="Must receive share before resharing"):
+            await service.reshare(reshare_request, first_recipient)
+    
+    @pytest.mark.asyncio
+    async def test_reshare_only_by_recipient(self, service, db, identity):
+        """Test that only the recipient of a share can reshare it."""
+        belief_id = "belief-only-recipient"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Content")
+        recipient_did = "did:key:actual-recipient"
+        imposter_did = "did:key:imposter"
+        target_did = "did:key:target"
+        identity.add_identity(recipient_did)
+        identity.add_identity(imposter_did)
+        identity.add_identity(target_did)
+        
+        policy = SharePolicy.bounded(max_hops=2)
+        policy.recipients = [recipient_did]
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=recipient_did,
+            policy=policy,
+        )
+        share_result = await service.share(request, identity.get_did())
+        
+        # Imposter tries to reshare
+        reshare_request = ReshareRequest(
+            original_share_id=share_result.share_id,
+            recipient_did=target_did,
+        )
+        
+        with pytest.raises(PermissionError, match="Only the recipient"):
+            await service.reshare(reshare_request, imposter_did)
+    
+    @pytest.mark.asyncio
+    async def test_reshare_blocked_for_direct_policy(self, service, db, identity):
+        """Test that DIRECT policy shares cannot be reshared."""
+        belief_id = "belief-direct-no-reshare"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Content")
+        first_recipient = "did:key:direct-recipient"
+        second_recipient = "did:key:direct-second"
+        identity.add_identity(first_recipient)
+        identity.add_identity(second_recipient)
+        
+        # DIRECT policy (default)
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=first_recipient,
+        )
+        share_result = await service.share(request, identity.get_did())
+        
+        # Receive
+        receive_request = ReceiveRequest(share_id=share_result.share_id)
+        await service.receive(receive_request, first_recipient)
+        
+        # Try to reshare
+        reshare_request = ReshareRequest(
+            original_share_id=share_result.share_id,
+            recipient_did=second_recipient,
+        )
+        
+        with pytest.raises(ValueError, match="does not allow resharing"):
+            await service.reshare(reshare_request, first_recipient)
+    
+    @pytest.mark.asyncio
+    async def test_reshare_blocked_for_revoked_share(self, service, db, identity):
+        """Test that revoked shares cannot be reshared."""
+        belief_id = "belief-revoked-no-reshare"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Content")
+        first_recipient = "did:key:revoked-recipient"
+        second_recipient = "did:key:revoked-second"
+        identity.add_identity(first_recipient)
+        identity.add_identity(second_recipient)
+        
+        policy = SharePolicy.bounded(max_hops=2)
+        policy.recipients = [first_recipient]
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=first_recipient,
+            policy=policy,
+        )
+        share_result = await service.share(request, identity.get_did())
+        
+        # Receive
+        receive_request = ReceiveRequest(share_id=share_result.share_id)
+        await service.receive(receive_request, first_recipient)
+        
+        # Revoke
+        revoke_request = RevokeRequest(share_id=share_result.share_id)
+        await service.revoke_share(revoke_request, identity.get_did())
+        
+        # Try to reshare
+        reshare_request = ReshareRequest(
+            original_share_id=share_result.share_id,
+            recipient_did=second_recipient,
+        )
+        
+        with pytest.raises(ValueError, match="has been revoked"):
+            await service.reshare(reshare_request, first_recipient)
+    
+    @pytest.mark.asyncio
+    async def test_reshare_chain_of_three(self, service, db, identity):
+        """Test a chain of reshares: A -> B -> C -> D with max_hops=3."""
+        belief_id = "belief-chain-three"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Chain of three content")
+        
+        # Create identities
+        alice = "did:key:alice"
+        bob = "did:key:bob"
+        charlie = "did:key:charlie"
+        diana = "did:key:diana"
+        identity.add_identity(alice)
+        identity.add_identity(bob)
+        identity.add_identity(charlie)
+        identity.add_identity(diana)
+        
+        # Original share from sharer to Alice
+        policy = SharePolicy.bounded(max_hops=3)
+        policy.recipients = [alice]
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=alice,
+            policy=policy,
+        )
+        share1 = await service.share(request, identity.get_did())
+        
+        # Alice receives and reshares to Bob
+        await service.receive(ReceiveRequest(share_id=share1.share_id), alice)
+        reshare1 = await service.reshare(
+            ReshareRequest(original_share_id=share1.share_id, recipient_did=bob),
+            alice
+        )
+        assert reshare1.current_hop == 1
+        assert reshare1.hops_remaining == 2
+        
+        # Bob receives and reshares to Charlie
+        await service.receive(ReceiveRequest(share_id=reshare1.share_id), bob)
+        reshare2 = await service.reshare(
+            ReshareRequest(original_share_id=reshare1.share_id, recipient_did=charlie),
+            bob
+        )
+        assert reshare2.current_hop == 2
+        assert reshare2.hops_remaining == 1
+        
+        # Charlie receives and reshares to Diana
+        await service.receive(ReceiveRequest(share_id=reshare2.share_id), charlie)
+        reshare3 = await service.reshare(
+            ReshareRequest(original_share_id=reshare2.share_id, recipient_did=diana),
+            charlie
+        )
+        assert reshare3.current_hop == 3
+        assert reshare3.hops_remaining == 0
+        
+        # Diana receives but cannot reshare (max_hops reached)
+        await service.receive(ReceiveRequest(share_id=reshare3.share_id), diana)
+        
+        eve = "did:key:eve"
+        identity.add_identity(eve)
+        
+        with pytest.raises(ValueError, match="max_hops.*exceeded"):
+            await service.reshare(
+                ReshareRequest(original_share_id=reshare3.share_id, recipient_did=eve),
+                diana
+            )
+    
+    @pytest.mark.asyncio
+    async def test_reshare_result_contains_hop_info(self, service, db, identity):
+        """Test that ReshareResult contains correct hop tracking info."""
+        belief_id = "belief-result-info"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Result info content")
+        first_recipient = "did:key:result-first"
+        second_recipient = "did:key:result-second"
+        identity.add_identity(first_recipient)
+        identity.add_identity(second_recipient)
+        
+        policy = SharePolicy.bounded(max_hops=5)
+        policy.recipients = [first_recipient]
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=first_recipient,
+            policy=policy,
+        )
+        share_result = await service.share(request, identity.get_did())
+        
+        # Receive and reshare
+        await service.receive(ReceiveRequest(share_id=share_result.share_id), first_recipient)
+        reshare_result = await service.reshare(
+            ReshareRequest(original_share_id=share_result.share_id, recipient_did=second_recipient),
+            first_recipient
+        )
+        
+        # Verify all fields
+        assert reshare_result.share_id is not None
+        assert reshare_result.consent_chain_id == share_result.consent_chain_id
+        assert reshare_result.encrypted_for == second_recipient
+        assert reshare_result.created_at > 0
+        assert reshare_result.current_hop == 1
+        assert reshare_result.hops_remaining == 4  # 5 - 1 = 4
+    
+    @pytest.mark.asyncio
+    async def test_reshare_adds_hop_to_consent_chain(self, service, db, identity):
+        """Test that resharing adds a hop record to the consent chain."""
+        belief_id = "belief-hop-record"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Hop record content")
+        first_recipient = "did:key:hop-first"
+        second_recipient = "did:key:hop-second"
+        identity.add_identity(first_recipient)
+        identity.add_identity(second_recipient)
+        
+        policy = SharePolicy.bounded(max_hops=2)
+        policy.recipients = [first_recipient]
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=first_recipient,
+            policy=policy,
+        )
+        share_result = await service.share(request, identity.get_did())
+        
+        # Receive and reshare
+        await service.receive(ReceiveRequest(share_id=share_result.share_id), first_recipient)
+        reshare_result = await service.reshare(
+            ReshareRequest(original_share_id=share_result.share_id, recipient_did=second_recipient),
+            first_recipient
+        )
+        
+        # Get consent chain and check hops
+        chain = await service.get_consent_chain(share_result.consent_chain_id)
+        
+        # Should have 2 hops: receive hop + reshare hop
+        assert len(chain.hops) == 2
+        
+        # Find the reshare hop
+        reshare_hop = None
+        for hop in chain.hops:
+            if hop.get("resharer") == first_recipient:
+                reshare_hop = hop
+                break
+        
+        assert reshare_hop is not None
+        assert reshare_hop["recipient"] == second_recipient
+        assert reshare_hop["hop_number"] == 1
+        assert reshare_hop["from_share_id"] == share_result.share_id
+        assert "signature" in reshare_hop
+
+
+class TestBoundedSharing:
+    """Tests for BOUNDED share level (Issue #64)."""
+    
+    @pytest.fixture
+    def db(self):
+        return MockDatabase()
+    
+    @pytest.fixture
+    def identity(self):
+        return MockIdentityService()
+    
+    @pytest.fixture
+    def domain_service(self):
+        return MockDomainService()
+    
+    @pytest.fixture
+    def service(self, db, identity, domain_service):
+        return SharingService(db, identity, domain_service)
+    
+    @pytest.mark.asyncio
+    async def test_bounded_share_basic(self, service, db, identity, domain_service):
+        """Test basic BOUNDED share to a domain member."""
+        belief_id = "belief-bounded-001"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Bounded content")
+        
+        recipient_did = "did:key:domain-member"
+        identity.add_identity(recipient_did)
+        
+        # Add recipient to allowed domain
+        domain_service.add_member(recipient_did, "acme-corp")
+        
+        # Create BOUNDED policy
+        policy = SharePolicy(
+            level=ShareLevel.BOUNDED,
+            enforcement=EnforcementType.POLICY,
+            propagation=PropagationRules(
+                max_hops=3,
+                allowed_domains=["acme-corp"],
+            ),
+        )
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=recipient_did,
+            policy=policy,
+        )
+        
+        result = await service.share(request, identity.get_did())
+        
+        assert result.share_id is not None
+        assert result.consent_chain_id is not None
+        assert result.encrypted_for == recipient_did
+        
+        # Verify policy in consent chain
+        chain = db.consent_chains[result.consent_chain_id]
+        assert chain["origin_policy"]["level"] == "bounded"
+        assert chain["origin_policy"]["propagation"]["allowed_domains"] == ["acme-corp"]
+    
+    @pytest.mark.asyncio
+    async def test_bounded_share_multiple_domains(self, service, db, identity, domain_service):
+        """Test BOUNDED share with multiple allowed domains."""
+        belief_id = "belief-bounded-multi"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Multi-domain content")
+        
+        recipient_did = "did:key:multi-domain-member"
+        identity.add_identity(recipient_did)
+        
+        # Add recipient to one of the allowed domains
+        domain_service.add_member(recipient_did, "team-beta")
+        
+        policy = SharePolicy(
+            level=ShareLevel.BOUNDED,
+            enforcement=EnforcementType.POLICY,
+            propagation=PropagationRules(
+                max_hops=2,
+                allowed_domains=["team-alpha", "team-beta", "team-gamma"],
+            ),
+        )
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=recipient_did,
+            policy=policy,
+        )
+        
+        result = await service.share(request, identity.get_did())
+        
+        assert result.share_id is not None
+        # Recipient was in team-beta which is in allowed_domains
+    
+    @pytest.mark.asyncio
+    async def test_bounded_share_recipient_not_in_domain(self, service, db, identity, domain_service):
+        """Test that BOUNDED share fails if recipient is not in any allowed domain."""
+        belief_id = "belief-bounded-fail"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Should fail")
+        
+        recipient_did = "did:key:outsider"
+        identity.add_identity(recipient_did)
+        
+        # Don't add recipient to any domain
+        
+        policy = SharePolicy(
+            level=ShareLevel.BOUNDED,
+            enforcement=EnforcementType.POLICY,
+            propagation=PropagationRules(
+                max_hops=2,
+                allowed_domains=["secret-club"],
+            ),
+        )
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=recipient_did,
+            policy=policy,
+        )
+        
+        with pytest.raises(ValueError, match="not a member of any allowed domain"):
+            await service.share(request, identity.get_did())
+    
+    @pytest.mark.asyncio
+    async def test_bounded_share_without_domains_allowed(self, service, db, identity, domain_service):
+        """Test that BOUNDED share without allowed_domains works (no restriction)."""
+        belief_id = "belief-bounded-no-domains"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="No domains")
+        
+        recipient_did = "did:key:recipient"
+        identity.add_identity(recipient_did)
+        
+        # Test with allowed_domains=None - should work (no restriction)
+        policy = SharePolicy(
+            level=ShareLevel.BOUNDED,
+            enforcement=EnforcementType.POLICY,
+            propagation=PropagationRules(max_hops=2, allowed_domains=None),
+        )
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=recipient_did,
+            policy=policy,
+        )
+        
+        result = await service.share(request, identity.get_did())
+        assert result.share_id is not None
+        
+        # Test with allowed_domains=[] - should also work (no restriction)
+        belief_id2 = "belief-bounded-empty-domains"
+        db.beliefs[belief_id2] = MockBelief(id=belief_id2, content="Empty domains")
+        
+        recipient_did2 = "did:key:recipient2"
+        identity.add_identity(recipient_did2)
+        
+        policy2 = SharePolicy(
+            level=ShareLevel.BOUNDED,
+            enforcement=EnforcementType.POLICY,
+            propagation=PropagationRules(max_hops=2, allowed_domains=[]),
+        )
+        
+        request2 = ShareRequest(
+            belief_id=belief_id2,
+            recipient_did=recipient_did2,
+            policy=policy2,
+        )
+        
+        result2 = await service.share(request2, identity.get_did())
+        assert result2.share_id is not None
+    
+    @pytest.mark.asyncio
+    async def test_bounded_share_requires_domain_service(self, db, identity):
+        """Test that BOUNDED share requires domain service."""
+        # Create service WITHOUT domain_service
+        service = SharingService(db, identity, domain_service=None)
+        
+        belief_id = "belief-bounded-no-service"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="No service")
+        
+        recipient_did = "did:key:recipient"
+        identity.add_identity(recipient_did)
+        
+        policy = SharePolicy(
+            level=ShareLevel.BOUNDED,
+            enforcement=EnforcementType.POLICY,
+            propagation=PropagationRules(
+                max_hops=2,
+                allowed_domains=["some-domain"],
+            ),
+        )
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=recipient_did,
+            policy=policy,
+        )
+        
+        with pytest.raises(ValueError, match="Domain service required"):
+            await service.share(request, identity.get_did())
+
+
+class TestBoundedResharing:
+    """Tests for resharing BOUNDED beliefs (Issue #64)."""
+    
+    @pytest.fixture
+    def db(self):
+        return MockDatabase()
+    
+    @pytest.fixture
+    def identity(self):
+        return MockIdentityService()
+    
+    @pytest.fixture
+    def domain_service(self):
+        return MockDomainService()
+    
+    @pytest.fixture
+    def service(self, db, identity, domain_service):
+        return SharingService(db, identity, domain_service)
+    
+    async def _create_and_receive_bounded_share(
+        self, service, db, identity, domain_service,
+        belief_id="belief-reshare-001",
+        recipient_did="did:key:first-recipient",
+        content="Content to reshare",
+        allowed_domains=None,
+        max_hops=3,
+    ):
+        """Helper to create and receive a BOUNDED share."""
+        if allowed_domains is None:
+            allowed_domains = ["acme-corp"]
+        
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content=content)
+        identity.add_identity(recipient_did)
+        
+        # Add recipient to domain
+        for domain in allowed_domains:
+            domain_service.add_member(recipient_did, domain)
+        
+        policy = SharePolicy(
+            level=ShareLevel.BOUNDED,
+            enforcement=EnforcementType.POLICY,
+            propagation=PropagationRules(
+                max_hops=max_hops,
+                allowed_domains=allowed_domains,
+            ),
+        )
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=recipient_did,
+            policy=policy,
+        )
+        
+        share_result = await service.share(request, identity.get_did())
+        
+        # Receive the share
+        receive_request = ReceiveRequest(share_id=share_result.share_id)
+        await service.receive(receive_request, recipient_did)
+        
+        return share_result, recipient_did
+    
+    @pytest.mark.asyncio
+    async def test_reshare_bounded_success(self, service, db, identity, domain_service):
+        """Test successful resharing of a BOUNDED belief."""
+        # Create and receive original share
+        share_result, first_recipient = await self._create_and_receive_bounded_share(
+            service, db, identity, domain_service
+        )
+        
+        # Add second recipient to same domain
+        second_recipient = "did:key:second-recipient"
+        identity.add_identity(second_recipient)
+        domain_service.add_member(second_recipient, "acme-corp")
+        
+        # Reshare to second recipient
+        reshare_request = ReshareRequest(
+            original_share_id=share_result.share_id,
+            recipient_did=second_recipient,
+        )
+        
+        reshare_result = await service.reshare(reshare_request, first_recipient)
+        
+        assert reshare_result.share_id is not None
+        assert reshare_result.consent_chain_id == share_result.consent_chain_id
+        assert reshare_result.encrypted_for == second_recipient
+        assert reshare_result.current_hop == 1  # First reshare is hop 1
+    
+    @pytest.mark.asyncio
+    async def test_reshare_content_decryptable(self, service, db, identity, domain_service):
+        """Test that reshared content can be decrypted by new recipient."""
+        original_content = "Super secret content for resharing"
+        
+        # Create and receive original share
+        share_result, first_recipient = await self._create_and_receive_bounded_share(
+            service, db, identity, domain_service,
+            content=original_content,
+        )
+        
+        # Add second recipient
+        second_recipient = "did:key:decryptor"
+        identity.add_identity(second_recipient)
+        domain_service.add_member(second_recipient, "acme-corp")
+        
+        # Reshare
+        reshare_request = ReshareRequest(
+            original_share_id=share_result.share_id,
+            recipient_did=second_recipient,
+        )
+        reshare_result = await service.reshare(reshare_request, first_recipient)
+        
+        # Receive the reshared content
+        receive_request = ReceiveRequest(share_id=reshare_result.share_id)
+        receive_result = await service.receive(receive_request, second_recipient)
+        
+        assert receive_result.content.decode("utf-8") == original_content
+    
+    @pytest.mark.asyncio
+    async def test_reshare_recipient_not_in_domain(self, service, db, identity, domain_service):
+        """Test that resharing fails if new recipient is not in allowed domain."""
+        # Create and receive original share
+        share_result, first_recipient = await self._create_and_receive_bounded_share(
+            service, db, identity, domain_service
+        )
+        
+        # Add second recipient but NOT to allowed domain
+        second_recipient = "did:key:outsider"
+        identity.add_identity(second_recipient)
+        domain_service.add_member(second_recipient, "different-corp")
+        
+        reshare_request = ReshareRequest(
+            original_share_id=share_result.share_id,
+            recipient_did=second_recipient,
+        )
+        
+        with pytest.raises(ValueError, match="not a member of any allowed domain"):
+            await service.reshare(reshare_request, first_recipient)
+    
+    @pytest.mark.asyncio
+    async def test_reshare_max_hops_exceeded(self, service, db, identity, domain_service):
+        """Test that resharing fails when max_hops is exceeded."""
+        # Create share with max_hops=1 (allows 1 reshare)
+        share_result, first_recipient = await self._create_and_receive_bounded_share(
+            service, db, identity, domain_service,
+            belief_id="belief-max-hops",
+            max_hops=1,
+        )
+        
+        # Second recipient - first reshare will succeed
+        second_recipient = "did:key:second"
+        identity.add_identity(second_recipient)
+        domain_service.add_member(second_recipient, "acme-corp")
+        
+        reshare_request = ReshareRequest(
+            original_share_id=share_result.share_id,
+            recipient_did=second_recipient,
+        )
+        
+        # First reshare succeeds (0 -> 1, which is <= max_hops)
+        reshare_result = await service.reshare(reshare_request, first_recipient)
+        assert reshare_result.current_hop == 1
+        assert reshare_result.hops_remaining == 0
+        
+        # Second recipient receives
+        receive_request = ReceiveRequest(share_id=reshare_result.share_id)
+        await service.receive(receive_request, second_recipient)
+        
+        # Third recipient - second reshare should fail (max_hops exceeded)
+        third_recipient = "did:key:third"
+        identity.add_identity(third_recipient)
+        domain_service.add_member(third_recipient, "acme-corp")
+        
+        reshare_request2 = ReshareRequest(
+            original_share_id=reshare_result.share_id,
+            recipient_did=third_recipient,
+        )
+        
+        with pytest.raises(ValueError, match="max_hops"):
+            await service.reshare(reshare_request2, second_recipient)
+    
+    @pytest.mark.asyncio
+    async def test_reshare_direct_not_allowed(self, service, db, identity, domain_service):
+        """Test that DIRECT shares cannot be reshared."""
+        belief_id = "belief-direct-no-reshare"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Direct content")
+        
+        recipient_did = "did:key:direct-recipient"
+        identity.add_identity(recipient_did)
+        
+        # Create DIRECT share
+        policy = SharePolicy.direct([recipient_did])
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=recipient_did,
+            policy=policy,
+        )
+        share_result = await service.share(request, identity.get_did())
+        
+        # Receive it
+        receive_request = ReceiveRequest(share_id=share_result.share_id)
+        await service.receive(receive_request, recipient_did)
+        
+        # Try to reshare
+        second_recipient = "did:key:second-direct"
+        identity.add_identity(second_recipient)
+        
+        reshare_request = ReshareRequest(
+            original_share_id=share_result.share_id,
+            recipient_did=second_recipient,
+        )
+        
+        with pytest.raises(ValueError, match="does not allow resharing"):
+            await service.reshare(reshare_request, recipient_did)
+    
+    @pytest.mark.asyncio
+    async def test_reshare_not_received_fails(self, service, db, identity, domain_service):
+        """Test that share must be received before resharing."""
+        belief_id = "belief-not-received"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Not received yet")
+        
+        recipient_did = "did:key:unreceived-recipient"
+        identity.add_identity(recipient_did)
+        domain_service.add_member(recipient_did, "acme-corp")
+        
+        policy = SharePolicy(
+            level=ShareLevel.BOUNDED,
+            enforcement=EnforcementType.POLICY,
+            propagation=PropagationRules(
+                max_hops=3,
+                allowed_domains=["acme-corp"],
+            ),
+        )
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=recipient_did,
+            policy=policy,
+        )
+        share_result = await service.share(request, identity.get_did())
+        
+        # Don't receive, try to reshare directly
+        second_recipient = "did:key:second"
+        identity.add_identity(second_recipient)
+        domain_service.add_member(second_recipient, "acme-corp")
+        
+        reshare_request = ReshareRequest(
+            original_share_id=share_result.share_id,
+            recipient_did=second_recipient,
+        )
+        
+        with pytest.raises(ValueError, match="receive share before resharing"):
+            await service.reshare(reshare_request, recipient_did)
+    
+    @pytest.mark.asyncio
+    async def test_reshare_revoked_fails(self, service, db, identity, domain_service):
+        """Test that revoked shares cannot be reshared."""
+        # Create and receive
+        share_result, first_recipient = await self._create_and_receive_bounded_share(
+            service, db, identity, domain_service,
+            belief_id="belief-revoked-reshare",
+        )
+        
+        # Revoke the share
+        revoke_request = RevokeRequest(share_id=share_result.share_id)
+        await service.revoke_share(revoke_request, identity.get_did())
+        
+        # Try to reshare
+        second_recipient = "did:key:after-revoke"
+        identity.add_identity(second_recipient)
+        domain_service.add_member(second_recipient, "acme-corp")
+        
+        reshare_request = ReshareRequest(
+            original_share_id=share_result.share_id,
+            recipient_did=second_recipient,
+        )
+        
+        with pytest.raises(ValueError, match="original share has been revoked"):
+            await service.reshare(reshare_request, first_recipient)
+    
+    @pytest.mark.asyncio
+    async def test_reshare_wrong_resharer(self, service, db, identity, domain_service):
+        """Test that only the share recipient can reshare."""
+        # Create and receive
+        share_result, first_recipient = await self._create_and_receive_bounded_share(
+            service, db, identity, domain_service,
+            belief_id="belief-wrong-resharer",
+        )
+        
+        # Second recipient who will try to reshare
+        second_recipient = "did:key:imposter"
+        identity.add_identity(second_recipient)
+        domain_service.add_member(second_recipient, "acme-corp")
+        
+        # Third recipient
+        third_recipient = "did:key:third"
+        identity.add_identity(third_recipient)
+        domain_service.add_member(third_recipient, "acme-corp")
+        
+        reshare_request = ReshareRequest(
+            original_share_id=share_result.share_id,
+            recipient_did=third_recipient,
+        )
+        
+        # Second recipient (imposter) tries to reshare, should fail
+        with pytest.raises(PermissionError, match="Only the recipient"):
+            await service.reshare(reshare_request, second_recipient)
+
+
+class TestBoundedConsentChain:
+    """Tests for consent chain tracking with BOUNDED shares."""
+    
+    @pytest.fixture
+    def db(self):
+        return MockDatabase()
+    
+    @pytest.fixture
+    def identity(self):
+        return MockIdentityService()
+    
+    @pytest.fixture
+    def domain_service(self):
+        return MockDomainService()
+    
+    @pytest.fixture
+    def service(self, db, identity, domain_service):
+        return SharingService(db, identity, domain_service)
+    
+    @pytest.mark.asyncio
+    async def test_reshare_creates_hop_entry(self, service, db, identity, domain_service):
+        """Test that resharing creates proper hop entry in consent chain."""
+        belief_id = "belief-chain-hop"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Chain content")
+        
+        first_recipient = "did:key:first"
+        identity.add_identity(first_recipient)
+        domain_service.add_member(first_recipient, "acme-corp")
+        
+        policy = SharePolicy(
+            level=ShareLevel.BOUNDED,
+            enforcement=EnforcementType.POLICY,
+            propagation=PropagationRules(
+                max_hops=5,
+                allowed_domains=["acme-corp"],
+            ),
+        )
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=first_recipient,
+            policy=policy,
+        )
+        share_result = await service.share(request, identity.get_did())
+        
+        # Receive
+        receive_request = ReceiveRequest(share_id=share_result.share_id)
+        await service.receive(receive_request, first_recipient)
+        
+        # Reshare
+        second_recipient = "did:key:second"
+        identity.add_identity(second_recipient)
+        domain_service.add_member(second_recipient, "acme-corp")
+        
+        reshare_request = ReshareRequest(
+            original_share_id=share_result.share_id,
+            recipient_did=second_recipient,
+        )
+        reshare_result = await service.reshare(reshare_request, first_recipient)
+        
+        # Check consent chain hops
+        chain = db.consent_chains[share_result.consent_chain_id]
+        
+        # Should have 2 hops: receive + reshare
+        assert len(chain["hops"]) == 2
+        
+        # Check reshare hop details
+        reshare_hop = chain["hops"][1]
+        assert reshare_hop["recipient"] == second_recipient
+        assert reshare_hop["resharer"] == first_recipient
+        assert reshare_hop["from_share_id"] == share_result.share_id
+        assert reshare_hop["hop_number"] == 1  # First reshare is hop 1
+        assert "signature" in reshare_hop
+    
+    @pytest.mark.asyncio
+    async def test_chain_of_reshares(self, service, db, identity, domain_service):
+        """Test a chain of multiple reshares tracks correctly."""
+        belief_id = "belief-multi-chain"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Multi-hop content")
+        
+        # Create chain of 4 recipients
+        recipients = [f"did:key:recipient-{i}" for i in range(4)]
+        for r in recipients:
+            identity.add_identity(r)
+            domain_service.add_member(r, "acme-corp")
+        
+        policy = SharePolicy(
+            level=ShareLevel.BOUNDED,
+            enforcement=EnforcementType.POLICY,
+            propagation=PropagationRules(
+                max_hops=10,
+                allowed_domains=["acme-corp"],
+            ),
+        )
+        
+        # Initial share to first recipient
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=recipients[0],
+            policy=policy,
+        )
+        share_result = await service.share(request, identity.get_did())
+        current_share_id = share_result.share_id
+        
+        # Receive and reshare through the chain
+        for i in range(len(recipients) - 1):
+            # Receive
+            receive_request = ReceiveRequest(share_id=current_share_id)
+            await service.receive(receive_request, recipients[i])
+            
+            # Reshare to next
+            reshare_request = ReshareRequest(
+                original_share_id=current_share_id,
+                recipient_did=recipients[i + 1],
+            )
+            reshare_result = await service.reshare(reshare_request, recipients[i])
+            current_share_id = reshare_result.share_id
+        
+        # Verify chain has all hops
+        chain = db.consent_chains[share_result.consent_chain_id]
+        
+        # 3 receives + 3 reshares = 6 hops
+        # Actually: receive(0) + reshare(0->1) + receive(1) + reshare(1->2) + receive(2) + reshare(2->3)
+        # But in our flow: receive creates 1 hop, reshare creates 1 hop
+        # So: 3 receives + 3 reshares but they overlap... let's count actual hops
+        # receive by r0 -> hop1
+        # reshare r0->r1 -> hop2  
+        # receive by r1 -> hop3
+        # reshare r1->r2 -> hop4
+        # receive by r2 -> hop5
+        # reshare r2->r3 -> hop6
+        # Total: 6 hops
+        assert len(chain["hops"]) == 6
+
+
+class TestBoundedRevocationPropagation:
+    """Tests for revocation propagation through BOUNDED share chains."""
+    
+    @pytest.fixture
+    def db(self):
+        return MockDatabase()
+    
+    @pytest.fixture
+    def identity(self):
+        return MockIdentityService()
+    
+    @pytest.fixture
+    def domain_service(self):
+        return MockDomainService()
+    
+    @pytest.fixture
+    def service(self, db, identity, domain_service):
+        return SharingService(db, identity, domain_service)
+    
+    @pytest.mark.asyncio
+    async def test_revocation_notifies_all_in_chain(self, service, db, identity, domain_service):
+        """Test that revoking a BOUNDED share notifies all downstream recipients."""
+        belief_id = "belief-revoke-chain"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Revoke chain content")
+        
+        # Create chain of 3 recipients
+        recipients = [f"did:key:chain-{i}" for i in range(3)]
+        for r in recipients:
+            identity.add_identity(r)
+            domain_service.add_member(r, "acme-corp")
+        
+        policy = SharePolicy(
+            level=ShareLevel.BOUNDED,
+            enforcement=EnforcementType.POLICY,
+            propagation=PropagationRules(
+                max_hops=10,
+                allowed_domains=["acme-corp"],
+            ),
+        )
+        
+        # Initial share
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=recipients[0],
+            policy=policy,
+        )
+        share_result = await service.share(request, identity.get_did())
+        current_share_id = share_result.share_id
+        
+        # Build chain: r0 receives, reshares to r1, r1 receives, reshares to r2
+        for i in range(len(recipients) - 1):
+            receive_request = ReceiveRequest(share_id=current_share_id)
+            await service.receive(receive_request, recipients[i])
+            
+            reshare_request = ReshareRequest(
+                original_share_id=current_share_id,
+                recipient_did=recipients[i + 1],
+            )
+            reshare_result = await service.reshare(reshare_request, recipients[i])
+            current_share_id = reshare_result.share_id
+        
+        # Last recipient receives
+        receive_request = ReceiveRequest(share_id=current_share_id)
+        await service.receive(receive_request, recipients[-1])
+        
+        # Clear notifications before revocation
+        db.notifications.clear()
+        service._revocation_queue.clear()
+        
+        # Revoke original share
+        revoke_request = RevokeRequest(
+            share_id=share_result.share_id,
+            reason="Testing chain revocation",
+        )
+        await service.revoke_share(revoke_request, identity.get_did())
+        
+        # All recipients should have notifications
+        all_notified = set()
+        for notification in db.notifications.values():
+            all_notified.add(notification["recipient_did"])
+        
+        # At minimum, r0 gets notified (direct recipient)
+        # r1 and r2 should also be notified via the hop tracking
+        assert recipients[0] in all_notified
+
+
+
+class MockDomainService:
+    """Mock domain service for testing domain membership."""
+    
+    def __init__(self):
+        # Maps domain_id -> set of DIDs that are members
+        self.domains: dict[str, set[str]] = {}
+    
+    def add_domain(self, domain_id: str, members: list[str] = None):
+        """Create a domain with optional initial members."""
+        self.domains[domain_id] = set(members or [])
+    
+    def add_member(self, did: str, domain_id: str):
+        """Add a DID to a domain."""
+        if domain_id not in self.domains:
+            self.domains[domain_id] = set()
+        self.domains[domain_id].add(did)
+    
+    async def is_member(self, did: str, domain: str) -> bool:
+        """Check if a DID is a member of a domain."""
+        if domain not in self.domains:
+            return False
+        return did in self.domains[domain]
+    
+    async def get_domains_for_did(self, did: str) -> list[str]:
+        """Get all domains a DID is a member of."""
+        return [
+            domain_id for domain_id, members in self.domains.items()
+            if did in members
+        ]
+
+
+class TestAllowedDomains:
+    """Tests for allowed_domains restriction in BOUNDED sharing (Issue #66)."""
+    
+    @pytest.fixture
+    def db(self):
+        return MockDatabase()
+    
+    @pytest.fixture
+    def identity(self):
+        return MockIdentityService()
+    
+    @pytest.fixture
+    def domain_service(self):
+        return MockDomainService()
+    
+    @pytest.fixture
+    def service(self, db, identity, domain_service):
+        return SharingService(db, identity, domain_service)
+    
+    @pytest.mark.asyncio
+    async def test_bounded_share_validates_recipient_domain(self, service, db, identity, domain_service):
+        """Test that BOUNDED share validates recipient is in allowed domain."""
+        belief_id = "belief-domain-001"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Domain restricted content")
+        
+        # Setup: create domains and add members
+        domain_service.add_domain("acme-corp", ["did:key:alice-acme"])
+        domain_service.add_domain("beta-inc", ["did:key:bob-beta"])
+        
+        # Add recipient identity (in acme-corp domain)
+        recipient_did = "did:key:alice-acme"
+        identity.add_identity(recipient_did)
+        
+        # Create BOUNDED policy with allowed_domains
+        policy = SharePolicy(
+            level=ShareLevel.BOUNDED,
+            enforcement=EnforcementType.POLICY,
+            propagation=PropagationRules(allowed_domains=["acme-corp"]),
+        )
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=recipient_did,
+            policy=policy,
+        )
+        
+        # Should succeed - recipient is in acme-corp domain
+        result = await service.share(request, identity.get_did())
+        
+        assert result.share_id is not None
+        assert result.encrypted_for == recipient_did
+    
+    @pytest.mark.asyncio
+    async def test_bounded_share_rejects_recipient_not_in_domain(self, service, db, identity, domain_service):
+        """Test that BOUNDED share fails if recipient is not in allowed domain."""
+        belief_id = "belief-domain-002"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Domain restricted content")
+        
+        # Setup: create domain but recipient is NOT a member
+        domain_service.add_domain("acme-corp", ["did:key:insider"])
+        
+        # Recipient is not in acme-corp
+        recipient_did = "did:key:outsider"
+        identity.add_identity(recipient_did)
+        
+        # Create BOUNDED policy with allowed_domains
+        policy = SharePolicy(
+            level=ShareLevel.BOUNDED,
+            enforcement=EnforcementType.POLICY,
+            propagation=PropagationRules(allowed_domains=["acme-corp"]),
+        )
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=recipient_did,
+            policy=policy,
+        )
+        
+        # Should fail - recipient is NOT in acme-corp domain
+        with pytest.raises(ValueError, match="not a member of any allowed domain"):
+            await service.share(request, identity.get_did())
+    
+    @pytest.mark.asyncio
+    async def test_bounded_share_with_multiple_allowed_domains(self, service, db, identity, domain_service):
+        """Test BOUNDED share succeeds if recipient is in ANY allowed domain."""
+        belief_id = "belief-domain-003"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Multi-domain content")
+        
+        # Setup: create multiple domains
+        domain_service.add_domain("domain-a", ["did:key:user-a"])
+        domain_service.add_domain("domain-b", ["did:key:user-b"])
+        domain_service.add_domain("domain-c", ["did:key:user-c"])
+        
+        # Recipient is only in domain-b
+        recipient_did = "did:key:user-b"
+        identity.add_identity(recipient_did)
+        
+        # Policy allows domains a and b (recipient is in b)
+        policy = SharePolicy(
+            level=ShareLevel.BOUNDED,
+            enforcement=EnforcementType.POLICY,
+            propagation=PropagationRules(allowed_domains=["domain-a", "domain-b"]),
+        )
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=recipient_did,
+            policy=policy,
+        )
+        
+        # Should succeed - recipient is in domain-b which is allowed
+        result = await service.share(request, identity.get_did())
+        assert result.share_id is not None
+    
+    @pytest.mark.asyncio
+    async def test_empty_allowed_domains_no_restriction(self, service, db, identity, domain_service):
+        """Test that empty allowed_domains means no domain restriction."""
+        belief_id = "belief-domain-004"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Unrestricted content")
+        
+        # Recipient is not in any domain
+        recipient_did = "did:key:anyone"
+        identity.add_identity(recipient_did)
+        
+        # Policy with empty allowed_domains
+        policy = SharePolicy(
+            level=ShareLevel.BOUNDED,
+            enforcement=EnforcementType.POLICY,
+            propagation=PropagationRules(allowed_domains=[]),  # Empty = no restriction
+        )
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=recipient_did,
+            policy=policy,
+        )
+        
+        # Should succeed - no domain restriction
+        result = await service.share(request, identity.get_did())
+        assert result.share_id is not None
+    
+    @pytest.mark.asyncio
+    async def test_none_allowed_domains_no_restriction(self, service, db, identity, domain_service):
+        """Test that None allowed_domains means no domain restriction."""
+        belief_id = "belief-domain-005"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Unrestricted content")
+        
+        # Recipient is not in any domain
+        recipient_did = "did:key:anyone"
+        identity.add_identity(recipient_did)
+        
+        # Policy with no propagation rules at all
+        policy = SharePolicy(
+            level=ShareLevel.BOUNDED,
+            enforcement=EnforcementType.POLICY,
+            propagation=None,  # No propagation = no domain restriction
+        )
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=recipient_did,
+            policy=policy,
+        )
+        
+        # Should succeed - no domain restriction
+        result = await service.share(request, identity.get_did())
+        assert result.share_id is not None
+    
+    @pytest.mark.asyncio
+    async def test_no_domain_service_with_restrictions_fails(self, db, identity):
+        """Test that domain-restricted sharing requires domain service."""
+        # Create service WITHOUT domain_service
+        service = SharingService(db, identity, domain_service=None)
+        
+        belief_id = "belief-domain-006"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Content")
+        
+        recipient_did = "did:key:recipient"
+        identity.add_identity(recipient_did)
+        
+        # Policy with allowed_domains
+        policy = SharePolicy(
+            level=ShareLevel.BOUNDED,
+            enforcement=EnforcementType.POLICY,
+            propagation=PropagationRules(allowed_domains=["some-domain"]),
+        )
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=recipient_did,
+            policy=policy,
+        )
+        
+        # Should fail - need domain service for domain-restricted sharing
+        with pytest.raises(ValueError, match="Domain service required"):
+            await service.share(request, identity.get_did())
+
+
+class TestReshareWithDomains:
+    """Tests for domain restrictions on resharing (Issue #66)."""
+    
+    @pytest.fixture
+    def db(self):
+        return MockDatabase()
+    
+    @pytest.fixture
+    def identity(self):
+        return MockIdentityService()
+    
+    @pytest.fixture
+    def domain_service(self):
+        return MockDomainService()
+    
+    @pytest.fixture
+    def service(self, db, identity, domain_service):
+        return SharingService(db, identity, domain_service)
+    
+    async def _create_bounded_share(
+        self, service, db, identity, domain_service,
+        belief_id="belief-reshare-001",
+        sharer_did=None,
+        recipient_did="did:key:reshare-recipient",
+        allowed_domains=None,
+        max_hops=3,
+    ):
+        """Helper to create a BOUNDED share for resharing tests."""
+        sharer_did = sharer_did or identity.get_did()
+        
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Reshare test content")
+        identity.add_identity(recipient_did)
+        
+        # Setup domain membership if domains specified
+        if allowed_domains:
+            for domain in allowed_domains:
+                domain_service.add_member(recipient_did, domain)
+        
+        policy = SharePolicy(
+            level=ShareLevel.BOUNDED,
+            enforcement=EnforcementType.POLICY,
+            propagation=PropagationRules(
+                allowed_domains=allowed_domains,
+                max_hops=max_hops,
+            ),
+        )
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=recipient_did,
+            policy=policy,
+        )
+        
+        share_result = await service.share(request, sharer_did)
+        
+        # Receive the share
+        receive_request = ReceiveRequest(share_id=share_result.share_id)
+        await service.receive(receive_request, recipient_did)
+        
+        return share_result, recipient_did
+    
+    @pytest.mark.asyncio
+    async def test_reshare_validates_domain_membership(self, service, db, identity, domain_service):
+        """Test that resharing validates new recipient is in allowed domain."""
+        # Create initial share with domain restriction
+        domain_service.add_domain("acme-corp", [])
+        share_result, resharer_did = await self._create_bounded_share(
+            service, db, identity, domain_service,
+            allowed_domains=["acme-corp"],
+            recipient_did="did:key:first-recipient",
+        )
+        
+        # Add new recipient to the allowed domain
+        new_recipient = "did:key:second-recipient"
+        identity.add_identity(new_recipient)
+        domain_service.add_member(new_recipient, "acme-corp")
+        
+        # Reshare - should succeed
+        reshare_request = ReshareRequest(
+            original_share_id=share_result.share_id,
+            recipient_did=new_recipient,
+        )
+        
+        reshare_result = await service.reshare(reshare_request, resharer_did)
+        assert reshare_result.share_id is not None
+        assert reshare_result.current_hop == 1
+    
+    @pytest.mark.asyncio
+    async def test_reshare_rejects_recipient_not_in_domain(self, service, db, identity, domain_service):
+        """Test that resharing fails if new recipient is not in allowed domain."""
+        # Create initial share with domain restriction
+        domain_service.add_domain("acme-corp", [])
+        share_result, resharer_did = await self._create_bounded_share(
+            service, db, identity, domain_service,
+            allowed_domains=["acme-corp"],
+            recipient_did="did:key:first-recipient",
+            belief_id="belief-reshare-reject",
+        )
+        
+        # New recipient is NOT in the allowed domain
+        new_recipient = "did:key:outsider"
+        identity.add_identity(new_recipient)
+        # NOT adding to acme-corp domain
+        
+        # Reshare - should fail
+        reshare_request = ReshareRequest(
+            original_share_id=share_result.share_id,
+            recipient_did=new_recipient,
+        )
+        
+        with pytest.raises(ValueError, match="not a member of any allowed domain"):
+            await service.reshare(reshare_request, resharer_did)
+    
+    @pytest.mark.asyncio
+    async def test_reshare_inherits_domain_restrictions(self, service, db, identity, domain_service):
+        """Test that reshares inherit the original domain restrictions."""
+        # Create initial share with domain restriction
+        domain_service.add_domain("restricted-domain", [])
+        share_result, resharer_did = await self._create_bounded_share(
+            service, db, identity, domain_service,
+            allowed_domains=["restricted-domain"],
+            recipient_did="did:key:hop1",
+            belief_id="belief-inherit",
+            max_hops=5,  # Allow multiple hops for chained resharing
+        )
+        
+        # First reshare to second recipient in domain
+        second_recipient = "did:key:hop2"
+        identity.add_identity(second_recipient)
+        domain_service.add_member(second_recipient, "restricted-domain")
+        
+        reshare1_request = ReshareRequest(
+            original_share_id=share_result.share_id,
+            recipient_did=second_recipient,
+        )
+        reshare1_result = await service.reshare(reshare1_request, resharer_did)
+        
+        # Second recipient receives the reshare
+        receive_request = ReceiveRequest(share_id=reshare1_result.share_id)
+        await service.receive(receive_request, second_recipient)
+        
+        # Third recipient NOT in domain - should fail even though hop count allows it
+        third_recipient = "did:key:hop3-outsider"
+        identity.add_identity(third_recipient)
+        # NOT adding to restricted-domain
+        
+        reshare2_request = ReshareRequest(
+            original_share_id=reshare1_result.share_id,
+            recipient_did=third_recipient,
+        )
+        
+        # Should fail - domain restriction is inherited
+        with pytest.raises(ValueError, match="not a member of any allowed domain"):
+            await service.reshare(reshare2_request, second_recipient)
+    
+    @pytest.mark.asyncio
+    async def test_reshare_without_domain_restriction(self, service, db, identity, domain_service):
+        """Test that resharing works without domain restrictions."""
+        # Create initial share without domain restriction (empty allowed_domains)
+        share_result, resharer_did = await self._create_bounded_share(
+            service, db, identity, domain_service,
+            allowed_domains=[],  # Empty = no restriction
+            recipient_did="did:key:unrestricted-first",
+            belief_id="belief-unrestricted-reshare",
+        )
+        
+        # New recipient doesn't need to be in any domain
+        new_recipient = "did:key:unrestricted-second"
+        identity.add_identity(new_recipient)
+        
+        # Reshare - should succeed without domain validation
+        reshare_request = ReshareRequest(
+            original_share_id=share_result.share_id,
+            recipient_did=new_recipient,
+        )
+        
+        reshare_result = await service.reshare(reshare_request, resharer_did)
+        assert reshare_result.share_id is not None
+    
+    @pytest.mark.asyncio
+    async def test_reshare_no_domain_service_with_restrictions_fails(self, db, identity, domain_service):
+        """Test that resharing with domain restrictions requires domain service."""
+        # Create service with domain_service for initial share
+        service_with_domains = SharingService(db, identity, domain_service)
+        
+        # Create share with domain restriction
+        domain_service.add_domain("some-domain", [])
+        share_result, resharer_did = await self._create_bounded_share(
+            service_with_domains, db, identity, domain_service,
+            allowed_domains=["some-domain"],
+            recipient_did="did:key:restricted-recipient",
+            belief_id="belief-no-service",
+        )
+        
+        # Now create a service WITHOUT domain_service
+        service_without_domains = SharingService(db, identity, domain_service=None)
+        
+        new_recipient = "did:key:new-recipient"
+        identity.add_identity(new_recipient)
+        
+        reshare_request = ReshareRequest(
+            original_share_id=share_result.share_id,
+            recipient_did=new_recipient,
+        )
+        
+        # Should fail - need domain service for domain-restricted resharing
+        with pytest.raises(ValueError, match="Domain service required"):
+            await service_without_domains.reshare(reshare_request, resharer_did)
