@@ -12,6 +12,8 @@ Key components:
 - sync: Belief synchronization between nodes
 - trust: Trust computation and management
 - privacy: Differential privacy for aggregation (coming in Phase 3)
+- peers: In-memory peer storage (MVP)
+- server: Lightweight federation server (MVP)
 """
 
 from .models import (
@@ -126,6 +128,20 @@ from .trust import (
     PREFERENCE_MULTIPLIERS,
 )
 
+from .trust_propagation import (
+    TrustPropagation,
+    TrustCache,
+    TransitiveTrustResult,
+    TrustEdge,
+    get_trust_propagation,
+    compute_transitive_trust,
+    invalidate_trust_cache,
+    weight_query_results_by_trust,
+    DEFAULT_DECAY_FACTOR,
+    DEFAULT_MAX_HOPS,
+    DEFAULT_CACHE_TTL,
+)
+
 from .tools import (
     FEDERATION_TOOLS,
     FEDERATION_TOOL_HANDLERS,
@@ -232,6 +248,18 @@ __all__ = [
     "PHASE_TRANSITION",
     "THREAT_THRESHOLDS",
     "PREFERENCE_MULTIPLIERS",
+    # Trust Propagation
+    "TrustPropagation",
+    "TrustCache",
+    "TransitiveTrustResult",
+    "TrustEdge",
+    "get_trust_propagation",
+    "compute_transitive_trust",
+    "invalidate_trust_cache",
+    "weight_query_results_by_trust",
+    "DEFAULT_DECAY_FACTOR",
+    "DEFAULT_MAX_HOPS",
+    "DEFAULT_CACHE_TTL",
     # Tools
     "FEDERATION_TOOLS",
     "FEDERATION_TOOL_HANDLERS",
