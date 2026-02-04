@@ -19,8 +19,15 @@ from .trust import (
     TrustEdge,
     TrustEdge4D,
     TrustGraphStore,
+    TrustService,
     get_trust_graph_store,
+    get_trust_service,
     DecayModel,
+    grant_trust,
+    revoke_trust,
+    get_trust,
+    list_trusted,
+    list_trusters,
 )
 from .domains import (
     Domain,
@@ -54,12 +61,19 @@ __all__ = [
     "migrate_all_beliefs",
     "migrate_all_beliefs_sync",
     "get_share_policy_json",
-    # Trust
+    # Trust (Issue #58, #59)
     "TrustEdge",
     "TrustEdge4D",
     "TrustGraphStore",
+    "TrustService",
     "get_trust_graph_store",
+    "get_trust_service",
     "DecayModel",
+    "grant_trust",
+    "revoke_trust",
+    "get_trust",
+    "list_trusted",
+    "list_trusters",
     # Domains
     "Domain",
     "DomainMembership",

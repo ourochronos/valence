@@ -514,6 +514,7 @@ def compute_transitive_trust(
     target_did: str,
     trust_graph: dict[tuple[str, str], TrustEdge],
     max_hops: int = 3,
+    respect_delegation: bool = True,
 ) -> Optional[TrustEdge]:
     """Compute transitive trust through the graph.
     
@@ -521,11 +522,16 @@ def compute_transitive_trust(
     Judgment dimension affects how much each hop's trust recommendations
     are weighted.
     
+    Delegation policy is enforced when respect_delegation=True:
+    - Only edges with can_delegate=True participate in transitive trust
+    - delegation_depth limits how far trust can propagate
+    
     Args:
         source_did: Starting DID (the truster)
         target_did: Ending DID (the trustee)
         trust_graph: Dict mapping (source, target) to TrustEdge
         max_hops: Maximum path length to consider
+        respect_delegation: If True, only traverse delegatable edges (default True)
         
     Returns:
         Combined TrustEdge if paths exist, None otherwise
@@ -537,22 +543,30 @@ def compute_transitive_trust(
     # BFS for paths
     from collections import deque
     
-    # Queue entries: (current_did, path_of_edges)
-    queue: deque[tuple[str, list[TrustEdge]]] = deque()
+    # Queue entries: (current_did, path_of_edges, remaining_depth)
+    # remaining_depth tracks the minimum delegation_depth limit along the path
+    queue: deque[tuple[str, list[TrustEdge], int | None]] = deque()
     
-    # Find all outgoing edges from source
+    # Find all outgoing edges from source that can delegate (for transitive paths)
     for (src, tgt), edge in trust_graph.items():
         if src == source_did:
-            queue.append((tgt, [edge]))
+            if not respect_delegation or edge.can_delegate:
+                # Determine initial remaining depth
+                remaining = edge.delegation_depth if edge.delegation_depth > 0 else None
+                queue.append((tgt, [edge], remaining))
     
     found_paths: list[list[TrustEdge]] = []
     visited_at_depth: dict[str, int] = {source_did: 0}
     
     while queue:
-        current_did, path = queue.popleft()
+        current_did, path, remaining_depth = queue.popleft()
         current_depth = len(path)
         
         if current_depth > max_hops:
+            continue
+        
+        # Check delegation depth limit
+        if remaining_depth is not None and remaining_depth <= 0:
             continue
         
         # Found target
@@ -563,11 +577,32 @@ def compute_transitive_trust(
         # Explore neighbors
         for (src, tgt), edge in trust_graph.items():
             if src == current_did:
+                # Only traverse delegatable edges for intermediate hops
+                if respect_delegation and not edge.can_delegate:
+                    # But we CAN reach the target if this is the final hop
+                    if tgt == target_did:
+                        # Final hop doesn't need can_delegate on the last edge
+                        next_depth = current_depth + 1
+                        if tgt not in visited_at_depth or visited_at_depth[tgt] >= next_depth:
+                            visited_at_depth[tgt] = next_depth
+                            queue.append((tgt, path + [edge], remaining_depth))
+                    continue
+                
                 # Avoid cycles and redundant exploration
                 next_depth = current_depth + 1
                 if tgt not in visited_at_depth or visited_at_depth[tgt] >= next_depth:
                     visited_at_depth[tgt] = next_depth
-                    queue.append((tgt, path + [edge]))
+                    # Update remaining depth
+                    if remaining_depth is None:
+                        # No limit so far
+                        new_remaining = edge.delegation_depth if edge.delegation_depth > 0 else None
+                    elif edge.delegation_depth == 0:
+                        # This edge has no limit, keep existing limit
+                        new_remaining = remaining_depth - 1 if remaining_depth else None
+                    else:
+                        # Both have limits, take the more restrictive
+                        new_remaining = min(remaining_depth, edge.delegation_depth) - 1
+                    queue.append((tgt, path + [edge], new_remaining))
     
     if not found_paths:
         return None
@@ -578,8 +613,17 @@ def compute_transitive_trust(
         # Chain the edges
         result = path[0]
         for next_edge in path[1:]:
-            result = compute_delegated_trust(result, next_edge)
-        path_trusts.append(result)
+            delegated = compute_delegated_trust(result, next_edge)
+            if delegated is None:
+                # Delegation not allowed along this path
+                break
+            result = delegated
+        else:
+            # Only add if we successfully chained all edges
+            path_trusts.append(result)
+    
+    if not path_trusts:
+        return None
     
     # Combine paths: take max of each dimension (optimistic combination)
     # This represents "trust via the best available path"
@@ -625,12 +669,14 @@ class TrustGraphStore:
                 INSERT INTO trust_edges (
                     id, source_did, target_did,
                     competence, integrity, confidentiality, judgment,
-                    domain, created_at, updated_at, expires_at
+                    domain, can_delegate, delegation_depth,
+                    created_at, updated_at, expires_at
                 )
                 VALUES (
                     COALESCE(%s, gen_random_uuid()), %s, %s,
                     %s, %s, %s, %s,
-                    %s, %s, %s, %s
+                    %s, %s, %s,
+                    %s, %s, %s
                 )
                 ON CONFLICT (source_did, target_did, COALESCE(domain, ''))
                 DO UPDATE SET
@@ -638,6 +684,8 @@ class TrustGraphStore:
                     integrity = EXCLUDED.integrity,
                     confidentiality = EXCLUDED.confidentiality,
                     judgment = EXCLUDED.judgment,
+                    can_delegate = EXCLUDED.can_delegate,
+                    delegation_depth = EXCLUDED.delegation_depth,
                     updated_at = EXCLUDED.updated_at,
                     expires_at = EXCLUDED.expires_at
                 RETURNING id, created_at, updated_at
@@ -651,6 +699,8 @@ class TrustGraphStore:
                     edge.confidentiality,
                     edge.judgment,
                     edge.domain,
+                    edge.can_delegate,
+                    edge.delegation_depth,
                     edge.created_at or now,
                     now,
                     edge.expires_at,
