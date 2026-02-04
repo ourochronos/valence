@@ -27,6 +27,354 @@ pytestmark = pytest.mark.skipif(
 
 
 # ============================================================================
+# Input Sanitization Tests (Security - Issue #44)
+# ============================================================================
+
+class TestInputSanitization:
+    """Tests for subprocess command injection prevention.
+    
+    Issue #44: User input passed to subprocess must be sanitized to prevent
+    command injection attacks.
+    """
+
+    def test_sanitize_removes_null_bytes(self):
+        """Null bytes in input must be removed to prevent argument truncation."""
+        from valence.agents.matrix_bot import sanitize_for_subprocess
+        
+        malicious = "hello\x00world"
+        result = sanitize_for_subprocess(malicious, 1000, "test")
+        
+        assert "\x00" not in result
+        assert result == "helloworld"
+
+    def test_sanitize_removes_control_characters(self):
+        """Control characters must be removed except whitespace."""
+        from valence.agents.matrix_bot import sanitize_for_subprocess
+        
+        # Bell, backspace, escape, etc. should be removed
+        malicious = "hello\x07\x08\x1bworld"
+        result = sanitize_for_subprocess(malicious, 1000, "test")
+        
+        assert "\x07" not in result
+        assert "\x08" not in result
+        assert "\x1b" not in result
+        assert result == "helloworld"
+
+    def test_sanitize_preserves_normal_whitespace(self):
+        """Normal whitespace (tab, newline) should be preserved."""
+        from valence.agents.matrix_bot import sanitize_for_subprocess
+        
+        text = "hello\tworld\nfoo"
+        result = sanitize_for_subprocess(text, 1000, "test")
+        
+        assert result == "hello\tworld\nfoo"
+
+    def test_sanitize_enforces_length_limit(self):
+        """Input exceeding max length must be truncated."""
+        from valence.agents.matrix_bot import sanitize_for_subprocess
+        
+        long_text = "x" * 5000
+        result = sanitize_for_subprocess(long_text, 100, "test")
+        
+        assert len(result) == 100
+
+    def test_sanitize_handles_empty_input(self):
+        """Empty input should return empty string."""
+        from valence.agents.matrix_bot import sanitize_for_subprocess
+        
+        assert sanitize_for_subprocess("", 100, "test") == ""
+        assert sanitize_for_subprocess(None, 100, "test") == ""  # type: ignore
+
+    def test_validate_sender_accepts_valid_matrix_id(self):
+        """Valid Matrix user IDs should pass validation."""
+        from valence.agents.matrix_bot import validate_sender
+        
+        valid_ids = [
+            "@user:matrix.org",
+            "@alice:example.com",
+            "@bot_123:server.net",
+            "@user-name:host.domain.tld",
+        ]
+        
+        for user_id in valid_ids:
+            result = validate_sender(user_id)
+            assert result == user_id
+
+    def test_validate_sender_sanitizes_invalid_format(self):
+        """Invalid Matrix user IDs should be sanitized, not rejected."""
+        from valence.agents.matrix_bot import validate_sender
+        
+        # Contains shell metacharacters - should be sanitized
+        result = validate_sender("@user$(whoami):evil.com")
+        assert "$" not in result or result.count("$") == 0 or "_" in result
+
+    def test_validate_sender_rejects_empty(self):
+        """Empty sender should raise ValueError."""
+        from valence.agents.matrix_bot import validate_sender
+        
+        with pytest.raises(ValueError, match="Empty sender"):
+            validate_sender("")
+
+    def test_validate_session_id_accepts_valid(self):
+        """Valid session IDs should pass validation."""
+        from valence.agents.matrix_bot import validate_session_id
+        
+        valid_ids = [
+            "abc123",
+            "session-id-123",
+            "session_id_456",
+            "A1B2C3",
+        ]
+        
+        for session_id in valid_ids:
+            result = validate_session_id(session_id)
+            assert result == session_id
+
+    def test_validate_session_id_accepts_none(self):
+        """None session ID should return None."""
+        from valence.agents.matrix_bot import validate_session_id
+        
+        assert validate_session_id(None) is None
+
+    def test_validate_session_id_rejects_shell_injection(self):
+        """Session ID with shell metacharacters must be rejected."""
+        from valence.agents.matrix_bot import validate_session_id
+        
+        malicious_ids = [
+            "session; rm -rf /",
+            "session$(whoami)",
+            "session`id`",
+            "session|cat /etc/passwd",
+            "session && echo pwned",
+        ]
+        
+        for malicious in malicious_ids:
+            with pytest.raises(ValueError, match="Invalid session ID"):
+                validate_session_id(malicious)
+
+    def test_sanitize_message_removes_dangerous_chars(self):
+        """Messages with dangerous characters should be sanitized."""
+        from valence.agents.matrix_bot import sanitize_message
+        
+        # Null bytes should be removed
+        result = sanitize_message("hello\x00world")
+        assert "\x00" not in result
+
+    def test_sanitize_message_enforces_max_length(self):
+        """Messages exceeding MAX_MESSAGE_LENGTH should be truncated."""
+        from valence.agents.matrix_bot import sanitize_message, MAX_MESSAGE_LENGTH
+        
+        long_message = "x" * (MAX_MESSAGE_LENGTH + 1000)
+        result = sanitize_message(long_message)
+        
+        assert len(result) <= MAX_MESSAGE_LENGTH
+
+
+class TestCommandInjectionPrevention:
+    """Tests that command injection attacks are blocked in _generate_response.
+    
+    Issue #44: Subprocess command injection risk in Matrix bot.
+    """
+
+    @pytest.fixture
+    def bot(self):
+        """Create bot for testing."""
+        with patch("valence.agents.matrix_bot.AsyncClient") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.user_id = "@bot:example.com"
+            mock_client_cls.return_value = mock_client
+
+            from valence.agents.matrix_bot import ValenceBot
+
+            return ValenceBot(
+                homeserver="https://matrix.example.com",
+                user_id="@bot:example.com",
+                password="secret",
+            )
+
+    @pytest.fixture
+    def session(self):
+        """Create test session."""
+        from valence.agents.matrix_bot import RoomSession
+
+        return RoomSession(
+            room_id="!room:example.com",
+            room_name="Test Room",
+        )
+
+    @pytest.mark.asyncio
+    async def test_shell_injection_via_message_blocked(self, bot, session):
+        """Shell injection attempts via message content must be blocked."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = json.dumps({"result": "Response"})
+        
+        malicious_messages = [
+            "; rm -rf /",
+            "$(whoami)",
+            "`id`",
+            "| cat /etc/passwd",
+            "&& echo pwned",
+            "\x00; rm -rf /",  # Null byte injection
+        ]
+        
+        for malicious in malicious_messages:
+            with patch("subprocess.run", return_value=mock_result) as mock_run:
+                with patch("os.path.exists", return_value=False):
+                    await bot._generate_response(
+                        session, 
+                        "@user:example.com", 
+                        malicious
+                    )
+                    
+                    # Verify subprocess was called with sanitized input
+                    # The command should be a list, not a string
+                    call_args = mock_run.call_args
+                    cmd = call_args[0][0]
+                    
+                    # Must be a list (no shell=True)
+                    assert isinstance(cmd, list), "Command must be a list"
+                    
+                    # shell=True must not be present
+                    assert call_args[1].get("shell") is not True, "shell=True is forbidden"
+                    
+                    # Null bytes must be removed from prompt
+                    prompt_arg = cmd[cmd.index("-p") + 1]
+                    assert "\x00" not in prompt_arg, "Null bytes must be removed"
+
+    @pytest.mark.asyncio
+    async def test_shell_injection_via_sender_blocked(self, bot, session):
+        """Shell injection attempts via sender must be blocked."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = json.dumps({"result": "Response"})
+        
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            with patch("os.path.exists", return_value=False):
+                # Malicious sender
+                await bot._generate_response(
+                    session,
+                    "@user$(whoami):evil.com",
+                    "Hello"
+                )
+                
+                call_args = mock_run.call_args
+                cmd = call_args[0][0]
+                prompt_arg = cmd[cmd.index("-p") + 1]
+                
+                # The $(whoami) should be sanitized/escaped in the prompt
+                # Either removed or the $ replaced
+                assert "$(whoami)" not in prompt_arg or "_" in prompt_arg
+
+    @pytest.mark.asyncio
+    async def test_shell_injection_via_session_id_blocked(self, bot, session):
+        """Shell injection attempts via session ID must be blocked."""
+        # Set malicious session ID
+        session.claude_session_id = "session; rm -rf /"
+        
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = json.dumps({"result": "Response"})
+        
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            with patch("os.path.exists", return_value=False):
+                await bot._generate_response(
+                    session,
+                    "@user:example.com",
+                    "Hello"
+                )
+                
+                call_args = mock_run.call_args
+                cmd = call_args[0][0]
+                
+                # Either --resume shouldn't be in command (session was rejected)
+                # Or the session ID should be sanitized
+                if "--resume" in cmd:
+                    resume_idx = cmd.index("--resume")
+                    session_arg = cmd[resume_idx + 1]
+                    # Must not contain shell metacharacters
+                    assert ";" not in session_arg
+                    assert " " not in session_arg
+
+    @pytest.mark.asyncio
+    async def test_invalid_session_id_starts_fresh(self, bot, session):
+        """Invalid session ID should cause fresh session start."""
+        session.claude_session_id = "session`id`"  # Backticks = command substitution
+        
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = json.dumps({
+            "session_id": "new-safe-session",
+            "result": "Response"
+        })
+        
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            with patch("os.path.exists", return_value=False):
+                await bot._generate_response(
+                    session,
+                    "@user:example.com",
+                    "Hello"
+                )
+                
+                call_args = mock_run.call_args
+                cmd = call_args[0][0]
+                
+                # --resume should not be present with malicious session
+                # OR the session should have been cleared
+                if "--resume" in cmd:
+                    # If --resume is present, verify it's not the malicious value
+                    resume_idx = cmd.index("--resume")
+                    assert "`" not in cmd[resume_idx + 1]
+
+    @pytest.mark.asyncio
+    async def test_empty_message_after_sanitization_skipped(self, bot, session):
+        """Messages that become empty after sanitization should be skipped."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = json.dumps({"result": "Response"})
+        
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            with patch("os.path.exists", return_value=False):
+                # Message with only control characters
+                result = await bot._generate_response(
+                    session,
+                    "@user:example.com",
+                    "\x00\x01\x02"  # Only null and control chars
+                )
+                
+                # Should return None without calling subprocess
+                assert result is None
+
+    @pytest.mark.asyncio  
+    async def test_dos_via_long_message_prevented(self, bot, session):
+        """Extremely long messages should be truncated to prevent DoS."""
+        from valence.agents.matrix_bot import MAX_MESSAGE_LENGTH
+        
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = json.dumps({"result": "Response"})
+        
+        # Very long message (100KB)
+        huge_message = "x" * 100000
+        
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            with patch("os.path.exists", return_value=False):
+                await bot._generate_response(
+                    session,
+                    "@user:example.com",
+                    huge_message
+                )
+                
+                call_args = mock_run.call_args
+                cmd = call_args[0][0]
+                prompt_arg = cmd[cmd.index("-p") + 1]
+                
+                # Prompt should be truncated
+                # Account for "User @user:example.com says: " prefix
+                assert len(prompt_arg) <= MAX_MESSAGE_LENGTH + 100
+
+
+# ============================================================================
 # RoomSession Tests
 # ============================================================================
 

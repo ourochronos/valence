@@ -18,10 +18,137 @@ import asyncio
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
 from typing import Any
+
+
+# =============================================================================
+# Input Sanitization (Security)
+# =============================================================================
+
+# Maximum lengths to prevent DoS via extremely long inputs
+MAX_MESSAGE_LENGTH = 10000  # 10KB max message
+MAX_SENDER_LENGTH = 256  # Matrix user IDs shouldn't be longer than this
+MAX_SESSION_ID_LENGTH = 128  # Claude session IDs are typically short UUIDs
+
+# Pattern for valid Matrix user IDs: @localpart:domain
+MATRIX_USER_PATTERN = re.compile(r"^@[a-zA-Z0-9._=/+-]+:[a-zA-Z0-9.-]+$")
+
+# Pattern for valid session IDs (alphanumeric, hyphens, underscores)
+SESSION_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
+
+
+def sanitize_for_subprocess(text: str, max_length: int, field_name: str) -> str:
+    """Sanitize text before passing to subprocess arguments.
+    
+    This function removes potentially dangerous characters and enforces
+    length limits to prevent command injection and DoS attacks.
+    
+    Args:
+        text: The text to sanitize
+        max_length: Maximum allowed length
+        field_name: Name of the field (for logging)
+    
+    Returns:
+        Sanitized text safe for subprocess arguments
+    
+    Security measures:
+        - Removes null bytes (can truncate arguments)
+        - Removes control characters except newlines/tabs
+        - Enforces length limits
+        - Strips leading/trailing whitespace
+    """
+    if not text:
+        return ""
+    
+    # Remove null bytes - these can cause argument truncation
+    text = text.replace("\x00", "")
+    
+    # Remove control characters except common whitespace (newline, tab, carriage return)
+    # Control chars are 0x00-0x1F and 0x7F, excluding \t (0x09), \n (0x0A), \r (0x0D)
+    text = "".join(
+        char for char in text
+        if char >= " " or char in "\t\n\r"
+    )
+    
+    # Enforce length limit
+    if len(text) > max_length:
+        logger.warning(
+            f"Truncating {field_name} from {len(text)} to {max_length} characters"
+        )
+        text = text[:max_length]
+    
+    return text.strip()
+
+
+def validate_sender(sender: str) -> str:
+    """Validate and sanitize a Matrix sender ID.
+    
+    Args:
+        sender: The Matrix user ID (e.g., @user:matrix.org)
+    
+    Returns:
+        Validated sender ID
+    
+    Raises:
+        ValueError: If sender format is invalid
+    """
+    sender = sanitize_for_subprocess(sender, MAX_SENDER_LENGTH, "sender")
+    
+    if not sender:
+        raise ValueError("Empty sender ID")
+    
+    # Validate Matrix user ID format
+    if not MATRIX_USER_PATTERN.match(sender):
+        # Log the issue but use a safe fallback
+        logger.warning(f"Invalid Matrix user ID format, using sanitized version")
+        # Replace any remaining problematic characters
+        sender = re.sub(r"[^\w@:._=/-]", "_", sender)
+    
+    return sender
+
+
+def validate_session_id(session_id: str | None) -> str | None:
+    """Validate a Claude session ID before using in subprocess.
+    
+    Args:
+        session_id: The session ID to validate, or None
+    
+    Returns:
+        Validated session ID or None
+    
+    Raises:
+        ValueError: If session ID format is invalid
+    """
+    if session_id is None:
+        return None
+    
+    session_id = sanitize_for_subprocess(session_id, MAX_SESSION_ID_LENGTH, "session_id")
+    
+    if not session_id:
+        return None
+    
+    # Session IDs should be alphanumeric with hyphens/underscores only
+    if not SESSION_ID_PATTERN.match(session_id):
+        logger.warning(f"Invalid session ID format: {session_id[:20]}...")
+        raise ValueError(f"Invalid session ID format")
+    
+    return session_id
+
+
+def sanitize_message(message: str) -> str:
+    """Sanitize a user message before passing to subprocess.
+    
+    Args:
+        message: The user's message text
+    
+    Returns:
+        Sanitized message safe for subprocess arguments
+    """
+    return sanitize_for_subprocess(message, MAX_MESSAGE_LENGTH, "message")
 
 try:
     from nio import (
@@ -358,12 +485,36 @@ class ValenceBot:
         sender: str,
         message: str,
     ) -> str | None:
-        """Generate a response using Claude CLI with session resumption."""
+        """Generate a response using Claude CLI with session resumption.
+        
+        Security: All user input (sender, message) and stored data (session_id)
+        is sanitized before being passed to subprocess to prevent command injection.
+        """
         try:
-            # Build the prompt
-            prompt = f"User {sender} says: {message}"
+            # === SECURITY: Sanitize all inputs before subprocess ===
+            try:
+                safe_sender = validate_sender(sender)
+            except ValueError as e:
+                logger.warning(f"Invalid sender, using fallback: {e}")
+                safe_sender = "unknown_user"
+            
+            safe_message = sanitize_message(message)
+            if not safe_message:
+                logger.warning("Empty message after sanitization, skipping")
+                return None
+            
+            try:
+                safe_session_id = validate_session_id(session.claude_session_id)
+            except ValueError as e:
+                logger.warning(f"Invalid session ID, starting fresh session: {e}")
+                safe_session_id = None
+                session.claude_session_id = None  # Clear invalid session
+            
+            # Build the prompt with sanitized inputs
+            prompt = f"User {safe_sender} says: {safe_message}"
 
-            # Build command
+            # Build command - using list arguments (no shell=True) is secure
+            # as long as inputs are sanitized
             cmd = [
                 "claude",
                 "-p", prompt,
@@ -371,14 +522,14 @@ class ValenceBot:
                 "--permission-mode", "bypassPermissions",
             ]
 
-            # Add plugin directory if available
+            # Add plugin directory if available (this is from config, not user input)
             plugin_dir = self.session_manager.plugin_dir
             if os.path.exists(plugin_dir):
                 cmd.extend(["--plugin-dir", plugin_dir])
 
-            # Add resume flag if we have a previous session
-            if session.claude_session_id:
-                cmd.extend(["--resume", session.claude_session_id])
+            # Add resume flag if we have a validated previous session
+            if safe_session_id:
+                cmd.extend(["--resume", safe_session_id])
 
             logger.debug(f"Running: {' '.join(cmd)}")
 
