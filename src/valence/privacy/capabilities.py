@@ -730,18 +730,25 @@ def _resolve_resource(
     import inspect
     
     if callable(resource) and not isinstance(resource, str):
-        # Build kwargs dict from positional args
-        sig = inspect.signature(func)
-        params = list(sig.parameters.keys())
+        # Build kwargs dict from positional args of the decorated function
+        func_sig = inspect.signature(func)
+        func_params = list(func_sig.parameters.keys())
         
-        # Create combined kwargs
+        # Create combined kwargs from function
         combined = dict(kwargs)
         for i, val in enumerate(args):
-            if i < len(params):
-                combined[params[i]] = val
+            if i < len(func_params):
+                combined[func_params[i]] = val
         
-        # Call resource resolver
-        return resource(**combined)
+        # Get the resource callable's signature to know what args it expects
+        resource_sig = inspect.signature(resource)
+        resource_params = set(resource_sig.parameters.keys())
+        
+        # Filter combined to only include params the resource callable expects
+        filtered = {k: v for k, v in combined.items() if k in resource_params}
+        
+        # Call resource resolver with only expected arguments
+        return resource(**filtered)
     
     return resource
 
