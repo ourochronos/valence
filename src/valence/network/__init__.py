@@ -11,9 +11,39 @@ from valence.network.crypto import (
     generate_encryption_keypair,
     encrypt_message,
     decrypt_message,
+    # Circuit encryption (Issue #115)
+    generate_circuit_keypair,
+    derive_circuit_key,
+    create_onion,
+    peel_onion,
+    encrypt_onion_layer,
+    decrypt_onion_layer,
+    encrypt_circuit_payload,
+    decrypt_circuit_layer,
+    encrypt_backward_payload,
+    decrypt_backward_layers,
 )
-from valence.network.messages import RelayMessage, DeliverPayload
-from valence.network.router import RouterNode, Connection, QueuedMessage, NodeConnectionHistory
+from valence.network.messages import (
+    RelayMessage,
+    DeliverPayload,
+    # Circuit messages (Issue #115)
+    Circuit,
+    CircuitHop,
+    CircuitCreateMessage,
+    CircuitCreatedMessage,
+    CircuitRelayMessage,
+    CircuitDestroyMessage,
+    CircuitExtendMessage,
+)
+from valence.network.router import (
+    RouterNode,
+    Connection,
+    QueuedMessage,
+    NodeConnectionHistory,
+    # Circuit state (Issue #115)
+    CircuitHopState,
+    CircuitState,
+)
 from valence.network.seed import (
     SeedNode,
     RouterRecord,
@@ -48,6 +78,19 @@ from valence.network.node import (
     NoRoutersAvailableError,
     create_node_client,
 )
+from valence.network.config import (
+    TrafficAnalysisMitigationConfig,
+    PrivacyLevel,
+    BatchingConfig,
+    TimingJitterConfig,
+    ConstantRateConfig,
+    MixNetworkConfig,
+    PRIVACY_LOW,
+    PRIVACY_MEDIUM,
+    PRIVACY_HIGH,
+    PRIVACY_PARANOID,
+    get_recommended_config,
+)
 
 __all__ = [
     # Crypto
@@ -56,14 +99,36 @@ __all__ = [
     "generate_encryption_keypair",
     "encrypt_message",
     "decrypt_message",
+    # Circuit encryption (Issue #115)
+    "generate_circuit_keypair",
+    "derive_circuit_key",
+    "create_onion",
+    "peel_onion",
+    "encrypt_onion_layer",
+    "decrypt_onion_layer",
+    "encrypt_circuit_payload",
+    "decrypt_circuit_layer",
+    "encrypt_backward_payload",
+    "decrypt_backward_layers",
     # Messages
     "RelayMessage",
     "DeliverPayload",
+    # Circuit messages (Issue #115)
+    "Circuit",
+    "CircuitHop",
+    "CircuitCreateMessage",
+    "CircuitCreatedMessage",
+    "CircuitRelayMessage",
+    "CircuitDestroyMessage",
+    "CircuitExtendMessage",
     # Router
     "RouterNode",
     "Connection",
     "QueuedMessage",
     "NodeConnectionHistory",
+    # Circuit state (Issue #115)
+    "CircuitHopState",
+    "CircuitState",
     # Seed
     "SeedNode",
     "RouterRecord",
@@ -96,4 +161,16 @@ __all__ = [
     "NodeError",
     "NoRoutersAvailableError",
     "create_node_client",
+    # Traffic Analysis Mitigations (Issue #120)
+    "TrafficAnalysisMitigationConfig",
+    "PrivacyLevel",
+    "BatchingConfig",
+    "TimingJitterConfig",
+    "ConstantRateConfig",
+    "MixNetworkConfig",
+    "PRIVACY_LOW",
+    "PRIVACY_MEDIUM",
+    "PRIVACY_HIGH",
+    "PRIVACY_PARANOID",
+    "get_recommended_config",
 ]

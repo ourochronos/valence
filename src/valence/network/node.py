@@ -4489,7 +4489,17 @@ class NodeClient:
         
         # Report to seeds if enabled
         if self.report_to_seeds:
-            asyncio.create_task(self._report_misbehavior_to_seeds(report))
+            try:
+                # Only create task if there's a running event loop
+                loop = asyncio.get_running_loop()
+                loop.create_task(self._report_misbehavior_to_seeds(report))
+            except RuntimeError:
+                # No running event loop - skip async reporting
+                # This happens in synchronous test contexts
+                logger.debug(
+                    f"Skipping async misbehavior report (no event loop) "
+                    f"for router {router_id[:16]}..."
+                )
         
         return report
     
