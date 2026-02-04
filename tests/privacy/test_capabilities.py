@@ -1033,3 +1033,276 @@ class TestSingletonAndConvenience:
             assert result is True
         finally:
             set_capability_service(original)
+
+
+# =============================================================================
+# JWT SERIALIZATION TESTS (Issue #77)
+# =============================================================================
+
+import time
+import jwt as pyjwt
+
+from valence.privacy.capabilities import CapabilityInvalidError
+
+
+class TestCapabilityJWTSerialization:
+    """Tests for JWT serialization/deserialization (Issue #77).
+    
+    Capabilities can be serialized to JWT for stateless transport over HTTP APIs,
+    separate from the Ed25519 signatures used for cryptographic verification.
+    """
+    
+    JWT_SECRET = "test-secret-key-at-least-32-bytes-long"
+
+    def test_to_jwt(self, issuer_did, holder_did, resource, actions):
+        """Test serializing capability to JWT."""
+        cap = Capability.create(
+            issuer_did=issuer_did,
+            holder_did=holder_did,
+            resource=resource,
+            actions=actions,
+        )
+
+        token = cap.to_jwt(self.JWT_SECRET)
+
+        # Should be a valid JWT string
+        assert isinstance(token, str)
+        assert token.count(".") == 2  # JWT has 3 parts
+
+        # Decode without verification to inspect
+        payload = pyjwt.decode(token, self.JWT_SECRET, algorithms=["HS256"])
+        assert payload["jti"] == cap.id
+        assert payload["iss"] == issuer_did
+        assert payload["sub"] == holder_did
+        assert payload["resource"] == resource
+        assert payload["actions"] == actions
+
+    def test_from_jwt(self, issuer_did, holder_did, resource, actions):
+        """Test deserializing capability from JWT."""
+        original = Capability.create(
+            issuer_did=issuer_did,
+            holder_did=holder_did,
+            resource=resource,
+            actions=actions,
+            metadata={"scope": "limited"},
+        )
+
+        token = original.to_jwt(self.JWT_SECRET)
+        restored = Capability.from_jwt(token, self.JWT_SECRET)
+
+        assert restored.id == original.id
+        assert restored.issuer_did == original.issuer_did
+        assert restored.holder_did == original.holder_did
+        assert restored.resource == original.resource
+        assert restored.actions == original.actions
+        assert restored.metadata == original.metadata
+
+    def test_jwt_roundtrip(self, issuer_did, holder_did, resource):
+        """Test JWT serialization roundtrip."""
+        original = Capability.create(
+            issuer_did=issuer_did,
+            holder_did=holder_did,
+            resource=resource,
+            actions=["read", "write", "share"],
+            metadata={"max_hops": 2},
+        )
+
+        token = original.to_jwt(self.JWT_SECRET)
+        restored = Capability.from_jwt(token, self.JWT_SECRET)
+
+        # All fields should match
+        assert restored.id == original.id
+        assert restored.issuer_did == original.issuer_did
+        assert restored.holder_did == original.holder_did
+        assert restored.resource == original.resource
+        assert restored.actions == original.actions
+        assert restored.metadata == original.metadata
+        # Timestamps within 1 second (JWT uses integer timestamps)
+        assert abs((restored.issued_at - original.issued_at).total_seconds()) < 1
+        assert abs((restored.expires_at - original.expires_at).total_seconds()) < 1
+
+    def test_from_jwt_expired(self, issuer_did, holder_did, resource):
+        """Test that expired JWT raises CapabilityExpiredError."""
+        cap = Capability.create(
+            issuer_did=issuer_did,
+            holder_did=holder_did,
+            resource=resource,
+            actions=["read"],
+            ttl_seconds=1,  # Very short TTL
+        )
+
+        token = cap.to_jwt(self.JWT_SECRET)
+
+        # Wait for expiration
+        time.sleep(1.1)
+
+        with pytest.raises(CapabilityExpiredError) as exc_info:
+            Capability.from_jwt(token, self.JWT_SECRET)
+
+        assert "expired" in str(exc_info.value).lower()
+
+    def test_from_jwt_expired_skip_verification(self, issuer_did, holder_did, resource):
+        """Test that expired JWT can be parsed with verify_exp=False."""
+        cap = Capability.create(
+            issuer_did=issuer_did,
+            holder_did=holder_did,
+            resource=resource,
+            actions=["read"],
+            ttl_seconds=1,
+        )
+
+        token = cap.to_jwt(self.JWT_SECRET)
+        time.sleep(1.1)
+
+        # Should not raise with verify_exp=False
+        restored = Capability.from_jwt(token, self.JWT_SECRET, verify_exp=False)
+        assert restored.id == cap.id
+
+    def test_from_jwt_invalid_secret(self, issuer_did, holder_did, resource):
+        """Test that wrong secret raises CapabilityInvalidSignatureError."""
+        cap = Capability.create(
+            issuer_did=issuer_did,
+            holder_did=holder_did,
+            resource=resource,
+            actions=["read"],
+        )
+
+        token = cap.to_jwt(self.JWT_SECRET)
+
+        with pytest.raises(CapabilityInvalidSignatureError):
+            Capability.from_jwt(token, "wrong-secret-key-at-least-32-bytes")
+
+    def test_from_jwt_malformed(self):
+        """Test that malformed JWT raises CapabilityInvalidSignatureError."""
+        with pytest.raises(CapabilityInvalidSignatureError):
+            Capability.from_jwt("not.a.valid.jwt", self.JWT_SECRET)
+
+    def test_jwt_custom_algorithm(self, issuer_did, holder_did, resource):
+        """Test JWT with custom algorithm."""
+        cap = Capability.create(
+            issuer_did=issuer_did,
+            holder_did=holder_did,
+            resource=resource,
+            actions=["read"],
+        )
+
+        # Use HS384 instead of default HS256
+        # Note: Using longer secret to avoid warning
+        long_secret = self.JWT_SECRET + "0" * 20
+        token = cap.to_jwt(long_secret, algorithm="HS384")
+        restored = Capability.from_jwt(token, long_secret, algorithm="HS384")
+
+        assert restored.id == cap.id
+
+    def test_invalid_error_alias(self):
+        """Test CapabilityInvalidError is alias for CapabilityInvalidSignatureError."""
+        assert CapabilityInvalidError is CapabilityInvalidSignatureError
+
+
+class TestCapabilityCreateFactory:
+    """Tests for Capability.create() factory method (Issue #77)."""
+
+    def test_create_with_defaults(self, issuer_did, holder_did, resource, actions):
+        """Test creating a capability with default TTL."""
+        cap = Capability.create(
+            issuer_did=issuer_did,
+            holder_did=holder_did,
+            resource=resource,
+            actions=actions,
+        )
+
+        assert cap.issuer_did == issuer_did
+        assert cap.holder_did == holder_did
+        assert cap.resource == resource
+        assert cap.actions == actions
+        assert cap.metadata == {}
+        assert cap.id is not None
+        assert len(cap.id) == 36  # UUID format
+
+        # Check TTL is approximately 1 hour
+        ttl = cap.ttl_seconds
+        assert 3599 < ttl <= DEFAULT_TTL_SECONDS
+
+    def test_create_with_custom_ttl(self, issuer_did, holder_did, resource):
+        """Test creating a capability with custom TTL."""
+        cap = Capability.create(
+            issuer_did=issuer_did,
+            holder_did=holder_did,
+            resource=resource,
+            actions=["read"],
+            ttl_seconds=300,  # 5 minutes
+        )
+
+        ttl = cap.ttl_seconds
+        assert 299 < ttl <= 300
+
+    def test_create_with_metadata(self, issuer_did, holder_did, resource):
+        """Test creating a capability with metadata."""
+        metadata = {
+            "max_uses": 10,
+            "ip_whitelist": ["192.168.1.0/24"],
+            "rate_limit": "10/minute",
+        }
+
+        cap = Capability.create(
+            issuer_did=issuer_did,
+            holder_did=holder_did,
+            resource=resource,
+            actions=["read", "write"],
+            metadata=metadata,
+        )
+
+        assert cap.metadata == metadata
+        assert cap.metadata["max_uses"] == 10
+
+    def test_create_with_explicit_id(self, issuer_did, holder_did, resource):
+        """Test creating a capability with explicit ID."""
+        explicit_id = "custom-capability-id-12345"
+        cap = Capability.create(
+            issuer_did=issuer_did,
+            holder_did=holder_did,
+            resource=resource,
+            actions=["read"],
+            capability_id=explicit_id,
+        )
+
+        assert cap.id == explicit_id
+
+    def test_actions_are_copied(self, issuer_did, holder_did, resource):
+        """Test that actions list is copied, not referenced."""
+        original_actions = ["read", "write"]
+        cap = Capability.create(
+            issuer_did=issuer_did,
+            holder_did=holder_did,
+            resource=resource,
+            actions=original_actions,
+        )
+
+        # Modify original list
+        original_actions.append("delete")
+
+        # Capability should not be affected
+        assert cap.actions == ["read", "write"]
+        assert "delete" not in cap.actions
+
+
+class TestCapabilityDictNaiveDatetime:
+    """Tests for from_dict handling of naive datetimes (Issue #77)."""
+
+    def test_from_dict_naive_datetime(self, issuer_did, holder_did, resource):
+        """Test deserializing with naive datetime (assumes UTC)."""
+        data = {
+            "id": "test-id",
+            "issuer_did": issuer_did,
+            "holder_did": holder_did,
+            "resource": resource,
+            "actions": ["read"],
+            "issued_at": "2026-01-15T10:00:00",  # No timezone
+            "expires_at": "2026-01-15T11:00:00",
+        }
+
+        cap = Capability.from_dict(data)
+
+        # Should assume UTC
+        assert cap.issued_at.tzinfo == timezone.utc
+        assert cap.expires_at.tzinfo == timezone.utc
