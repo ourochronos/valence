@@ -195,16 +195,43 @@ def table_exists(table_name: str) -> bool:
         return row["exists"] if row else False
 
 
+# Allowlist of valid tables for count_rows() to prevent SQL injection
+# Only tables that are safe to query should be listed here
+VALID_TABLES = frozenset([
+    "beliefs",
+    "entities",
+    "vkb_sessions",
+    "vkb_exchanges",
+    "vkb_patterns",
+    "tensions",
+    "federation_nodes",
+    "node_trust",
+    "user_node_trust",
+    "sync_state",
+    "schema_version",
+])
+
+
 def count_rows(table_name: str) -> int:
     """Get row count for a table.
 
+    Args:
+        table_name: Name of the table (must be in VALID_TABLES allowlist)
+
     Raises:
-        ValueError: If table does not exist
+        ValueError: If table is not in allowlist or does not exist
         DatabaseException: If query fails
     """
+    # Security: Validate against allowlist BEFORE any database query
+    # This prevents SQL injection via table name manipulation
+    if table_name not in VALID_TABLES:
+        raise ValueError(
+            f"Table not in allowlist: {table_name}. "
+            f"Valid tables: {', '.join(sorted(VALID_TABLES))}"
+        )
+
     with get_cursor() as cur:
-        # Use parameterized query for safety, but table names can't be parameterized
-        # so we validate the table name first
+        # Double-check table exists (defense in depth)
         cur.execute("""
             SELECT table_name FROM information_schema.tables
             WHERE table_name = %s
@@ -212,6 +239,7 @@ def count_rows(table_name: str) -> int:
         if not cur.fetchone():
             raise ValueError(f"Table does not exist: {table_name}")
 
+        # Safe to interpolate because we validated against allowlist
         cur.execute(f"SELECT COUNT(*) as count FROM {table_name}")
         row = cur.fetchone()
         return row["count"] if row else 0
