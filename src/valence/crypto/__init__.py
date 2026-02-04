@@ -3,6 +3,7 @@
 This module provides cryptographic abstractions including:
 - MLS (Messaging Layer Security) for group encryption
 - ZKP (Zero-Knowledge Proofs) for compliance verification
+- PRE (Proxy Re-Encryption) for federation aggregation
 """
 
 from valence.crypto.mls import (
@@ -43,6 +44,28 @@ from valence.crypto.zkp import (
     verify_proof,
 )
 
+from valence.crypto.pre import (
+    # Exceptions
+    PREError,
+    PREKeyError,
+    PREEncryptionError,
+    PREDecryptionError,
+    PREReEncryptionError,
+    PREInvalidCiphertextError,
+    # Data classes
+    PREPublicKey,
+    PREPrivateKey,
+    PREKeyPair,
+    ReEncryptionKey,
+    PRECiphertext,
+    # Abstract interface
+    PREBackend,
+    # Mock implementation
+    MockPREBackend,
+    # Utilities
+    create_mock_backend,
+)
+
 __all__ = [
     # MLS
     "MLSGroup",
@@ -77,4 +100,23 @@ __all__ = [
     # ZKP Utilities
     "hash_public_inputs",
     "verify_proof",
+    # PRE Exceptions
+    "PREError",
+    "PREKeyError",
+    "PREEncryptionError",
+    "PREDecryptionError",
+    "PREReEncryptionError",
+    "PREInvalidCiphertextError",
+    # PRE Data Classes
+    "PREPublicKey",
+    "PREPrivateKey",
+    "PREKeyPair",
+    "ReEncryptionKey",
+    "PRECiphertext",
+    # PRE Interfaces
+    "PREBackend",
+    # PRE Mock Implementation
+    "MockPREBackend",
+    # PRE Utilities
+    "create_mock_backend",
 ]

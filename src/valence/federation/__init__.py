@@ -263,6 +263,86 @@ from .aggregation import (
     create_contribution,
 )
 
+from .groups import (
+    # Constants
+    KDF_INFO_EPOCH_SECRET,
+    KDF_INFO_ENCRYPTION_KEY,
+    KDF_INFO_WELCOME_KEY,
+    KDF_INFO_MEMBER_SECRET,
+    AES_KEY_SIZE,
+    NONCE_SIZE,
+    MAX_EPOCH_HISTORY,
+    # Enums
+    GroupRole,
+    MemberStatus,
+    GroupStatus,
+    # Classes
+    KeyPackage,
+    GroupMember,
+    EpochSecrets,
+    WelcomeMessage,
+    CommitMessage,
+    GroupState,
+    # Functions
+    create_group,
+    add_member,
+    process_welcome,
+    process_commit,
+    encrypt_group_content,
+    decrypt_group_content,
+)
+
+from .verification import (
+    # Constants
+    DNS_TXT_PREFIX,
+    DOMAIN_CLAIM_SERVICE_TYPE,
+    DEFAULT_CACHE_TTL_SECONDS,
+    FAILED_VERIFICATION_TTL_SECONDS,
+    # Enums
+    VerificationMethod,
+    VerificationStatus,
+    # Data classes
+    VerificationResult,
+    DomainClaim,
+    # Cache
+    VerificationCache,
+    # Functions
+    verify_dns_txt_record,
+    verify_dns_txt_record_sync,
+    verify_did_document_claim,
+    verify_did_document_claim_sync,
+    verify_cross_federation_domain,
+    verify_cross_federation_domain_sync,
+    verify_multiple_domains,
+    get_verification_cache,
+    invalidate_domain_cache,
+    get_verification_cache_stats,
+)
+
+from .consent import (
+    # Enums (Issue #89)
+    CrossFederationPolicy,
+    ConsentValidationResult,
+    RevocationScope,
+    # Data classes
+    CrossFederationHop,
+    FederationConsentPolicy,
+    CrossFederationConsentChain,
+    CrossFederationRevocation,
+    ConsentValidation,
+    # Protocols
+    FederationTrustProtocol,
+    GatewaySigningProtocol,
+    ConsentChainStoreProtocol,
+    PolicyStoreProtocol,
+    # Service
+    CrossFederationConsentService,
+    # In-memory implementations (testing)
+    InMemoryConsentChainStore,
+    InMemoryPolicyStore,
+    MockGatewaySigner,
+)
+
 __all__ = [
     # Enums
     "NodeStatus",
@@ -469,4 +549,41 @@ __all__ = [
     "FederationAggregator",
     "aggregate_cross_federation",
     "create_contribution",
+    # Verification (Issue #87 - Cross-Federation Domain Verification)
+    "DNS_TXT_PREFIX",
+    "DOMAIN_CLAIM_SERVICE_TYPE",
+    "DEFAULT_CACHE_TTL_SECONDS",
+    "FAILED_VERIFICATION_TTL_SECONDS",
+    "VerificationMethod",
+    "VerificationStatus",
+    "VerificationResult",
+    "DomainClaim",
+    "VerificationCache",
+    "verify_dns_txt_record",
+    "verify_dns_txt_record_sync",
+    "verify_did_document_claim",
+    "verify_did_document_claim_sync",
+    "verify_cross_federation_domain",
+    "verify_cross_federation_domain_sync",
+    "verify_multiple_domains",
+    "get_verification_cache",
+    "invalidate_domain_cache",
+    "get_verification_cache_stats",
+    # Cross-Federation Consent (Issue #89)
+    "CrossFederationPolicy",
+    "ConsentValidationResult",
+    "RevocationScope",
+    "CrossFederationHop",
+    "FederationConsentPolicy",
+    "CrossFederationConsentChain",
+    "CrossFederationRevocation",
+    "ConsentValidation",
+    "FederationTrustProtocol",
+    "GatewaySigningProtocol",
+    "ConsentChainStoreProtocol",
+    "PolicyStoreProtocol",
+    "CrossFederationConsentService",
+    "InMemoryConsentChainStore",
+    "InMemoryPolicyStore",
+    "MockGatewaySigner",
 ]
