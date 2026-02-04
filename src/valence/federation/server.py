@@ -29,6 +29,7 @@ from .identity import (
     canonical_json,
 )
 from .peers import Peer, PeerStore
+from ..compliance.pii_scanner import check_federation_allowed, scan_for_pii
 
 logger = logging.getLogger(__name__)
 
@@ -407,19 +408,35 @@ class FederationNode:
         content: str,
         confidence: float = 0.8,
         domains: list[str] | None = None,
+        force: bool = False,
     ) -> dict[str, Any]:
         """Share a belief with a peer.
+        
+        Implements PII scanning per COMPLIANCE.md §1 (Issue #35):
+        - Blocks L3+ content from auto-federation
+        - Use force=True to override (with explicit confirmation)
         
         Args:
             peer_did: The peer's DID
             content: Belief content
             confidence: Confidence level (0.0-1.0)
             domains: Optional domain tags
+            force: Override L3 (Personal) classification blocks
             
         Returns:
             Response from the peer
         """
         import aiohttp
+        
+        # PII check before federation (Issue #35)
+        allowed, scan_result = check_federation_allowed(content, force=force)
+        if not allowed:
+            return {
+                "success": False,
+                "error": "Content blocked from federation due to PII",
+                "pii_scan": scan_result.to_dict(),
+                "hint": "Use force=True to override L3 blocks (requires explicit confirmation)",
+            }
         
         peer = self.peer_store.get_peer(peer_did)
         if not peer:

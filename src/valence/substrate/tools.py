@@ -103,6 +103,11 @@ SUBSTRATE_TOOLS = [
                     "type": "string",
                     "description": "Reference to source (URL, session_id, etc.)",
                 },
+                "opt_out_federation": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "If true, belief will not be shared via federation (privacy opt-out)",
+                },
                 "entities": {
                     "type": "array",
                     "items": {
@@ -378,9 +383,23 @@ def belief_create(
     domain_path: list[str] | None = None,
     source_type: str | None = None,
     source_ref: str | None = None,
+    opt_out_federation: bool = False,
     entities: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
-    """Create a new belief."""
+    """Create a new belief.
+    
+    Args:
+        content: The belief content
+        confidence: Confidence dimensions
+        domain_path: Domain classification
+        source_type: Type of source
+        source_ref: Reference to source
+        opt_out_federation: If True, belief won't be shared via federation (Issue #26)
+        entities: Entities to link
+        
+    Returns:
+        Created belief data
+    """
     confidence_obj = DimensionalConfidence.from_dict(confidence or {"overall": 0.7})
 
     with get_cursor() as cur:
@@ -393,14 +412,14 @@ def belief_create(
             )
             source_id = cur.fetchone()["id"]
 
-        # Create belief
+        # Create belief with opt_out_federation flag
         cur.execute(
             """
-            INSERT INTO beliefs (content, confidence, domain_path, source_id)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO beliefs (content, confidence, domain_path, source_id, opt_out_federation)
+            VALUES (%s, %s, %s, %s, %s)
             RETURNING *
             """,
-            (content, json.dumps(confidence_obj.to_dict()), domain_path or [], source_id),
+            (content, json.dumps(confidence_obj.to_dict()), domain_path or [], source_id, opt_out_federation),
         )
         belief_row = cur.fetchone()
         belief_id = belief_row["id"]

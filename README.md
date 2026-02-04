@@ -22,6 +22,24 @@ Your agent knows you. Together, agents know *everything*.
 
 ---
 
+## ⚠️ Privacy Disclosure
+
+**Important:** By default, Valence uses OpenAI's embedding API to generate semantic search vectors. This means:
+
+- **Belief content is sent to OpenAI** for embedding generation
+- OpenAI's [data usage policies](https://openai.com/policies/api-data-usage-policies) apply
+- Content is processed via `text-embedding-3-small` model
+
+**To avoid external data processing:**
+
+1. Set `VALENCE_EMBEDDING_PROVIDER=local` (uses local embedding model - coming soon)
+2. Use `--opt-out-federation` flag when creating beliefs to exclude them from federation sharing
+3. Run Valence with embeddings disabled (keyword search only)
+
+We believe in transparency. Your data sovereignty matters.
+
+---
+
 ## Why Now
 
 Three forces converging:
@@ -60,7 +78,8 @@ docker run -d --name valence-db -p 5432:5432 \
 | `VKB_DB_NAME` | Database name | `valence` |
 | `VKB_DB_USER` | Database user | `valence` |
 | `VKB_DB_PASSWORD` | Database password | (required) |
-| `OPENAI_API_KEY` | OpenAI API key for embeddings | (required for semantic search) |
+| `OPENAI_API_KEY` | OpenAI API key for embeddings | (required unless using local) |
+| `VALENCE_EMBEDDING_PROVIDER` | Embedding provider: `openai` or `local` | `openai` |
 | `VALENCE_HOST` | Server bind host | `127.0.0.1` |
 | `VALENCE_PORT` | Server bind port | `8420` |
 | `VALENCE_OAUTH_ENABLED` | Enable OAuth 2.1 | `true` |

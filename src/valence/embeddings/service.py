@@ -1,4 +1,14 @@
-"""Embedding service for generating and searching vectors."""
+"""Embedding service for generating and searching vectors.
+
+Supports multiple embedding providers (Issue #26):
+- openai: Uses OpenAI's text-embedding-3-small (default)
+- local: Uses local embedding model (stub for future implementation)
+
+Set VALENCE_EMBEDDING_PROVIDER environment variable to configure.
+
+⚠️ PRIVACY NOTE: When using 'openai' provider, belief content is sent
+to OpenAI's API for embedding generation. See README for details.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +17,7 @@ import logging
 import os
 import struct
 from concurrent.futures import ThreadPoolExecutor
+from enum import StrEnum
 from typing import Any
 
 import numpy as np
@@ -18,6 +29,23 @@ from .registry import get_embedding_type, ensure_default_type
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+class EmbeddingProvider(StrEnum):
+    """Available embedding providers."""
+    OPENAI = "openai"
+    LOCAL = "local"
+
+
+def get_embedding_provider() -> EmbeddingProvider:
+    """Get configured embedding provider from environment."""
+    provider = os.environ.get("VALENCE_EMBEDDING_PROVIDER", "openai").lower()
+    try:
+        return EmbeddingProvider(provider)
+    except ValueError:
+        logger.warning(f"Unknown embedding provider '{provider}', defaulting to 'openai'")
+        return EmbeddingProvider.OPENAI
+
 
 # OpenAI client (lazy init)
 _openai_client: OpenAI | None = None
@@ -32,19 +60,69 @@ def get_openai_client() -> OpenAI:
     if _openai_client is None:
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
-            raise ValueError("OPENAI_API_KEY environment variable required")
+            raise ValueError("OPENAI_API_KEY environment variable required for OpenAI embeddings")
         _openai_client = OpenAI(api_key=api_key)
     return _openai_client
 
 
-def generate_embedding(text: str, model: str = "text-embedding-3-small") -> list[float]:
-    """Generate embedding for text using OpenAI."""
-    client = get_openai_client()
+def generate_local_embedding(text: str, dimensions: int = 1536) -> list[float]:
+    """Generate embedding using local model.
+    
+    STUB: This is a placeholder for local embedding implementation.
+    When implemented, this should use a model like:
+    - sentence-transformers/all-MiniLM-L6-v2
+    - BAAI/bge-small-en-v1.5
+    
+    For now, returns zeros to indicate local embeddings aren't available.
+    
+    Args:
+        text: Text to embed
+        dimensions: Output dimensions (should match OpenAI for compatibility)
+        
+    Returns:
+        Embedding vector (currently zeros as stub)
+        
+    Raises:
+        NotImplementedError: Always, until local model is integrated
+    """
+    raise NotImplementedError(
+        "Local embeddings not yet implemented. "
+        "Set VALENCE_EMBEDDING_PROVIDER=openai or contribute local model support!"
+    )
 
+
+def generate_embedding(
+    text: str, 
+    model: str = "text-embedding-3-small",
+    provider: EmbeddingProvider | None = None,
+) -> list[float]:
+    """Generate embedding for text.
+    
+    Args:
+        text: Text to embed
+        model: Model name (for OpenAI provider)
+        provider: Embedding provider (defaults to env config)
+        
+    Returns:
+        Embedding vector
+        
+    Raises:
+        ValueError: If provider not configured correctly
+        NotImplementedError: If local provider requested but not implemented
+    """
+    if provider is None:
+        provider = get_embedding_provider()
+    
     # Truncate very long text
     if len(text) > 8000:
         text = text[:8000]
-
+    
+    if provider == EmbeddingProvider.LOCAL:
+        return generate_local_embedding(text)
+    
+    # Default: OpenAI
+    client = get_openai_client()
+    
     response = client.embeddings.create(
         model=model,
         input=text,
