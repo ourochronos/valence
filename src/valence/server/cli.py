@@ -3,12 +3,65 @@
 from __future__ import annotations
 
 import argparse
+import os
+import stat
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
 
 from .auth import TokenStore, hash_token
+
+
+def get_secure_token_dir() -> Path:
+    """Get or create the secure token directory.
+
+    Creates ~/.valence/tokens/ with 0700 permissions.
+    """
+    token_dir = Path.home() / ".valence" / "tokens"
+    token_dir.mkdir(parents=True, exist_ok=True)
+    # Set directory permissions to 0700 (owner read/write/execute only)
+    os.chmod(token_dir, stat.S_IRWXU)
+    return token_dir
+
+
+def save_token_securely(client_id: str, raw_token: str) -> Path:
+    """Save a token to a secure file.
+
+    Args:
+        client_id: Client identifier for the token
+        raw_token: The raw token string
+
+    Returns:
+        Path to the saved token file
+    """
+    import secrets
+
+    token_dir = get_secure_token_dir()
+
+    # Sanitize client_id for use as filename
+    safe_client_id = "".join(c if c.isalnum() or c in "-_" else "_" for c in client_id)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # Add random suffix to ensure uniqueness even for rapid token creation
+    random_suffix = secrets.token_hex(4)
+    filename = f"{safe_client_id}_{timestamp}_{random_suffix}.token"
+
+    token_file = token_dir / filename
+
+    # Write token to file with 0600 permissions
+    # Create file with restricted permissions from the start
+    fd = os.open(
+        token_file,
+        os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+        stat.S_IRUSR | stat.S_IWUSR,  # 0600
+    )
+    try:
+        os.write(fd, raw_token.encode("utf-8"))
+        os.write(fd, b"\n")
+    finally:
+        os.close(fd)
+
+    return token_file
 
 
 def cmd_create(args: argparse.Namespace) -> int:
@@ -31,18 +84,28 @@ def cmd_create(args: argparse.Namespace) -> int:
         expires_at=expires_at,
     )
 
+    # Save token to secure file instead of printing to console
+    # This prevents tokens from appearing in shell history, logs, or screen captures
+    token_file = save_token_securely(args.client_id, raw_token)
+
     print(f"Token created for client '{args.client_id}'")
     print()
     print("=" * 60)
-    print("IMPORTANT: Save this token now. It will not be shown again.")
+    print("SECURITY: Token saved to secure file (not printed to console)")
     print("=" * 60)
     print()
-    print(f"Token: {raw_token}")
+    print(f"Token file: {token_file}")
+    print(f"Permissions: 0600 (owner read/write only)")
+    print()
+    print("To read your token:")
+    print(f"  cat {token_file}")
     print()
     print("To use with Claude Code:")
     print(
-        f'  claude mcp add --transport http valence https://your-domain/mcp --header "Authorization: Bearer {raw_token}"'
+        f'  claude mcp add --transport http valence https://your-domain/mcp --header "Authorization: Bearer $(cat {token_file})"'
     )
+    print()
+    print("IMPORTANT: Delete the token file after copying to a secure location.")
     print()
 
     return 0
