@@ -42,6 +42,7 @@ from .trust_policy import (
     DECAY_MIN_THRESHOLD,
     PHASE_TRANSITION,
     PREFERENCE_MULTIPLIERS,
+    CONCENTRATION_THRESHOLDS,
 )
 
 logger = logging.getLogger(__name__)
@@ -330,6 +331,26 @@ class TrustManager:
         return self._policy.check_and_apply_transitions()
 
     # -------------------------------------------------------------------------
+    # TRUST CONCENTRATION (delegated to policy)
+    # -------------------------------------------------------------------------
+
+    def check_trust_concentration(
+        self,
+        thresholds: dict[str, float] | None = None,
+    ):
+        """Check for trust concentration issues in the network.
+        
+        Detects when trust is too concentrated in few nodes.
+        
+        Args:
+            thresholds: Optional custom thresholds
+            
+        Returns:
+            TrustConcentrationReport with warnings and metrics
+        """
+        return self._policy.check_trust_concentration(thresholds)
+
+    # -------------------------------------------------------------------------
     # THREAT ASSESSMENT (delegated to threat detector)
     # -------------------------------------------------------------------------
 
@@ -475,3 +496,17 @@ def assess_and_respond_to_threat(
     level, assessment = manager.assess_threat_level(node_id)
     manager.apply_threat_response(node_id, level, assessment)
     return level, assessment
+
+
+def check_trust_concentration(
+    thresholds: dict[str, float] | None = None,
+):
+    """Check for trust concentration issues in the network (convenience function).
+    
+    Args:
+        thresholds: Optional custom thresholds
+        
+    Returns:
+        TrustConcentrationReport with warnings and metrics
+    """
+    return get_trust_manager().check_trust_concentration(thresholds)

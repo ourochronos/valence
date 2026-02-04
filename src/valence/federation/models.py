@@ -102,6 +102,13 @@ class Vote(str, Enum):
     ABSTAIN = "abstain"
 
 
+class WarningSeverity(str, Enum):
+    """Severity level for trust concentration warnings."""
+    INFO = "info"           # Informational, no action needed
+    WARNING = "warning"     # Should be addressed
+    CRITICAL = "critical"   # Urgent, requires attention
+
+
 class TrustPreference(str, Enum):
     """User preference for node trust."""
     BLOCKED = "blocked"
@@ -1064,4 +1071,118 @@ class AggregationResult:
             },
             "privacy_guarantees": self.privacy_guarantees,
             "computed_at": self.computed_at.isoformat(),
+        }
+
+
+# =============================================================================
+# TRUST CONCENTRATION WARNING
+# =============================================================================
+
+
+@dataclass
+class TrustConcentrationWarning:
+    """Warning about trust concentration in the network.
+    
+    Detects when trust is too concentrated in few nodes, which could
+    indicate vulnerability to manipulation or single points of failure.
+    """
+
+    warning_type: str  # single_node_dominant, top_nodes_dominant, few_sources
+    severity: WarningSeverity
+    message: str
+    details: dict[str, Any] = field(default_factory=dict)
+    
+    # Context
+    node_id: UUID | None = None  # Node ID if warning is about specific node
+    node_name: str | None = None  # Human-readable node name
+    trust_share: float | None = None  # Trust share percentage (0-1)
+    
+    # Recommendations
+    recommendation: str | None = None
+    
+    created_at: datetime = field(default_factory=datetime.now)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "warning_type": self.warning_type,
+            "severity": self.severity.value,
+            "message": self.message,
+            "details": self.details,
+            "node_id": str(self.node_id) if self.node_id else None,
+            "node_name": self.node_name,
+            "trust_share": float(self.trust_share) if self.trust_share is not None else None,
+            "recommendation": self.recommendation,
+            "created_at": self.created_at.isoformat(),
+        }
+
+    def __str__(self) -> str:
+        """Human-readable string representation."""
+        severity_icons = {
+            WarningSeverity.INFO: "ℹ️",
+            WarningSeverity.WARNING: "⚠️",
+            WarningSeverity.CRITICAL: "🚨",
+        }
+        icon = severity_icons.get(self.severity, "•")
+        return f"{icon} [{self.severity.value.upper()}] {self.message}"
+
+
+@dataclass
+class TrustConcentrationReport:
+    """Full report of trust concentration analysis.
+    
+    Includes all warnings and network health metrics.
+    """
+
+    warnings: list[TrustConcentrationWarning] = field(default_factory=list)
+    
+    # Network metrics
+    total_nodes: int = 0
+    active_nodes: int = 0
+    total_trust: float = 0.0
+    
+    # Concentration metrics
+    top_node_share: float = 0.0  # Trust share of top node
+    top_3_share: float = 0.0  # Trust share of top 3 nodes
+    trusted_sources: int = 0  # Number of nodes with trust > 0.1
+    gini_coefficient: float | None = None  # Inequality measure (0 = equal, 1 = max inequality)
+    
+    # Analysis timestamp
+    analyzed_at: datetime = field(default_factory=datetime.now)
+
+    @property
+    def has_warnings(self) -> bool:
+        """Check if there are any warnings."""
+        return len(self.warnings) > 0
+
+    @property
+    def has_critical_warnings(self) -> bool:
+        """Check if there are any critical warnings."""
+        return any(w.severity == WarningSeverity.CRITICAL for w in self.warnings)
+
+    @property
+    def max_severity(self) -> WarningSeverity | None:
+        """Get the maximum severity among all warnings."""
+        if not self.warnings:
+            return None
+        severity_order = [WarningSeverity.INFO, WarningSeverity.WARNING, WarningSeverity.CRITICAL]
+        return max(self.warnings, key=lambda w: severity_order.index(w.severity)).severity
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "warnings": [w.to_dict() for w in self.warnings],
+            "metrics": {
+                "total_nodes": self.total_nodes,
+                "active_nodes": self.active_nodes,
+                "total_trust": float(self.total_trust),
+                "top_node_share": float(self.top_node_share),
+                "top_3_share": float(self.top_3_share),
+                "trusted_sources": self.trusted_sources,
+                "gini_coefficient": float(self.gini_coefficient) if self.gini_coefficient is not None else None,
+            },
+            "has_warnings": self.has_warnings,
+            "has_critical_warnings": self.has_critical_warnings,
+            "max_severity": self.max_severity.value if self.max_severity else None,
+            "analyzed_at": self.analyzed_at.isoformat(),
         }

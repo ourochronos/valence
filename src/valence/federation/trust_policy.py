@@ -1,9 +1,10 @@
-"""Trust Policy - Phase transitions and trust decay.
+"""Trust Policy - Phase transitions, trust decay, and concentration warnings.
 
 Part of the TrustManager refactor (Issue #31). This module handles:
 - Trust phase transitions (observer → contributor → participant → anchor)
 - Trust decay over time
 - Effective trust calculation with user overrides
+- Trust concentration warnings (Issue #17)
 """
 
 from __future__ import annotations
@@ -18,6 +19,9 @@ from .models import (
     NodeTrust,
     TrustPhase,
     TrustPreference,
+    WarningSeverity,
+    TrustConcentrationWarning,
+    TrustConcentrationReport,
 )
 
 logger = logging.getLogger(__name__)
@@ -59,6 +63,16 @@ PREFERENCE_MULTIPLIERS = {
     TrustPreference.AUTOMATIC: 1.0,
     TrustPreference.ELEVATED: 1.2,
     TrustPreference.ANCHOR: 1.5,
+}
+
+# Trust concentration thresholds
+CONCENTRATION_THRESHOLDS = {
+    "single_node_warning": 0.30,      # Warn if single node holds >30% of trust
+    "single_node_critical": 0.50,     # Critical if single node holds >50%
+    "top_3_warning": 0.50,            # Warn if top 3 nodes hold >50% of trust
+    "top_3_critical": 0.70,           # Critical if top 3 nodes hold >70%
+    "min_trusted_sources": 3,         # Minimum independent sources for healthy network
+    "min_trust_to_count": 0.1,        # Minimum trust level to count as a "source"
 }
 
 
@@ -336,3 +350,223 @@ class TrustPolicy:
             logger.exception(f"Error checking phase transitions: {e}")
 
         return transitions
+
+    # -------------------------------------------------------------------------
+    # TRUST CONCENTRATION WARNINGS
+    # -------------------------------------------------------------------------
+
+    def check_trust_concentration(
+        self,
+        thresholds: dict[str, float] | None = None,
+    ) -> TrustConcentrationReport:
+        """Check for trust concentration issues in the network.
+        
+        Detects when trust is too concentrated in few nodes, which could
+        indicate vulnerability to manipulation or single points of failure.
+        
+        Args:
+            thresholds: Optional custom thresholds (uses CONCENTRATION_THRESHOLDS by default)
+            
+        Returns:
+            TrustConcentrationReport with warnings and metrics
+        """
+        thresholds = thresholds or CONCENTRATION_THRESHOLDS
+        warnings: list[TrustConcentrationWarning] = []
+        
+        # Get all node trust data
+        node_trusts: list[tuple[UUID, str | None, float]] = []  # (node_id, name, trust)
+        total_nodes = 0
+        active_nodes = 0
+        
+        try:
+            with get_cursor() as cur:
+                # Get all nodes with their trust data
+                cur.execute("""
+                    SELECT 
+                        fn.id,
+                        fn.name,
+                        fn.status,
+                        COALESCE((nt.trust->>'overall')::float, 0.1) as trust_score
+                    FROM federation_nodes fn
+                    LEFT JOIN node_trust nt ON fn.id = nt.node_id
+                    ORDER BY trust_score DESC
+                """)
+                rows = cur.fetchall()
+                
+                for row in rows:
+                    total_nodes += 1
+                    if row.get("status") != "unreachable":
+                        active_nodes += 1
+                    node_trusts.append((
+                        row["id"],
+                        row.get("name"),
+                        float(row.get("trust_score", 0.1)),
+                    ))
+                    
+        except Exception as e:
+            logger.warning(f"Error fetching trust data: {e}")
+            # Return empty report on error
+            return TrustConcentrationReport(
+                warnings=[TrustConcentrationWarning(
+                    warning_type="error",
+                    severity=WarningSeverity.WARNING,
+                    message=f"Could not analyze trust concentration: {e}",
+                )],
+                analyzed_at=datetime.now(),
+            )
+        
+        # If no nodes, return empty report
+        if not node_trusts:
+            return TrustConcentrationReport(
+                total_nodes=0,
+                active_nodes=0,
+                analyzed_at=datetime.now(),
+            )
+        
+        # Calculate total trust
+        total_trust = sum(t for _, _, t in node_trusts)
+        
+        # Sort by trust descending
+        node_trusts.sort(key=lambda x: x[2], reverse=True)
+        
+        # Calculate metrics
+        top_node_id, top_node_name, top_node_trust = node_trusts[0]
+        top_node_share = top_node_trust / total_trust if total_trust > 0 else 0.0
+        
+        top_3_trust = sum(t for _, _, t in node_trusts[:3])
+        top_3_share = top_3_trust / total_trust if total_trust > 0 else 0.0
+        
+        # Count trusted sources (nodes with trust above threshold)
+        min_trust_threshold = thresholds.get("min_trust_to_count", 0.1)
+        trusted_sources = sum(1 for _, _, t in node_trusts if t >= min_trust_threshold)
+        
+        # Calculate Gini coefficient for trust inequality
+        gini = self._calculate_gini([t for _, _, t in node_trusts])
+        
+        # Check for single node dominance
+        single_warning = thresholds.get("single_node_warning", 0.30)
+        single_critical = thresholds.get("single_node_critical", 0.50)
+        
+        if top_node_share > single_critical:
+            warnings.append(TrustConcentrationWarning(
+                warning_type="single_node_dominant",
+                severity=WarningSeverity.CRITICAL,
+                message=f"Single node holds {top_node_share:.0%} of network trust (>{single_critical:.0%} threshold)",
+                node_id=top_node_id,
+                node_name=top_node_name,
+                trust_share=top_node_share,
+                recommendation="Diversify trust by adding more trusted sources or reducing trust in dominant node",
+                details={
+                    "node_trust": top_node_trust,
+                    "total_trust": total_trust,
+                    "threshold": single_critical,
+                },
+            ))
+        elif top_node_share > single_warning:
+            warnings.append(TrustConcentrationWarning(
+                warning_type="single_node_dominant",
+                severity=WarningSeverity.WARNING,
+                message=f"Single node holds {top_node_share:.0%} of network trust (>{single_warning:.0%} threshold)",
+                node_id=top_node_id,
+                node_name=top_node_name,
+                trust_share=top_node_share,
+                recommendation="Consider diversifying trust sources",
+                details={
+                    "node_trust": top_node_trust,
+                    "total_trust": total_trust,
+                    "threshold": single_warning,
+                },
+            ))
+        
+        # Check for top 3 nodes dominance
+        top_3_warning = thresholds.get("top_3_warning", 0.50)
+        top_3_critical = thresholds.get("top_3_critical", 0.70)
+        
+        if len(node_trusts) >= 3:
+            if top_3_share > top_3_critical:
+                warnings.append(TrustConcentrationWarning(
+                    warning_type="top_nodes_dominant",
+                    severity=WarningSeverity.CRITICAL,
+                    message=f"Top 3 nodes hold {top_3_share:.0%} of network trust (>{top_3_critical:.0%} threshold)",
+                    trust_share=top_3_share,
+                    recommendation="Network trust is highly concentrated - add more diverse trusted sources",
+                    details={
+                        "top_3_nodes": [
+                            {"node_id": str(nid), "name": name, "trust": t}
+                            for nid, name, t in node_trusts[:3]
+                        ],
+                        "total_trust": total_trust,
+                        "threshold": top_3_critical,
+                    },
+                ))
+            elif top_3_share > top_3_warning:
+                warnings.append(TrustConcentrationWarning(
+                    warning_type="top_nodes_dominant",
+                    severity=WarningSeverity.WARNING,
+                    message=f"Top 3 nodes hold {top_3_share:.0%} of network trust (>{top_3_warning:.0%} threshold)",
+                    trust_share=top_3_share,
+                    recommendation="Consider adding more trusted sources for better distribution",
+                    details={
+                        "top_3_nodes": [
+                            {"node_id": str(nid), "name": name, "trust": t}
+                            for nid, name, t in node_trusts[:3]
+                        ],
+                        "total_trust": total_trust,
+                        "threshold": top_3_warning,
+                    },
+                ))
+        
+        # Check for too few trusted sources
+        min_sources = int(thresholds.get("min_trusted_sources", 3))
+        
+        if trusted_sources < min_sources:
+            severity = WarningSeverity.CRITICAL if trusted_sources < 2 else WarningSeverity.WARNING
+            warnings.append(TrustConcentrationWarning(
+                warning_type="few_sources",
+                severity=severity,
+                message=f"Only {trusted_sources} trusted source(s) (minimum {min_sources} recommended)",
+                trust_share=trusted_sources / max(len(node_trusts), 1),
+                recommendation=f"Add at least {min_sources - trusted_sources} more trusted sources for network resilience",
+                details={
+                    "trusted_sources": trusted_sources,
+                    "total_nodes": len(node_trusts),
+                    "min_trust_threshold": min_trust_threshold,
+                    "min_recommended": min_sources,
+                },
+            ))
+        
+        return TrustConcentrationReport(
+            warnings=warnings,
+            total_nodes=total_nodes,
+            active_nodes=active_nodes,
+            total_trust=total_trust,
+            top_node_share=top_node_share,
+            top_3_share=top_3_share,
+            trusted_sources=trusted_sources,
+            gini_coefficient=gini,
+            analyzed_at=datetime.now(),
+        )
+    
+    def _calculate_gini(self, values: list[float]) -> float | None:
+        """Calculate Gini coefficient for a list of values.
+        
+        Returns a value between 0 (perfect equality) and 1 (maximum inequality).
+        Returns None if there are fewer than 2 values.
+        """
+        if len(values) < 2:
+            return None
+        
+        # Sort values
+        sorted_values = sorted(values)
+        n = len(sorted_values)
+        
+        # Calculate Gini coefficient
+        # G = (2 * sum(i * x_i) / (n * sum(x_i))) - (n + 1) / n
+        total = sum(sorted_values)
+        if total == 0:
+            return 0.0
+        
+        weighted_sum = sum((i + 1) * x for i, x in enumerate(sorted_values))
+        gini = (2 * weighted_sum) / (n * total) - (n + 1) / n
+        
+        return max(0.0, min(1.0, gini))

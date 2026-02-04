@@ -30,6 +30,7 @@ from .models import (
     Vote,
     TrustPreference,
     AnnotationType,
+    WarningSeverity,
     # Dataclasses
     FederationNode,
     FederatedBelief,
@@ -50,6 +51,8 @@ from .models import (
     AggregationQuery,
     AggregationResult,
     LocalSummary,
+    TrustConcentrationWarning,
+    TrustConcentrationReport,
 )
 
 from .identity import (
@@ -121,11 +124,13 @@ from .trust import (
     process_corroboration,
     process_dispute,
     assess_and_respond_to_threat,
+    check_trust_concentration,
     SIGNAL_WEIGHTS,
     DECAY_HALF_LIFE_DAYS,
     PHASE_TRANSITION,
     THREAT_THRESHOLDS,
     PREFERENCE_MULTIPLIERS,
+    CONCENTRATION_THRESHOLDS,
 )
 
 from .trust_propagation import (
@@ -162,6 +167,7 @@ __all__ = [
     "Vote",
     "TrustPreference",
     "AnnotationType",
+    "WarningSeverity",
     # Model dataclasses
     "FederationNode",
     "FederatedBelief",
@@ -182,6 +188,8 @@ __all__ = [
     "AggregationQuery",
     "AggregationResult",
     "LocalSummary",
+    "TrustConcentrationWarning",
+    "TrustConcentrationReport",
     # Identity
     "DIDMethod",
     "DID",
@@ -243,11 +251,13 @@ __all__ = [
     "process_corroboration",
     "process_dispute",
     "assess_and_respond_to_threat",
+    "check_trust_concentration",
     "SIGNAL_WEIGHTS",
     "DECAY_HALF_LIFE_DAYS",
     "PHASE_TRANSITION",
     "THREAT_THRESHOLDS",
     "PREFERENCE_MULTIPLIERS",
+    "CONCENTRATION_THRESHOLDS",
     # Trust Propagation
     "TrustPropagation",
     "TrustCache",
