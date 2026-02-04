@@ -3,6 +3,7 @@
 import pytest
 import tempfile
 import json
+import secrets
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -16,6 +17,15 @@ from valence.privacy.audit import (
     verify_chain,
     get_audit_logger,
     set_audit_logger,
+    # Encrypted audit (Issue #83)
+    KeyProvider,
+    StaticKeyProvider,
+    EncryptedAuditBackend,
+    EncryptedEnvelope,
+    EncryptionError,
+    DecryptionError,
+    encrypt_envelope,
+    decrypt_envelope,
 )
 
 
@@ -1181,3 +1191,551 @@ class TestChainVerificationError:
         assert "Hash mismatch" in error_str
         assert "5" in error_str
         assert "abc123" in error_str
+
+
+# =============================================================================
+# Encrypted Audit Storage Tests (Issue #83)
+# =============================================================================
+
+
+class TestStaticKeyProvider:
+    """Tests for StaticKeyProvider."""
+    
+    def test_create_with_valid_key(self):
+        """Create provider with 32-byte key."""
+        key = secrets.token_bytes(32)
+        provider = StaticKeyProvider(key, key_id="test-key")
+        
+        assert provider.get_current_key_id() == "test-key"
+        assert provider.get_key("test-key") == key
+    
+    def test_create_with_invalid_key_length(self):
+        """Reject keys that aren't 32 bytes."""
+        with pytest.raises(ValueError, match="32 bytes"):
+            StaticKeyProvider(b"too_short")
+        
+        with pytest.raises(ValueError, match="32 bytes"):
+            StaticKeyProvider(secrets.token_bytes(16))
+    
+    def test_get_current_key(self):
+        """get_current_key returns tuple of id and bytes."""
+        key = secrets.token_bytes(32)
+        provider = StaticKeyProvider(key, key_id="primary")
+        
+        key_id, key_bytes = provider.get_current_key()
+        assert key_id == "primary"
+        assert key_bytes == key
+    
+    def test_get_unknown_key_raises(self):
+        """Accessing unknown key ID raises KeyError."""
+        key = secrets.token_bytes(32)
+        provider = StaticKeyProvider(key, key_id="known")
+        
+        with pytest.raises(KeyError, match="unknown-key"):
+            provider.get_key("unknown-key")
+    
+    def test_add_key(self):
+        """Can add additional keys for rotation."""
+        key1 = secrets.token_bytes(32)
+        key2 = secrets.token_bytes(32)
+        
+        provider = StaticKeyProvider(key1, key_id="key-v1")
+        provider.add_key(key2, key_id="key-v2")
+        
+        assert provider.get_key("key-v1") == key1
+        assert provider.get_key("key-v2") == key2
+    
+    def test_rotate_to(self):
+        """Can rotate to a different current key."""
+        key1 = secrets.token_bytes(32)
+        key2 = secrets.token_bytes(32)
+        
+        provider = StaticKeyProvider(key1, key_id="key-v1")
+        provider.add_key(key2, key_id="key-v2")
+        
+        assert provider.get_current_key_id() == "key-v1"
+        
+        provider.rotate_to("key-v2")
+        
+        assert provider.get_current_key_id() == "key-v2"
+        current_id, current_key = provider.get_current_key()
+        assert current_id == "key-v2"
+        assert current_key == key2
+    
+    def test_rotate_to_unknown_key_raises(self):
+        """Rotating to unknown key raises KeyError."""
+        key = secrets.token_bytes(32)
+        provider = StaticKeyProvider(key)
+        
+        with pytest.raises(KeyError, match="nonexistent"):
+            provider.rotate_to("nonexistent")
+
+
+class TestEncryptedEnvelope:
+    """Tests for EncryptedEnvelope dataclass."""
+    
+    def test_create_envelope(self):
+        """Can create envelope with all fields."""
+        envelope = EncryptedEnvelope(
+            key_id="key-v1",
+            encrypted_dek="YWJjZGVm",
+            dek_nonce="MTIzNDU2",
+            ciphertext="Z2hpamts",
+            data_nonce="Nzg5MDEy",
+        )
+        
+        assert envelope.key_id == "key-v1"
+        assert envelope.encrypted_dek == "YWJjZGVm"
+    
+    def test_to_dict_from_dict_roundtrip(self):
+        """Envelope survives dict serialization roundtrip."""
+        original = EncryptedEnvelope(
+            key_id="my-key",
+            encrypted_dek="dek_encrypted",
+            dek_nonce="dek_nonce",
+            ciphertext="encrypted_data",
+            data_nonce="data_nonce",
+        )
+        
+        data = original.to_dict()
+        restored = EncryptedEnvelope.from_dict(data)
+        
+        assert restored.key_id == original.key_id
+        assert restored.encrypted_dek == original.encrypted_dek
+        assert restored.dek_nonce == original.dek_nonce
+        assert restored.ciphertext == original.ciphertext
+        assert restored.data_nonce == original.data_nonce
+    
+    def test_to_json_from_json_roundtrip(self):
+        """Envelope survives JSON serialization roundtrip."""
+        original = EncryptedEnvelope(
+            key_id="json-key",
+            encrypted_dek="json_dek",
+            dek_nonce="json_dek_nonce",
+            ciphertext="json_cipher",
+            data_nonce="json_data_nonce",
+        )
+        
+        json_str = original.to_json()
+        restored = EncryptedEnvelope.from_json(json_str)
+        
+        assert restored.key_id == original.key_id
+
+
+class TestEnvelopeEncryption:
+    """Tests for envelope encryption functions."""
+    
+    def test_encrypt_decrypt_roundtrip(self):
+        """Data survives encrypt/decrypt roundtrip."""
+        key = secrets.token_bytes(32)
+        provider = StaticKeyProvider(key, key_id="test-key")
+        
+        plaintext = b"Hello, World! This is secret data."
+        
+        envelope = encrypt_envelope(plaintext, provider)
+        decrypted = decrypt_envelope(envelope, provider)
+        
+        assert decrypted == plaintext
+    
+    def test_envelope_contains_key_id(self):
+        """Envelope stores the key ID used for encryption."""
+        key = secrets.token_bytes(32)
+        provider = StaticKeyProvider(key, key_id="my-key-id")
+        
+        envelope = encrypt_envelope(b"data", provider)
+        
+        assert envelope.key_id == "my-key-id"
+    
+    def test_different_keys_produce_different_ciphertext(self):
+        """Same plaintext with different keys produces different ciphertext."""
+        key1 = secrets.token_bytes(32)
+        key2 = secrets.token_bytes(32)
+        provider1 = StaticKeyProvider(key1)
+        provider2 = StaticKeyProvider(key2)
+        
+        plaintext = b"same data"
+        
+        envelope1 = encrypt_envelope(plaintext, provider1)
+        envelope2 = encrypt_envelope(plaintext, provider2)
+        
+        # Ciphertexts should differ (extremely high probability)
+        assert envelope1.ciphertext != envelope2.ciphertext
+    
+    def test_decrypt_with_wrong_key_fails(self):
+        """Decrypting with wrong key raises DecryptionError."""
+        key1 = secrets.token_bytes(32)
+        key2 = secrets.token_bytes(32)
+        provider1 = StaticKeyProvider(key1, key_id="key1")
+        provider2 = StaticKeyProvider(key2, key_id="key1")  # Same ID, different key
+        
+        envelope = encrypt_envelope(b"secret", provider1)
+        
+        with pytest.raises(DecryptionError):
+            decrypt_envelope(envelope, provider2)
+    
+    def test_decrypt_with_unknown_key_id_fails(self):
+        """Decrypting with unknown key ID raises KeyError."""
+        key = secrets.token_bytes(32)
+        provider = StaticKeyProvider(key, key_id="known-key")
+        
+        envelope = EncryptedEnvelope(
+            key_id="unknown-key",
+            encrypted_dek="abc",
+            dek_nonce="def",
+            ciphertext="ghi",
+            data_nonce="jkl",
+        )
+        
+        with pytest.raises(KeyError, match="unknown-key"):
+            decrypt_envelope(envelope, provider)
+    
+    def test_key_rotation_decrypt_old_data(self):
+        """Can decrypt old data after key rotation."""
+        key1 = secrets.token_bytes(32)
+        key2 = secrets.token_bytes(32)
+        
+        # Encrypt with first key
+        provider = StaticKeyProvider(key1, key_id="v1")
+        envelope_v1 = encrypt_envelope(b"old data", provider)
+        
+        # Add new key and rotate
+        provider.add_key(key2, key_id="v2")
+        provider.rotate_to("v2")
+        
+        # Encrypt new data with v2
+        envelope_v2 = encrypt_envelope(b"new data", provider)
+        
+        # Both should decrypt
+        assert decrypt_envelope(envelope_v1, provider) == b"old data"
+        assert decrypt_envelope(envelope_v2, provider) == b"new data"
+    
+    def test_envelope_encryption_is_authenticated(self):
+        """Tampering with ciphertext is detected."""
+        key = secrets.token_bytes(32)
+        provider = StaticKeyProvider(key)
+        
+        envelope = encrypt_envelope(b"authentic data", provider)
+        
+        # Tamper with ciphertext
+        import base64
+        ciphertext = bytearray(base64.b64decode(envelope.ciphertext))
+        ciphertext[0] ^= 0xFF  # Flip bits
+        envelope.ciphertext = base64.b64encode(bytes(ciphertext)).decode("ascii")
+        
+        with pytest.raises(DecryptionError):
+            decrypt_envelope(envelope, provider)
+
+
+class TestEncryptedAuditBackend:
+    """Tests for EncryptedAuditBackend wrapper."""
+    
+    def _make_backend(self):
+        """Helper to create encrypted backend with in-memory storage."""
+        key = secrets.token_bytes(32)
+        key_provider = StaticKeyProvider(key, key_id="test-key")
+        inner_backend = InMemoryAuditBackend()
+        return EncryptedAuditBackend(inner_backend, key_provider), key_provider, inner_backend
+    
+    def test_write_encrypts_event(self):
+        """Writing an event encrypts it in storage."""
+        backend, key_provider, inner = self._make_backend()
+        
+        event = AuditEvent(
+            event_type=AuditEventType.SHARE,
+            actor_did="did:key:alice",
+            target_did="did:key:bob",
+            resource="belief:123",
+            action="share",
+            success=True,
+        )
+        backend.write(event)
+        
+        # Check inner backend has encrypted event
+        inner_events = inner.all_events()
+        assert len(inner_events) == 1
+        
+        encrypted = inner_events[0]
+        assert encrypted.actor_did == EncryptedAuditBackend.ENCRYPTED_MARKER
+        assert encrypted.resource == EncryptedAuditBackend.ENCRYPTED_MARKER
+        assert EncryptedAuditBackend.ENCRYPTED_MARKER in encrypted.metadata
+        assert "envelope" in encrypted.metadata
+    
+    def test_query_decrypts_events(self):
+        """Querying returns decrypted events."""
+        backend, _, _ = self._make_backend()
+        
+        event = AuditEvent(
+            event_type=AuditEventType.SHARE,
+            actor_did="did:key:alice",
+            target_did="did:key:bob",
+            resource="belief:123",
+            action="share",
+            success=True,
+        )
+        backend.write(event)
+        
+        results = backend.query()
+        assert len(results) == 1
+        
+        decrypted = results[0]
+        assert decrypted.actor_did == "did:key:alice"
+        assert decrypted.target_did == "did:key:bob"
+        assert decrypted.resource == "belief:123"
+    
+    def test_query_filters_after_decryption(self):
+        """Query filters work on decrypted data."""
+        backend, _, _ = self._make_backend()
+        
+        backend.write(AuditEvent(
+            event_type=AuditEventType.SHARE,
+            actor_did="did:key:alice",
+            resource="belief:1",
+            action="share",
+            success=True,
+        ))
+        backend.write(AuditEvent(
+            event_type=AuditEventType.SHARE,
+            actor_did="did:key:bob",
+            resource="belief:2",
+            action="share",
+            success=True,
+        ))
+        
+        results = backend.query(actor_did="did:key:alice")
+        assert len(results) == 1
+        assert results[0].actor_did == "did:key:alice"
+        assert results[0].resource == "belief:1"
+    
+    def test_all_events_decrypts(self):
+        """all_events returns all decrypted events."""
+        backend, _, _ = self._make_backend()
+        
+        for i in range(3):
+            backend.write(AuditEvent(
+                event_type=AuditEventType.SHARE,
+                actor_did=f"did:key:user{i}",
+                resource=f"belief:{i}",
+                action="share",
+                success=True,
+            ))
+        
+        events = backend.all_events()
+        assert len(events) == 3
+        assert events[0].actor_did == "did:key:user0"
+        assert events[2].actor_did == "did:key:user2"
+    
+    def test_count_by_event_type(self):
+        """Count works for event type filter."""
+        backend, _, _ = self._make_backend()
+        
+        backend.write(AuditEvent(
+            event_type=AuditEventType.SHARE,
+            actor_did="did:key:alice",
+            resource="belief:1",
+            action="share",
+            success=True,
+        ))
+        backend.write(AuditEvent(
+            event_type=AuditEventType.GRANT_TRUST,
+            actor_did="did:key:alice",
+            resource="trust:1",
+            action="grant",
+            success=True,
+        ))
+        
+        assert backend.count() == 2
+        assert backend.count(event_type=AuditEventType.SHARE) == 1
+        assert backend.count(event_type=AuditEventType.GRANT_TRUST) == 1
+    
+    def test_preserves_hash_chain(self):
+        """Hash chain is preserved through encryption."""
+        backend, _, inner = self._make_backend()
+        
+        for i in range(3):
+            backend.write(AuditEvent(
+                event_type=AuditEventType.SHARE,
+                actor_did=f"did:key:user{i}",
+                resource=f"belief:{i}",
+                action="share",
+                success=True,
+            ))
+        
+        # Verify chain on encrypted events
+        is_valid, error = inner.verify_chain()
+        assert is_valid is True
+        assert error is None
+        
+        # Also verify through encrypted backend
+        is_valid2, error2 = backend.verify_chain()
+        assert is_valid2 is True
+    
+    def test_key_id_stored_with_event(self):
+        """Each encrypted event stores the key ID."""
+        key = secrets.token_bytes(32)
+        key_provider = StaticKeyProvider(key, key_id="my-special-key")
+        inner = InMemoryAuditBackend()
+        backend = EncryptedAuditBackend(inner, key_provider)
+        
+        backend.write(AuditEvent(
+            event_type=AuditEventType.SHARE,
+            actor_did="did:key:alice",
+            resource="belief:1",
+            action="share",
+            success=True,
+        ))
+        
+        encrypted = inner.all_events()[0]
+        envelope = encrypted.metadata["envelope"]
+        assert envelope["key_id"] == "my-special-key"
+    
+    def test_key_rotation_read_old_events(self):
+        """Can read events encrypted with old keys after rotation."""
+        key1 = secrets.token_bytes(32)
+        key2 = secrets.token_bytes(32)
+        
+        key_provider = StaticKeyProvider(key1, key_id="v1")
+        inner = InMemoryAuditBackend()
+        backend = EncryptedAuditBackend(inner, key_provider)
+        
+        # Write event with v1 key
+        backend.write(AuditEvent(
+            event_type=AuditEventType.SHARE,
+            actor_did="did:key:alice",
+            resource="belief:old",
+            action="share",
+            success=True,
+        ))
+        
+        # Rotate to v2
+        key_provider.add_key(key2, key_id="v2")
+        key_provider.rotate_to("v2")
+        
+        # Write event with v2 key
+        backend.write(AuditEvent(
+            event_type=AuditEventType.GRANT_TRUST,
+            actor_did="did:key:bob",
+            resource="trust:new",
+            action="grant",
+            success=True,
+        ))
+        
+        # Should be able to read both
+        events = backend.all_events()
+        assert len(events) == 2
+        assert events[0].resource == "belief:old"
+        assert events[1].resource == "trust:new"
+    
+    def test_works_with_file_backend(self):
+        """Works with FileAuditBackend."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_path = Path(tmpdir) / "encrypted_audit.jsonl"
+            
+            key = secrets.token_bytes(32)
+            key_provider = StaticKeyProvider(key, key_id="file-key")
+            inner = FileAuditBackend(log_path)
+            backend = EncryptedAuditBackend(inner, key_provider)
+            
+            backend.write(AuditEvent(
+                event_type=AuditEventType.SHARE,
+                actor_did="did:key:alice",
+                resource="belief:file",
+                action="share",
+                success=True,
+            ))
+            
+            # Verify persistence
+            inner2 = FileAuditBackend(log_path)
+            backend2 = EncryptedAuditBackend(inner2, key_provider)
+            
+            events = backend2.all_events()
+            assert len(events) == 1
+            assert events[0].resource == "belief:file"
+    
+    def test_clear(self):
+        """Clear removes all events."""
+        backend, _, _ = self._make_backend()
+        
+        backend.write(AuditEvent(
+            event_type=AuditEventType.SHARE,
+            actor_did="did:key:alice",
+            resource="belief:1",
+            action="share",
+            success=True,
+        ))
+        
+        assert len(backend.all_events()) == 1
+        
+        backend.clear()
+        
+        assert len(backend.all_events()) == 0
+    
+    def test_with_audit_logger(self):
+        """Works with AuditLogger high-level API."""
+        key = secrets.token_bytes(32)
+        key_provider = StaticKeyProvider(key)
+        inner = InMemoryAuditBackend()
+        encrypted_backend = EncryptedAuditBackend(inner, key_provider)
+        
+        logger = AuditLogger(encrypted_backend)
+        
+        logger.log_share(
+            actor_did="did:key:alice",
+            target_did="did:key:bob",
+            resource="belief:123",
+        )
+        logger.log_grant_trust(
+            actor_did="did:key:alice",
+            target_did="did:key:bob",
+            trust_level=0.8,
+        )
+        
+        assert logger.count() == 2
+        
+        results = logger.query(event_type=AuditEventType.SHARE)
+        assert len(results) == 1
+        assert results[0].target_did == "did:key:bob"
+    
+    def test_skips_undecryptable_events(self):
+        """Events that can't be decrypted are skipped, not errors."""
+        key1 = secrets.token_bytes(32)
+        key2 = secrets.token_bytes(32)
+        
+        # Write with key1
+        provider1 = StaticKeyProvider(key1, key_id="v1")
+        inner = InMemoryAuditBackend()
+        backend1 = EncryptedAuditBackend(inner, provider1)
+        
+        backend1.write(AuditEvent(
+            event_type=AuditEventType.SHARE,
+            actor_did="did:key:alice",
+            resource="belief:1",
+            action="share",
+            success=True,
+        ))
+        
+        # Read with key2 (doesn't have key1)
+        provider2 = StaticKeyProvider(key2, key_id="v2")
+        backend2 = EncryptedAuditBackend(inner, provider2)
+        
+        # Should return empty list, not raise
+        events = backend2.all_events()
+        assert events == []
+    
+    def test_event_metadata_preserved(self):
+        """Event metadata is preserved through encryption."""
+        backend, _, _ = self._make_backend()
+        
+        backend.write(AuditEvent(
+            event_type=AuditEventType.GRANT_TRUST,
+            actor_did="did:key:alice",
+            target_did="did:key:bob",
+            resource="trust:1",
+            action="grant",
+            success=True,
+            metadata={"trust_level": 0.85, "domain": "medical"},
+        ))
+        
+        events = backend.all_events()
+        assert len(events) == 1
+        assert events[0].metadata["trust_level"] == 0.85
+        assert events[0].metadata["domain"] == "medical"

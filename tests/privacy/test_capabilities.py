@@ -27,6 +27,7 @@ from valence.privacy.capabilities import (
     CapabilityNotFoundError,
     CapabilityTTLExceededError,
     CapabilityInsufficientPermissionError,
+    CapabilityValidationError,
     DEFAULT_TTL_SECONDS,
     MAX_TTL_SECONDS,
     get_capability_service,
@@ -34,6 +35,10 @@ from valence.privacy.capabilities import (
     issue_capability,
     verify_capability,
     revoke_capability,
+    validate_capability,
+    validate_capability_async,
+    ValidationResult,
+    requires_capability,
 )
 
 
@@ -255,6 +260,29 @@ class TestCapabilityModel:
         assert restored.parent_id == cap.parent_id
         assert restored.metadata == cap.metadata
     
+    def test_capability_serialization_with_revocation(self, issuer_did, holder_did, resource, actions):
+        """Test capability serialization/deserialization with revocation info."""
+        now = datetime.now(timezone.utc)
+        cap = Capability(
+            id="cap-123",
+            issuer_did=issuer_did,
+            holder_did=holder_did,
+            resource=resource,
+            actions=actions,
+            issued_at=now,
+            expires_at=now + timedelta(hours=1),
+            signature="abc123",
+            revoked_at=now,
+            revocation_reason="Security breach",
+        )
+        
+        data = cap.to_dict()
+        restored = Capability.from_dict(data)
+        
+        assert restored.is_revoked
+        assert restored.revocation_reason == "Security breach"
+        assert restored.revoked_at is not None
+    
     def test_capability_payload_bytes_is_deterministic(self, issuer_did, holder_did, resource, actions):
         """Test that payload bytes are deterministic for signing."""
         now = datetime.now(timezone.utc)
@@ -432,22 +460,166 @@ class TestInMemoryCapabilityStore:
     
     @pytest.mark.asyncio
     async def test_revoke(self, store, sample_capability):
-        """Test revoking a capability."""
+        """Test revoking a capability with reason."""
         await store.save(sample_capability)
         
-        result = await store.revoke(sample_capability.id)
+        result = await store.revoke(sample_capability.id, "Security incident")
         assert result is True
         
         # Check it's marked as revoked
         cap = await store.get(sample_capability.id)
         assert cap.is_revoked
+        assert cap.revocation_reason == "Security incident"
         assert await store.is_revoked(sample_capability.id)
     
     @pytest.mark.asyncio
     async def test_revoke_nonexistent(self, store):
         """Test revoking a nonexistent capability."""
-        result = await store.revoke("nonexistent")
+        result = await store.revoke("nonexistent", "Test reason")
         assert result is False
+    
+    @pytest.mark.asyncio
+    async def test_revoke_is_immutable(self, store, sample_capability):
+        """Test that revocation is immutable - cannot re-revoke."""
+        await store.save(sample_capability)
+        
+        # First revocation succeeds
+        result1 = await store.revoke(sample_capability.id, "First reason")
+        assert result1 is True
+        
+        cap = await store.get(sample_capability.id)
+        original_revoked_at = cap.revoked_at
+        original_reason = cap.revocation_reason
+        
+        # Second revocation fails (already revoked)
+        result2 = await store.revoke(sample_capability.id, "Second reason")
+        assert result2 is False
+        
+        # Original revocation info unchanged
+        cap = await store.get(sample_capability.id)
+        assert cap.revoked_at == original_revoked_at
+        assert cap.revocation_reason == original_reason
+    
+    @pytest.mark.asyncio
+    async def test_revoke_by_issuer(self, store, issuer_did, holder_did, resource, actions):
+        """Test bulk revocation by issuer."""
+        now = datetime.now(timezone.utc)
+        
+        # Create capabilities from same issuer
+        cap1 = Capability(
+            id="cap-1",
+            issuer_did=issuer_did,
+            holder_did=holder_did,
+            resource=resource,
+            actions=actions,
+            issued_at=now,
+            expires_at=now + timedelta(hours=1),
+        )
+        cap2 = Capability(
+            id="cap-2",
+            issuer_did=issuer_did,
+            holder_did="did:valence:other",
+            resource=resource,
+            actions=actions,
+            issued_at=now,
+            expires_at=now + timedelta(hours=1),
+        )
+        # Different issuer - should not be revoked
+        cap3 = Capability(
+            id="cap-3",
+            issuer_did="did:valence:other_issuer",
+            holder_did=holder_did,
+            resource=resource,
+            actions=actions,
+            issued_at=now,
+            expires_at=now + timedelta(hours=1),
+        )
+        
+        await store.save(cap1)
+        await store.save(cap2)
+        await store.save(cap3)
+        
+        count = await store.revoke_by_issuer(issuer_did, "Issuer compromised")
+        assert count == 2
+        
+        # Verify revocation
+        assert (await store.get("cap-1")).is_revoked
+        assert (await store.get("cap-1")).revocation_reason == "Issuer compromised"
+        assert (await store.get("cap-2")).is_revoked
+        assert not (await store.get("cap-3")).is_revoked
+    
+    @pytest.mark.asyncio
+    async def test_revoke_by_holder(self, store, issuer_did, holder_did, resource, actions):
+        """Test bulk revocation by holder."""
+        now = datetime.now(timezone.utc)
+        
+        # Create capabilities for same holder
+        cap1 = Capability(
+            id="cap-1",
+            issuer_did=issuer_did,
+            holder_did=holder_did,
+            resource=resource,
+            actions=actions,
+            issued_at=now,
+            expires_at=now + timedelta(hours=1),
+        )
+        cap2 = Capability(
+            id="cap-2",
+            issuer_did="did:valence:other_issuer",
+            holder_did=holder_did,
+            resource=resource,
+            actions=actions,
+            issued_at=now,
+            expires_at=now + timedelta(hours=1),
+        )
+        # Different holder - should not be revoked
+        cap3 = Capability(
+            id="cap-3",
+            issuer_did=issuer_did,
+            holder_did="did:valence:other_holder",
+            resource=resource,
+            actions=actions,
+            issued_at=now,
+            expires_at=now + timedelta(hours=1),
+        )
+        
+        await store.save(cap1)
+        await store.save(cap2)
+        await store.save(cap3)
+        
+        count = await store.revoke_by_holder(holder_did, "Holder access terminated")
+        assert count == 2
+        
+        # Verify revocation
+        assert (await store.get("cap-1")).is_revoked
+        assert (await store.get("cap-1")).revocation_reason == "Holder access terminated"
+        assert (await store.get("cap-2")).is_revoked
+        assert not (await store.get("cap-3")).is_revoked
+    
+    @pytest.mark.asyncio
+    async def test_get_revocation_info(self, store, sample_capability):
+        """Test getting revocation info."""
+        await store.save(sample_capability)
+        
+        # Not revoked yet
+        info = await store.get_revocation_info(sample_capability.id)
+        assert info is None
+        
+        # Revoke it
+        await store.revoke(sample_capability.id, "Test revocation")
+        
+        # Now should have info
+        info = await store.get_revocation_info(sample_capability.id)
+        assert info is not None
+        revoked_at, reason = info
+        assert reason == "Test revocation"
+        assert revoked_at is not None
+    
+    @pytest.mark.asyncio
+    async def test_get_revocation_info_nonexistent(self, store):
+        """Test getting revocation info for nonexistent capability."""
+        info = await store.get_revocation_info("nonexistent")
+        assert info is None
     
     @pytest.mark.asyncio
     async def test_cleanup_expired(self, store, issuer_did, holder_did, resource, actions):
@@ -636,7 +808,7 @@ class TestCapabilityService:
         )
         
         # Revoke it
-        await service.revoke(cap.id)
+        await service.revoke(cap.id, "Security incident")
         
         with pytest.raises(CapabilityRevokedError):
             await service.verify(cap, public_key)
@@ -662,7 +834,7 @@ class TestCapabilityService:
     
     @pytest.mark.asyncio
     async def test_revoke_capability(self, service, issuer_keypair, issuer_did, holder_did, resource, actions):
-        """Test revoking a capability."""
+        """Test revoking a capability with reason."""
         private_key, _ = issuer_keypair
         
         cap = await service.issue(
@@ -673,12 +845,140 @@ class TestCapabilityService:
             issuer_private_key=private_key,
         )
         
-        result = await service.revoke(cap.id)
+        result = await service.revoke(cap.id, "No longer needed")
         assert result is True
         
-        # Check it's revoked in store
+        # Check it's revoked in store with reason
         retrieved = await service.get(cap.id)
         assert retrieved.is_revoked
+        assert retrieved.revocation_reason == "No longer needed"
+    
+    @pytest.mark.asyncio
+    async def test_revoke_requires_reason(self, service, issuer_keypair, issuer_did, holder_did, resource, actions):
+        """Test that revoke requires a reason."""
+        private_key, _ = issuer_keypair
+        
+        cap = await service.issue(
+            issuer_did=issuer_did,
+            holder_did=holder_did,
+            resource=resource,
+            actions=actions,
+            issuer_private_key=private_key,
+        )
+        
+        with pytest.raises(ValueError, match="reason is required"):
+            await service.revoke(cap.id, "")
+        
+        with pytest.raises(ValueError, match="reason is required"):
+            await service.revoke(cap.id, "   ")
+    
+    @pytest.mark.asyncio
+    async def test_revoke_is_immutable(self, service, issuer_keypair, issuer_did, holder_did, resource, actions):
+        """Test that revocation is immutable at service level."""
+        private_key, _ = issuer_keypair
+        
+        cap = await service.issue(
+            issuer_did=issuer_did,
+            holder_did=holder_did,
+            resource=resource,
+            actions=actions,
+            issuer_private_key=private_key,
+        )
+        
+        # First revocation succeeds
+        result1 = await service.revoke(cap.id, "First reason")
+        assert result1 is True
+        
+        # Second revocation fails (already revoked)
+        result2 = await service.revoke(cap.id, "Second reason")
+        assert result2 is False
+        
+        # Original reason preserved
+        retrieved = await service.get(cap.id)
+        assert retrieved.revocation_reason == "First reason"
+    
+    @pytest.mark.asyncio
+    async def test_revoke_by_issuer(self, service, issuer_keypair, issuer_did, holder_did, resource, actions):
+        """Test bulk revocation by issuer."""
+        private_key, _ = issuer_keypair
+        
+        # Issue multiple capabilities
+        cap1 = await service.issue(
+            issuer_did=issuer_did,
+            holder_did=holder_did,
+            resource=resource,
+            actions=actions,
+            issuer_private_key=private_key,
+        )
+        cap2 = await service.issue(
+            issuer_did=issuer_did,
+            holder_did="did:valence:other",
+            resource=resource,
+            actions=actions,
+            issuer_private_key=private_key,
+        )
+        
+        count = await service.revoke_by_issuer(issuer_did, "Issuer key compromised")
+        assert count == 2
+        
+        # Both should be revoked
+        assert (await service.get(cap1.id)).is_revoked
+        assert (await service.get(cap2.id)).is_revoked
+    
+    @pytest.mark.asyncio
+    async def test_revoke_by_holder(self, service, issuer_keypair, issuer_did, holder_did, resource, actions):
+        """Test bulk revocation by holder."""
+        private_key, _ = issuer_keypair
+        
+        # Issue multiple capabilities to same holder
+        cap1 = await service.issue(
+            issuer_did=issuer_did,
+            holder_did=holder_did,
+            resource=resource,
+            actions=actions,
+            issuer_private_key=private_key,
+        )
+        cap2 = await service.issue(
+            issuer_did=issuer_did,
+            holder_did=holder_did,
+            resource="other/resource",
+            actions=actions,
+            issuer_private_key=private_key,
+        )
+        
+        count = await service.revoke_by_holder(holder_did, "User terminated")
+        assert count == 2
+        
+        # Both should be revoked
+        assert (await service.get(cap1.id)).is_revoked
+        assert (await service.get(cap2.id)).is_revoked
+    
+    @pytest.mark.asyncio
+    async def test_get_revocation_info(self, service, issuer_keypair, issuer_did, holder_did, resource, actions):
+        """Test getting revocation info via service."""
+        private_key, _ = issuer_keypair
+        
+        cap = await service.issue(
+            issuer_did=issuer_did,
+            holder_did=holder_did,
+            resource=resource,
+            actions=actions,
+            issuer_private_key=private_key,
+        )
+        
+        # Not revoked yet
+        info = await service.get_revocation_info(cap.id)
+        assert info is None
+        
+        # Revoke
+        await service.revoke(cap.id, "Testing revocation info")
+        
+        # Should have info
+        info = await service.get_revocation_info(cap.id)
+        assert info is not None
+        revoked_at, reason = info
+        assert reason == "Testing revocation info"
+        assert revoked_at is not None
     
     @pytest.mark.asyncio
     async def test_list_holder_capabilities(self, service, issuer_keypair, issuer_did, holder_did, resource, actions):
@@ -1029,7 +1329,7 @@ class TestSingletonAndConvenience:
             assert result is True
             
             # Revoke
-            result = await revoke_capability(cap.id)
+            result = await revoke_capability(cap.id, "Test revocation")
             assert result is True
         finally:
             set_capability_service(original)

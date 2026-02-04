@@ -5,17 +5,24 @@ trust grants, and access control changes.
 
 Hash-chain integrity (Issue #82): Each event includes the SHA-256 hash
 of the previous event, creating a tamper-evident append-only log.
+
+Encrypted audit storage (Issue #83): EncryptedAuditBackend provides
+AES-256-GCM encryption with envelope encryption and key rotation support.
 """
 
 from enum import Enum
-from typing import Optional, Dict, Any, List, Protocol, Tuple
+from typing import Optional, Dict, Any, List, Protocol, Tuple, runtime_checkable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from abc import ABC, abstractmethod
 import uuid
 import json
 import hashlib
 from pathlib import Path
 import threading
+import os
+import base64
+import secrets
 
 
 class AuditEventType(Enum):
@@ -825,3 +832,517 @@ def verify_chain(events: List[AuditEvent]) -> Tuple[bool, Optional[ChainVerifica
         Tuple of (is_valid, error_or_none)
     """
     return _verify_event_chain(events)
+
+
+# =============================================================================
+# Encrypted Audit Storage (Issue #83)
+# =============================================================================
+
+
+class KeyProvider(ABC):
+    """Abstract base class for encryption key providers.
+    
+    Supports key rotation by managing multiple keys identified by key_id.
+    """
+    
+    @abstractmethod
+    def get_current_key_id(self) -> str:
+        """Get the ID of the current active key for encryption."""
+        ...
+    
+    @abstractmethod
+    def get_key(self, key_id: str) -> bytes:
+        """Get the key bytes for a given key ID.
+        
+        Args:
+            key_id: The identifier for the key
+            
+        Returns:
+            32-byte key for AES-256
+            
+        Raises:
+            KeyError: If key_id is not found
+        """
+        ...
+    
+    @abstractmethod
+    def get_current_key(self) -> Tuple[str, bytes]:
+        """Get the current key ID and bytes for encryption.
+        
+        Returns:
+            Tuple of (key_id, key_bytes)
+        """
+        ...
+
+
+class StaticKeyProvider(KeyProvider):
+    """Simple key provider with a single static key.
+    
+    Useful for testing and simple deployments. For production,
+    use a key management system (KMS) backed provider.
+    """
+    
+    def __init__(self, key: bytes, key_id: str = "default"):
+        """Initialize with a static key.
+        
+        Args:
+            key: 32-byte key for AES-256
+            key_id: Identifier for this key
+        """
+        if len(key) != 32:
+            raise ValueError("Key must be 32 bytes for AES-256")
+        self._key = key
+        self._key_id = key_id
+        self._keys = {key_id: key}
+    
+    def get_current_key_id(self) -> str:
+        return self._key_id
+    
+    def get_key(self, key_id: str) -> bytes:
+        if key_id not in self._keys:
+            raise KeyError(f"Unknown key ID: {key_id}")
+        return self._keys[key_id]
+    
+    def get_current_key(self) -> Tuple[str, bytes]:
+        return self._key_id, self._key
+    
+    def add_key(self, key: bytes, key_id: str) -> None:
+        """Add an additional key (for testing key rotation).
+        
+        Args:
+            key: 32-byte key for AES-256
+            key_id: Identifier for this key
+        """
+        if len(key) != 32:
+            raise ValueError("Key must be 32 bytes for AES-256")
+        self._keys[key_id] = key
+    
+    def rotate_to(self, key_id: str) -> None:
+        """Rotate to a different key as the current key.
+        
+        Args:
+            key_id: The key ID to rotate to (must exist)
+        """
+        if key_id not in self._keys:
+            raise KeyError(f"Unknown key ID: {key_id}")
+        self._key_id = key_id
+        self._key = self._keys[key_id]
+
+
+class EncryptionError(Exception):
+    """Raised when encryption or decryption fails."""
+    pass
+
+
+class DecryptionError(Exception):
+    """Raised when decryption fails (wrong key, corrupted data, etc.)."""
+    pass
+
+
+@dataclass
+class EncryptedEnvelope:
+    """Encrypted data envelope with metadata for decryption.
+    
+    Uses envelope encryption: data is encrypted with a random DEK (Data Encryption Key),
+    and the DEK is encrypted with the master key (KEK - Key Encryption Key).
+    
+    Attributes:
+        key_id: ID of the master key used to encrypt the DEK
+        encrypted_dek: DEK encrypted with master key (base64)
+        dek_nonce: Nonce used for DEK encryption (base64)
+        ciphertext: Data encrypted with DEK (base64)
+        data_nonce: Nonce used for data encryption (base64)
+        tag: Authentication tag for data encryption (base64)
+    """
+    
+    key_id: str
+    encrypted_dek: str  # base64
+    dek_nonce: str  # base64
+    ciphertext: str  # base64
+    data_nonce: str  # base64
+    
+    def to_dict(self) -> Dict[str, str]:
+        """Serialize to dictionary."""
+        return {
+            "key_id": self.key_id,
+            "encrypted_dek": self.encrypted_dek,
+            "dek_nonce": self.dek_nonce,
+            "ciphertext": self.ciphertext,
+            "data_nonce": self.data_nonce,
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, str]) -> "EncryptedEnvelope":
+        """Deserialize from dictionary."""
+        return cls(
+            key_id=data["key_id"],
+            encrypted_dek=data["encrypted_dek"],
+            dek_nonce=data["dek_nonce"],
+            ciphertext=data["ciphertext"],
+            data_nonce=data["data_nonce"],
+        )
+    
+    def to_json(self) -> str:
+        """Serialize to JSON string."""
+        return json.dumps(self.to_dict())
+    
+    @classmethod
+    def from_json(cls, json_str: str) -> "EncryptedEnvelope":
+        """Deserialize from JSON string."""
+        return cls.from_dict(json.loads(json_str))
+
+
+def _aes_gcm_encrypt(key: bytes, plaintext: bytes, nonce: Optional[bytes] = None) -> Tuple[bytes, bytes, bytes]:
+    """Encrypt data using AES-256-GCM.
+    
+    Args:
+        key: 32-byte AES key
+        plaintext: Data to encrypt
+        nonce: 12-byte nonce (generated if not provided)
+        
+    Returns:
+        Tuple of (ciphertext_with_tag, nonce, tag)
+        Note: ciphertext_with_tag includes the 16-byte auth tag appended
+    """
+    try:
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    except ImportError:
+        raise ImportError("cryptography package required for encryption. Install with: pip install cryptography")
+    
+    if nonce is None:
+        nonce = secrets.token_bytes(12)  # 96-bit nonce for GCM
+    
+    aesgcm = AESGCM(key)
+    # AESGCM.encrypt returns ciphertext + tag concatenated
+    ciphertext_with_tag = aesgcm.encrypt(nonce, plaintext, None)
+    
+    # Extract tag (last 16 bytes)
+    tag = ciphertext_with_tag[-16:]
+    
+    return ciphertext_with_tag, nonce, tag
+
+
+def _aes_gcm_decrypt(key: bytes, ciphertext_with_tag: bytes, nonce: bytes) -> bytes:
+    """Decrypt data using AES-256-GCM.
+    
+    Args:
+        key: 32-byte AES key
+        ciphertext_with_tag: Encrypted data with auth tag appended
+        nonce: 12-byte nonce used during encryption
+        
+    Returns:
+        Decrypted plaintext
+        
+    Raises:
+        DecryptionError: If decryption fails (wrong key, tampered data, etc.)
+    """
+    try:
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    except ImportError:
+        raise ImportError("cryptography package required for encryption. Install with: pip install cryptography")
+    
+    try:
+        aesgcm = AESGCM(key)
+        return aesgcm.decrypt(nonce, ciphertext_with_tag, None)
+    except Exception as e:
+        raise DecryptionError(f"Decryption failed: {e}")
+
+
+def encrypt_envelope(plaintext: bytes, key_provider: KeyProvider) -> EncryptedEnvelope:
+    """Encrypt data using envelope encryption.
+    
+    1. Generate a random DEK (Data Encryption Key)
+    2. Encrypt the data with the DEK using AES-256-GCM
+    3. Encrypt the DEK with the master key (KEK) using AES-256-GCM
+    4. Return the envelope containing encrypted DEK and encrypted data
+    
+    Args:
+        plaintext: Data to encrypt
+        key_provider: Provider for the master key
+        
+    Returns:
+        EncryptedEnvelope containing all data needed for decryption
+    """
+    # Get the current master key
+    key_id, master_key = key_provider.get_current_key()
+    
+    # Generate random DEK
+    dek = secrets.token_bytes(32)  # 256-bit DEK
+    
+    # Encrypt data with DEK
+    data_ciphertext, data_nonce, _ = _aes_gcm_encrypt(dek, plaintext)
+    
+    # Encrypt DEK with master key
+    dek_ciphertext, dek_nonce, _ = _aes_gcm_encrypt(master_key, dek)
+    
+    return EncryptedEnvelope(
+        key_id=key_id,
+        encrypted_dek=base64.b64encode(dek_ciphertext).decode("ascii"),
+        dek_nonce=base64.b64encode(dek_nonce).decode("ascii"),
+        ciphertext=base64.b64encode(data_ciphertext).decode("ascii"),
+        data_nonce=base64.b64encode(data_nonce).decode("ascii"),
+    )
+
+
+def decrypt_envelope(envelope: EncryptedEnvelope, key_provider: KeyProvider) -> bytes:
+    """Decrypt data from an encrypted envelope.
+    
+    1. Look up the master key by key_id
+    2. Decrypt the DEK using the master key
+    3. Decrypt the data using the DEK
+    
+    Args:
+        envelope: The encrypted envelope
+        key_provider: Provider to look up keys
+        
+    Returns:
+        Decrypted plaintext
+        
+    Raises:
+        KeyError: If the key_id is not found
+        DecryptionError: If decryption fails
+    """
+    # Get the master key for this envelope
+    try:
+        master_key = key_provider.get_key(envelope.key_id)
+    except KeyError:
+        raise KeyError(f"Key not found: {envelope.key_id}")
+    
+    # Decode base64 values
+    encrypted_dek = base64.b64decode(envelope.encrypted_dek)
+    dek_nonce = base64.b64decode(envelope.dek_nonce)
+    ciphertext = base64.b64decode(envelope.ciphertext)
+    data_nonce = base64.b64decode(envelope.data_nonce)
+    
+    # Decrypt DEK
+    dek = _aes_gcm_decrypt(master_key, encrypted_dek, dek_nonce)
+    
+    # Decrypt data
+    return _aes_gcm_decrypt(dek, ciphertext, data_nonce)
+
+
+class EncryptedAuditBackend:
+    """Audit backend wrapper that encrypts events at rest.
+    
+    Wraps any AuditBackend to provide transparent encryption/decryption.
+    Uses envelope encryption with AES-256-GCM for authenticated encryption.
+    
+    Features:
+    - Encrypts events on write, decrypts on read
+    - Envelope encryption: random DEK per event, DEK encrypted by master key
+    - Key rotation support: key_id stored with each event
+    - Works with any AuditBackend (InMemoryAuditBackend, FileAuditBackend, etc.)
+    
+    Example:
+        key = secrets.token_bytes(32)
+        key_provider = StaticKeyProvider(key)
+        inner_backend = FileAuditBackend(Path("/var/log/audit.jsonl"))
+        encrypted_backend = EncryptedAuditBackend(inner_backend, key_provider)
+        logger = AuditLogger(encrypted_backend)
+    """
+    
+    # Marker to identify encrypted events
+    ENCRYPTED_MARKER = "__encrypted__"
+    
+    def __init__(self, backend: AuditBackend, key_provider: KeyProvider):
+        """Initialize with a backend and key provider.
+        
+        Args:
+            backend: The underlying backend for storage
+            key_provider: Provider for encryption keys
+        """
+        self._backend = backend
+        self._key_provider = key_provider
+        self._lock = threading.Lock()
+    
+    def _encrypt_event(self, event: AuditEvent) -> AuditEvent:
+        """Encrypt an event's sensitive data.
+        
+        Creates a new event with the same ID but encrypted content.
+        The event_type, event_id, timestamp, and hashes are preserved
+        for indexing and chain integrity.
+        """
+        # Serialize the full event
+        event_json = event.to_json()
+        
+        # Encrypt the serialized event
+        envelope = encrypt_envelope(event_json.encode("utf-8"), self._key_provider)
+        
+        # Create a wrapper event that stores the encrypted envelope
+        # Preserve key fields for indexing and chain integrity
+        encrypted_event = AuditEvent(
+            event_id=event.event_id,
+            event_type=event.event_type,
+            actor_did=self.ENCRYPTED_MARKER,  # Marker for encrypted
+            target_did=None,
+            resource=self.ENCRYPTED_MARKER,
+            action=self.ENCRYPTED_MARKER,
+            timestamp=event.timestamp,
+            success=event.success,
+            metadata={
+                self.ENCRYPTED_MARKER: True,
+                "envelope": envelope.to_dict(),
+            },
+            previous_hash=event.previous_hash,
+            event_hash=event.event_hash,
+        )
+        
+        return encrypted_event
+    
+    def _decrypt_event(self, encrypted_event: AuditEvent) -> AuditEvent:
+        """Decrypt an encrypted event.
+        
+        Returns the original event with all data restored.
+        """
+        # Check if this is actually encrypted
+        if not self._is_encrypted(encrypted_event):
+            return encrypted_event
+        
+        # Extract envelope
+        envelope_data = encrypted_event.metadata.get("envelope")
+        if not envelope_data:
+            raise DecryptionError("Missing envelope in encrypted event")
+        
+        envelope = EncryptedEnvelope.from_dict(envelope_data)
+        
+        # Decrypt
+        plaintext = decrypt_envelope(envelope, self._key_provider)
+        
+        # Deserialize
+        return AuditEvent.from_json(plaintext.decode("utf-8"))
+    
+    def _is_encrypted(self, event: AuditEvent) -> bool:
+        """Check if an event is encrypted."""
+        return event.metadata.get(self.ENCRYPTED_MARKER, False)
+    
+    @property
+    def last_hash(self) -> Optional[str]:
+        """Get the hash of the last event, or None if empty."""
+        if hasattr(self._backend, "last_hash"):
+            return self._backend.last_hash
+        return None
+    
+    def write(self, event: AuditEvent) -> None:
+        """Write an encrypted event to the backend."""
+        with self._lock:
+            # Handle chain linking before encryption
+            if hasattr(self._backend, "last_hash"):
+                if not event.previous_hash and self._backend.last_hash:
+                    event.previous_hash = self._backend.last_hash
+                    event.event_hash = event._compute_hash()
+            
+            # Encrypt and write
+            encrypted_event = self._encrypt_event(event)
+            
+            # Write to backend (skip its chain linking since we handled it)
+            # We need to write directly to avoid double-chaining
+            if hasattr(self._backend, "_events"):
+                # InMemoryAuditBackend
+                with self._backend._lock:
+                    self._backend._events.append(encrypted_event)
+                    self._backend._last_hash = encrypted_event.event_hash
+            elif hasattr(self._backend, "_log_path"):
+                # FileAuditBackend
+                with self._backend._lock:
+                    self._backend._maybe_rotate()
+                    with open(self._backend._log_path, "a") as f:
+                        f.write(encrypted_event.to_json() + "\n")
+                    self._backend._last_hash = encrypted_event.event_hash
+            else:
+                # Generic backend - just call write (may double-chain)
+                self._backend.write(encrypted_event)
+    
+    def query(
+        self,
+        event_type: Optional[AuditEventType] = None,
+        actor_did: Optional[str] = None,
+        target_did: Optional[str] = None,
+        resource: Optional[str] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        limit: int = 100,
+    ) -> List[AuditEvent]:
+        """Query events from the backend, decrypting results.
+        
+        Note: Filtering by actor_did, target_did, and resource is performed
+        AFTER decryption since these fields are encrypted. This may be
+        slower than unencrypted backends for large datasets.
+        """
+        # Query with relaxed filters (encrypted fields won't match)
+        encrypted_events = self._backend.query(
+            event_type=event_type,
+            actor_did=None,  # Can't filter encrypted field
+            target_did=None,
+            resource=None,
+            start_time=start_time,
+            end_time=end_time,
+            limit=limit * 10 if (actor_did or target_did or resource) else limit,
+        )
+        
+        # Decrypt and filter
+        results = []
+        for encrypted_event in encrypted_events:
+            try:
+                event = self._decrypt_event(encrypted_event)
+            except (DecryptionError, KeyError):
+                # Skip events we can't decrypt (e.g., old keys removed)
+                continue
+            
+            # Apply filters that couldn't be done on encrypted data
+            if actor_did and event.actor_did != actor_did:
+                continue
+            if target_did and event.target_did != target_did:
+                continue
+            if resource and event.resource != resource:
+                continue
+            
+            results.append(event)
+            if len(results) >= limit:
+                break
+        
+        return results
+    
+    def count(
+        self,
+        event_type: Optional[AuditEventType] = None,
+        actor_did: Optional[str] = None,
+        success: Optional[bool] = None,
+    ) -> int:
+        """Count events matching criteria.
+        
+        Note: Filtering by actor_did requires decryption and is slow.
+        """
+        if actor_did:
+            # Need to decrypt to filter by actor
+            events = self.query(event_type=event_type, limit=100000)
+            return sum(1 for e in events if e.actor_did == actor_did and (success is None or e.success == success))
+        
+        # Can use backend directly for other filters
+        return self._backend.count(event_type=event_type, success=success)
+    
+    def all_events(self) -> List[AuditEvent]:
+        """Get all events, decrypted."""
+        if hasattr(self._backend, "all_events"):
+            encrypted_events = self._backend.all_events()
+            results = []
+            for encrypted_event in encrypted_events:
+                try:
+                    results.append(self._decrypt_event(encrypted_event))
+                except (DecryptionError, KeyError):
+                    continue
+            return results
+        return self.query(limit=100000)
+    
+    def verify_chain(self) -> Tuple[bool, Optional[ChainVerificationError]]:
+        """Verify the integrity of the audit chain.
+        
+        Verifies the encrypted events' chain (which preserves hashes).
+        """
+        if hasattr(self._backend, "verify_chain"):
+            return self._backend.verify_chain()
+        return True, None
+    
+    def clear(self) -> None:
+        """Clear all events (for testing)."""
+        if hasattr(self._backend, "clear"):
+            self._backend.clear()

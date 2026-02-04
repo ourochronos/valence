@@ -13,17 +13,22 @@ capability can use it (within constraints).
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from enum import Enum
-from typing import Optional, List, Dict, Any, Callable, Awaitable
+from typing import Optional, List, Dict, Any, Callable, Awaitable, TypeVar, ParamSpec, Union
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 from cryptography.exceptions import InvalidSignature
 import hashlib
 import jwt
+
+# Type variables for decorator
+P = ParamSpec('P')
+T = TypeVar('T')
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +99,14 @@ class CapabilityInsufficientPermissionError(CapabilityError):
     pass
 
 
+class CapabilityValidationError(CapabilityError):
+    """Capability validation failed with detailed errors."""
+    
+    def __init__(self, message: str, errors: List[str]) -> None:
+        super().__init__(message)
+        self.errors = errors
+
+
 # Alias for compatibility (JWT-based validation uses this)
 CapabilityInvalidError = CapabilityInvalidSignatureError
 
@@ -125,6 +138,7 @@ class Capability:
         parent_id: ID of parent capability (for delegation chains)
         metadata: Additional context (e.g., constraints, domain)
         revoked_at: When this capability was revoked (None if active)
+        revocation_reason: Reason for revocation (required when revoked)
     """
     
     id: str
@@ -138,6 +152,7 @@ class Capability:
     parent_id: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
     revoked_at: Optional[datetime] = None
+    revocation_reason: Optional[str] = None
     
     def __post_init__(self) -> None:
         """Validate capability fields."""
@@ -216,6 +231,7 @@ class Capability:
             "parent_id": self.parent_id,
             "metadata": self.metadata,
             "revoked_at": self.revoked_at.isoformat() if self.revoked_at else None,
+            "revocation_reason": self.revocation_reason,
         }
     
     @classmethod
@@ -249,6 +265,7 @@ class Capability:
             parent_id=data.get("parent_id"),
             metadata=data.get("metadata", {}),
             revoked_at=revoked_at,
+            revocation_reason=data.get("revocation_reason"),
         )
     
     def to_jwt(self, secret: str, algorithm: str = "HS256") -> str:
@@ -379,6 +396,357 @@ class Capability:
 
 
 # =============================================================================
+# CAPABILITY VALIDATION
+# =============================================================================
+
+@dataclass
+class ValidationResult:
+    """Result of capability validation with detailed error information.
+    
+    Provides comprehensive validation feedback:
+    - is_valid: Overall validation result
+    - errors: List of specific validation failures
+    - checked_at: Timestamp of validation
+    - capability_id: ID of validated capability
+    - resource: Resource that was validated against
+    - action: Action that was validated against
+    
+    Example:
+        result = validate_capability(cap, "valence://beliefs/science", "read")
+        if not result.is_valid:
+            for error in result.errors:
+                print(f"Validation failed: {error}")
+    """
+    
+    is_valid: bool
+    errors: List[str] = field(default_factory=list)
+    checked_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    capability_id: Optional[str] = None
+    resource: Optional[str] = None
+    action: Optional[str] = None
+    
+    def __bool__(self) -> bool:
+        """Allow using ValidationResult in boolean context."""
+        return self.is_valid
+    
+    def raise_if_invalid(self) -> None:
+        """Raise CapabilityValidationError if validation failed.
+        
+        Raises:
+            CapabilityValidationError: If is_valid is False
+        """
+        if not self.is_valid:
+            raise CapabilityValidationError(
+                f"Capability validation failed: {'; '.join(self.errors)}",
+                errors=self.errors,
+            )
+
+
+def validate_capability(
+    capability: Capability,
+    resource: str,
+    action: str,
+    *,
+    check_revocation: bool = True,
+    store: Optional["CapabilityStore"] = None,
+) -> ValidationResult:
+    """Validate a capability for accessing a protected resource.
+    
+    Performs comprehensive validation:
+    1. Expiration check
+    2. Revocation check (local flag)
+    3. Resource match
+    4. Action permission
+    
+    Note: This is synchronous validation. For async revocation checking
+    against a store, use validate_capability_async().
+    
+    Args:
+        capability: The capability to validate
+        resource: Resource identifier to validate against
+        action: Action to validate against
+        check_revocation: Whether to check local revocation flag (default True)
+        store: Optional store for additional revocation check (not used in sync version)
+    
+    Returns:
+        ValidationResult with is_valid and detailed errors
+    
+    Example:
+        cap = Capability.create(...)
+        result = validate_capability(cap, "valence://data/users", "read")
+        if result.is_valid:
+            # Grant access
+            pass
+        else:
+            # Log errors
+            for err in result.errors:
+                logger.warning(err)
+    """
+    errors: List[str] = []
+    
+    # Check expiration
+    if capability.is_expired:
+        expires = capability.expires_at
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        errors.append(f"Capability expired at {expires.isoformat()}")
+    
+    # Check revocation (local flag only in sync version)
+    if check_revocation and capability.is_revoked:
+        revoked = capability.revoked_at
+        if revoked and revoked.tzinfo is None:
+            revoked = revoked.replace(tzinfo=timezone.utc)
+        errors.append(f"Capability was revoked at {revoked.isoformat() if revoked else 'unknown time'}")
+    
+    # Check resource match
+    if capability.resource != resource:
+        errors.append(
+            f"Resource mismatch: capability grants access to '{capability.resource}', "
+            f"but '{resource}' was requested"
+        )
+    
+    # Check action permission
+    if not capability.has_action(action):
+        errors.append(
+            f"Action not permitted: capability grants {capability.actions}, "
+            f"but '{action}' was requested"
+        )
+    
+    return ValidationResult(
+        is_valid=len(errors) == 0,
+        errors=errors,
+        capability_id=capability.id,
+        resource=resource,
+        action=action,
+    )
+
+
+async def validate_capability_async(
+    capability: Capability,
+    resource: str,
+    action: str,
+    *,
+    store: Optional["CapabilityStore"] = None,
+) -> ValidationResult:
+    """Validate a capability asynchronously, including store revocation check.
+    
+    This async version additionally checks the store for revocation status,
+    which is useful when capabilities might be revoked server-side.
+    
+    Args:
+        capability: The capability to validate
+        resource: Resource identifier to validate against
+        action: Action to validate against
+        store: Optional store to check for revocation
+    
+    Returns:
+        ValidationResult with is_valid and detailed errors
+    """
+    # Start with synchronous validation (without local revocation check if store provided)
+    result = validate_capability(
+        capability,
+        resource,
+        action,
+        check_revocation=(store is None),  # Skip local check if we'll check store
+    )
+    
+    errors = list(result.errors)
+    
+    # Check store revocation if store provided
+    if store is not None:
+        # Check local revocation flag first
+        if capability.is_revoked:
+            revoked = capability.revoked_at
+            if revoked and revoked.tzinfo is None:
+                revoked = revoked.replace(tzinfo=timezone.utc)
+            errors.append(f"Capability was revoked at {revoked.isoformat() if revoked else 'unknown time'}")
+        # Also check store
+        elif await store.is_revoked(capability.id):
+            errors.append(f"Capability {capability.id} was revoked (store check)")
+    
+    return ValidationResult(
+        is_valid=len(errors) == 0,
+        errors=errors,
+        checked_at=datetime.now(timezone.utc),
+        capability_id=capability.id,
+        resource=resource,
+        action=action,
+    )
+
+
+# =============================================================================
+# CAPABILITY DECORATOR
+# =============================================================================
+
+def requires_capability(
+    resource: Union[str, Callable[..., str]],
+    action: str,
+    *,
+    capability_param: str = "capability",
+    store_param: Optional[str] = None,
+    raise_on_invalid: bool = True,
+) -> Callable[[Callable[P, T]], Callable[P, T]]:
+    """Decorator for protecting functions with capability-based access control.
+    
+    Validates that the provided capability grants access to the specified
+    resource and action before executing the decorated function.
+    
+    Args:
+        resource: Resource identifier (string) or callable that extracts
+                  resource from function arguments
+        action: Required action (e.g., "read", "write")
+        capability_param: Name of the parameter containing the capability
+                          (default: "capability")
+        store_param: Name of the parameter containing the store for async
+                     revocation checking (optional)
+        raise_on_invalid: Whether to raise CapabilityValidationError on
+                          validation failure (default True). If False,
+                          returns None for sync functions or a ValidationResult
+                          for functions that return Optional types.
+    
+    Returns:
+        Decorated function that validates capability before execution
+    
+    Example:
+        @requires_capability("valence://beliefs/science", "read")
+        async def read_beliefs(capability: Capability) -> List[Belief]:
+            return await fetch_beliefs()
+        
+        @requires_capability(
+            lambda self, domain: f"valence://beliefs/{domain}",
+            "write"
+        )
+        async def write_belief(
+            self,
+            domain: str,
+            content: str,
+            capability: Capability
+        ) -> Belief:
+            return await store_belief(domain, content)
+    
+    Raises:
+        CapabilityValidationError: If validation fails and raise_on_invalid=True
+        ValueError: If capability_param not found in function arguments
+    """
+    def decorator(func: Callable[P, T]) -> Callable[P, T]:
+        import asyncio
+        import inspect
+        
+        # Check if function is async
+        is_async = asyncio.iscoroutinefunction(func)
+        
+        @functools.wraps(func)
+        def sync_wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            # Extract capability from arguments
+            cap = _extract_param(func, args, kwargs, capability_param)
+            if cap is None:
+                raise ValueError(f"Required parameter '{capability_param}' not provided")
+            
+            # Resolve resource (might be callable)
+            resolved_resource = _resolve_resource(resource, func, args, kwargs)
+            
+            # Extract optional store
+            store = None
+            if store_param:
+                store = _extract_param(func, args, kwargs, store_param)
+            
+            # Validate
+            result = validate_capability(cap, resolved_resource, action, store=store)
+            
+            if not result.is_valid:
+                if raise_on_invalid:
+                    result.raise_if_invalid()
+                return None  # type: ignore
+            
+            return func(*args, **kwargs)
+        
+        @functools.wraps(func)
+        async def async_wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            # Extract capability from arguments
+            cap = _extract_param(func, args, kwargs, capability_param)
+            if cap is None:
+                raise ValueError(f"Required parameter '{capability_param}' not provided")
+            
+            # Resolve resource (might be callable)
+            resolved_resource = _resolve_resource(resource, func, args, kwargs)
+            
+            # Extract optional store
+            store = None
+            if store_param:
+                store = _extract_param(func, args, kwargs, store_param)
+            
+            # Validate (use async version if store provided)
+            if store is not None:
+                result = await validate_capability_async(cap, resolved_resource, action, store=store)
+            else:
+                result = validate_capability(cap, resolved_resource, action)
+            
+            if not result.is_valid:
+                if raise_on_invalid:
+                    result.raise_if_invalid()
+                return None  # type: ignore
+            
+            return await func(*args, **kwargs)
+        
+        return async_wrapper if is_async else sync_wrapper  # type: ignore
+    
+    return decorator
+
+
+def _extract_param(
+    func: Callable,
+    args: tuple,
+    kwargs: dict,
+    param_name: str,
+) -> Any:
+    """Extract a parameter value from function arguments."""
+    import inspect
+    
+    # Check kwargs first
+    if param_name in kwargs:
+        return kwargs[param_name]
+    
+    # Get function signature to map positional args
+    sig = inspect.signature(func)
+    params = list(sig.parameters.keys())
+    
+    try:
+        idx = params.index(param_name)
+        if idx < len(args):
+            return args[idx]
+    except ValueError:
+        pass
+    
+    return None
+
+
+def _resolve_resource(
+    resource: Union[str, Callable],
+    func: Callable,
+    args: tuple,
+    kwargs: dict,
+) -> str:
+    """Resolve resource identifier from string or callable."""
+    import inspect
+    
+    if callable(resource) and not isinstance(resource, str):
+        # Build kwargs dict from positional args
+        sig = inspect.signature(func)
+        params = list(sig.parameters.keys())
+        
+        # Create combined kwargs
+        combined = dict(kwargs)
+        for i, val in enumerate(args):
+            if i < len(params):
+                combined[params[i]] = val
+        
+        # Call resource resolver
+        return resource(**combined)
+    
+    return resource
+
+
+# =============================================================================
 # CAPABILITY STORE (Abstract Interface)
 # =============================================================================
 
@@ -411,12 +779,54 @@ class CapabilityStore:
         """List capabilities for a resource."""
         raise NotImplementedError
     
-    async def revoke(self, capability_id: str) -> bool:
-        """Mark a capability as revoked. Returns True if found and revoked."""
+    async def revoke(self, capability_id: str, reason: str) -> bool:
+        """Mark a capability as revoked with a reason.
+        
+        Revocation is immutable - once revoked, a capability cannot be un-revoked.
+        
+        Args:
+            capability_id: ID of capability to revoke
+            reason: Reason for revocation (required)
+        
+        Returns:
+            True if found and revoked, False if not found or already revoked
+        """
+        raise NotImplementedError
+    
+    async def revoke_by_issuer(self, issuer_did: str, reason: str) -> int:
+        """Revoke all capabilities issued by a DID.
+        
+        Args:
+            issuer_did: DID of the issuer
+            reason: Reason for revocation
+        
+        Returns:
+            Number of capabilities revoked
+        """
+        raise NotImplementedError
+    
+    async def revoke_by_holder(self, holder_did: str, reason: str) -> int:
+        """Revoke all capabilities held by a DID.
+        
+        Args:
+            holder_did: DID of the holder
+            reason: Reason for revocation
+        
+        Returns:
+            Number of capabilities revoked
+        """
         raise NotImplementedError
     
     async def is_revoked(self, capability_id: str) -> bool:
         """Check if a capability is revoked."""
+        raise NotImplementedError
+    
+    async def get_revocation_info(self, capability_id: str) -> Optional[tuple[datetime, str]]:
+        """Get revocation timestamp and reason for a capability.
+        
+        Returns:
+            Tuple of (revoked_at, reason) if revoked, None if not revoked or not found
+        """
         raise NotImplementedError
     
     async def cleanup_expired(self, older_than_days: int = 30) -> int:
@@ -460,18 +870,53 @@ class InMemoryCapabilityStore(CapabilityStore):
                     result.append(cap)
         return result
     
-    async def revoke(self, capability_id: str) -> bool:
+    async def revoke(self, capability_id: str, reason: str) -> bool:
+        """Mark a capability as revoked with a reason.
+        
+        Revocation is immutable - already revoked capabilities return False.
+        """
         if capability_id in self._capabilities:
             cap = self._capabilities[capability_id]
+            # Immutable: cannot re-revoke
+            if cap.is_revoked:
+                return False
             cap.revoked_at = datetime.now(timezone.utc)
+            cap.revocation_reason = reason
             return True
         return False
+    
+    async def revoke_by_issuer(self, issuer_did: str, reason: str) -> int:
+        """Revoke all capabilities issued by a DID."""
+        count = 0
+        for cap in self._capabilities.values():
+            if cap.issuer_did == issuer_did and not cap.is_revoked:
+                cap.revoked_at = datetime.now(timezone.utc)
+                cap.revocation_reason = reason
+                count += 1
+        return count
+    
+    async def revoke_by_holder(self, holder_did: str, reason: str) -> int:
+        """Revoke all capabilities held by a DID."""
+        count = 0
+        for cap in self._capabilities.values():
+            if cap.holder_did == holder_did and not cap.is_revoked:
+                cap.revoked_at = datetime.now(timezone.utc)
+                cap.revocation_reason = reason
+                count += 1
+        return count
     
     async def is_revoked(self, capability_id: str) -> bool:
         cap = self._capabilities.get(capability_id)
         if cap:
             return cap.is_revoked
         return False
+    
+    async def get_revocation_info(self, capability_id: str) -> Optional[tuple[datetime, str]]:
+        """Get revocation timestamp and reason for a capability."""
+        cap = self._capabilities.get(capability_id)
+        if cap and cap.is_revoked:
+            return (cap.revoked_at, cap.revocation_reason)
+        return None
     
     async def cleanup_expired(self, older_than_days: int = 30) -> int:
         cutoff = datetime.now(timezone.utc) - timedelta(days=older_than_days)
@@ -697,19 +1142,87 @@ class CapabilityService:
         
         return True
     
-    async def revoke(self, capability_id: str) -> bool:
+    async def revoke(self, capability_id: str, reason: str) -> bool:
         """Revoke a capability by ID.
+        
+        Revocation is immutable - once revoked, a capability cannot be un-revoked.
         
         Args:
             capability_id: ID of capability to revoke
+            reason: Reason for revocation (required for audit trail)
             
         Returns:
-            True if capability was found and revoked
+            True if capability was found and revoked, False if not found or already revoked
+        
+        Raises:
+            ValueError: If reason is empty
         """
-        result = await self.store.revoke(capability_id)
+        if not reason or not reason.strip():
+            raise ValueError("Revocation reason is required")
+        
+        result = await self.store.revoke(capability_id, reason)
         if result:
-            logger.info(f"Revoked capability {capability_id}")
+            logger.info(f"Revoked capability {capability_id}: {reason}")
         return result
+    
+    async def revoke_by_issuer(self, issuer_did: str, reason: str) -> int:
+        """Revoke all capabilities issued by a DID.
+        
+        Use this for bulk revocation when an issuer is compromised or
+        needs to invalidate all issued capabilities.
+        
+        Args:
+            issuer_did: DID of the issuer
+            reason: Reason for revocation (required for audit trail)
+            
+        Returns:
+            Number of capabilities revoked
+        
+        Raises:
+            ValueError: If reason is empty
+        """
+        if not reason or not reason.strip():
+            raise ValueError("Revocation reason is required")
+        
+        count = await self.store.revoke_by_issuer(issuer_did, reason)
+        if count > 0:
+            logger.info(f"Revoked {count} capabilities issued by {issuer_did}: {reason}")
+        return count
+    
+    async def revoke_by_holder(self, holder_did: str, reason: str) -> int:
+        """Revoke all capabilities held by a DID.
+        
+        Use this for bulk revocation when a holder is compromised or
+        their access needs to be terminated.
+        
+        Args:
+            holder_did: DID of the holder
+            reason: Reason for revocation (required for audit trail)
+            
+        Returns:
+            Number of capabilities revoked
+        
+        Raises:
+            ValueError: If reason is empty
+        """
+        if not reason or not reason.strip():
+            raise ValueError("Revocation reason is required")
+        
+        count = await self.store.revoke_by_holder(holder_did, reason)
+        if count > 0:
+            logger.info(f"Revoked {count} capabilities held by {holder_did}: {reason}")
+        return count
+    
+    async def get_revocation_info(self, capability_id: str) -> Optional[tuple[datetime, str]]:
+        """Get revocation information for a capability.
+        
+        Args:
+            capability_id: ID of capability to check
+            
+        Returns:
+            Tuple of (revoked_at, reason) if revoked, None otherwise
+        """
+        return await self.store.get_revocation_info(capability_id)
     
     async def get(self, capability_id: str) -> Optional[Capability]:
         """Get a capability by ID.
@@ -791,6 +1304,77 @@ class CapabilityService:
                 continue
         
         return None
+    
+    async def validate_capability(
+        self,
+        capability: Capability,
+        resource: str,
+        action: str,
+        *,
+        verify_signature: bool = True,
+        issuer_public_key: Optional[Ed25519PublicKey] = None,
+    ) -> ValidationResult:
+        """Validate a capability for accessing a protected resource.
+        
+        Performs comprehensive validation:
+        1. Expiration check
+        2. Revocation check (both local and store)
+        3. Resource match
+        4. Action permission
+        5. Optional signature verification
+        
+        This method integrates with the CapabilityService's store and key resolver.
+        
+        Args:
+            capability: The capability to validate
+            resource: Resource identifier to validate against
+            action: Action to validate against
+            verify_signature: Whether to verify the capability signature (default True)
+            issuer_public_key: Optional public key for signature verification
+        
+        Returns:
+            ValidationResult with is_valid and detailed errors
+        
+        Example:
+            result = await service.validate_capability(cap, "valence://data/users", "read")
+            if result.is_valid:
+                # Grant access
+                pass
+            else:
+                logger.warning(f"Access denied: {result.errors}")
+        """
+        # Start with async validation (includes store revocation check)
+        result = await validate_capability_async(
+            capability,
+            resource,
+            action,
+            store=self.store,
+        )
+        
+        errors = list(result.errors)
+        
+        # Optionally verify signature
+        if verify_signature and result.is_valid:
+            try:
+                await self.verify(capability, issuer_public_key)
+            except CapabilityExpiredError as e:
+                # Already checked, but signature verify also checks
+                if not any("expired" in err.lower() for err in errors):
+                    errors.append(str(e))
+            except CapabilityRevokedError as e:
+                if not any("revoked" in err.lower() for err in errors):
+                    errors.append(str(e))
+            except CapabilityInvalidSignatureError as e:
+                errors.append(f"Signature verification failed: {e}")
+        
+        return ValidationResult(
+            is_valid=len(errors) == 0,
+            errors=errors,
+            checked_at=datetime.now(timezone.utc),
+            capability_id=capability.id,
+            resource=resource,
+            action=action,
+        )
     
     async def delegate(
         self,
@@ -889,6 +1473,14 @@ async def verify_capability(
     return await get_capability_service().verify(capability, issuer_public_key)
 
 
-async def revoke_capability(capability_id: str) -> bool:
-    """Revoke a capability using the default service."""
-    return await get_capability_service().revoke(capability_id)
+async def revoke_capability(capability_id: str, reason: str) -> bool:
+    """Revoke a capability using the default service.
+    
+    Args:
+        capability_id: ID of capability to revoke
+        reason: Reason for revocation (required)
+    
+    Returns:
+        True if capability was found and revoked
+    """
+    return await get_capability_service().revoke(capability_id, reason)

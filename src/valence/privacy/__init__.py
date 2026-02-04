@@ -105,6 +105,14 @@ from .elevation import (
     create_redacted_content,
     ElevationService,
 )
+from .anomaly import (
+    AnomalyType,
+    AnomalyAlert,
+    RuleConfig,
+    AnomalyDetector,
+    get_anomaly_detector,
+    set_anomaly_detector,
+)
 
 __all__ = [
     # Types
@@ -208,4 +216,11 @@ __all__ = [
     "FilteredProvenance",
     "filter_provenance",
     "get_tier_for_audience",
+    # Anomaly detection (Issue #85)
+    "AnomalyType",
+    "AnomalyAlert",
+    "RuleConfig",
+    "AnomalyDetector",
+    "get_anomaly_detector",
+    "set_anomaly_detector",
 ]
