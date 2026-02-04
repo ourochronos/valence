@@ -81,6 +81,155 @@ def format_confidence(conf: dict) -> str:
     return str(overall)[:5]
 
 
+# ============================================================================
+# Multi-Signal Ranking (Valence Query Protocol)
+# ============================================================================
+
+def compute_confidence_score(belief: dict) -> float:
+    """
+    Compute aggregated confidence score from 6D confidence vector.
+    
+    Uses geometric mean to penalize beliefs with any weak dimension.
+    Falls back to JSONB 'overall' field for backward compatibility.
+    """
+    # Try 6D confidence columns first
+    src = belief.get('confidence_source', 0.5)
+    meth = belief.get('confidence_method', 0.5)
+    cons = belief.get('confidence_consistency', 1.0)
+    fresh = belief.get('confidence_freshness', 1.0)
+    corr = belief.get('confidence_corroboration', 0.1)
+    app = belief.get('confidence_applicability', 0.8)
+    
+    # Check if 6D columns are populated (not default placeholder)
+    has_6d = any([
+        belief.get('confidence_source') is not None,
+        belief.get('confidence_method') is not None,
+    ])
+    
+    if has_6d:
+        # Geometric mean with spec weights
+        # w_sr=0.25, w_mq=0.20, w_ic=0.15, w_tf=0.15, w_cor=0.15, w_da=0.10
+        import math
+        try:
+            score = (
+                (src ** 0.25) *
+                (meth ** 0.20) *
+                (cons ** 0.15) *
+                (fresh ** 0.15) *
+                (corr ** 0.15) *
+                (app ** 0.10)
+            )
+            return min(1.0, max(0.0, score))
+        except (ValueError, ZeroDivisionError):
+            pass
+    
+    # Fallback to JSONB overall
+    conf = belief.get('confidence', {})
+    if isinstance(conf, dict):
+        overall = conf.get('overall', 0.5)
+        if isinstance(overall, (int, float)):
+            return min(1.0, max(0.0, float(overall)))
+    
+    return 0.5  # Default
+
+
+def compute_recency_score(created_at: datetime, decay_rate: float = 0.01) -> float:
+    """
+    Compute recency score with exponential decay.
+    
+    Default decay_rate=0.01 gives a half-life of ~69 days.
+    """
+    import math
+    
+    if not created_at:
+        return 0.5
+    
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    
+    now = datetime.now(timezone.utc)
+    age_days = (now - created_at).total_seconds() / 86400
+    
+    # Exponential decay: e^(-λ × age)
+    recency = math.exp(-decay_rate * age_days)
+    return min(1.0, max(0.0, recency))
+
+
+def multi_signal_rank(
+    results: list[dict],
+    semantic_weight: float = 0.50,
+    confidence_weight: float = 0.35,
+    recency_weight: float = 0.15,
+    min_confidence: float | None = None,
+    explain: bool = False,
+) -> list[dict]:
+    """
+    Apply multi-signal ranking to query results.
+    
+    Formula: final_score = w_semantic × semantic + w_confidence × confidence + w_recency × recency
+    
+    Args:
+        results: List of belief dicts with 'similarity' (semantic score)
+        semantic_weight: Weight for semantic similarity (default 0.50)
+        confidence_weight: Weight for confidence score (default 0.35)
+        recency_weight: Weight for recency score (default 0.15)
+        min_confidence: Filter out beliefs below this confidence (optional)
+        explain: Include score breakdown in results
+    
+    Returns:
+        Sorted results with 'final_score' and optional 'score_breakdown'
+    """
+    # Normalize weights to sum to 1.0
+    total_weight = semantic_weight + confidence_weight + recency_weight
+    if total_weight > 0:
+        semantic_weight /= total_weight
+        confidence_weight /= total_weight
+        recency_weight /= total_weight
+    
+    ranked = []
+    for r in results:
+        # Semantic score (already computed from embedding similarity)
+        semantic = r.get('similarity', 0.0)
+        if isinstance(semantic, (int, float)):
+            semantic = min(1.0, max(0.0, float(semantic)))
+        else:
+            semantic = 0.0
+        
+        # Confidence score
+        confidence = compute_confidence_score(r)
+        
+        # Filter by minimum confidence if specified
+        if min_confidence is not None and confidence < min_confidence:
+            continue
+        
+        # Recency score
+        recency = compute_recency_score(r.get('created_at'))
+        
+        # Final score
+        final_score = (
+            semantic_weight * semantic +
+            confidence_weight * confidence +
+            recency_weight * recency
+        )
+        
+        r['final_score'] = final_score
+        
+        if explain:
+            r['score_breakdown'] = {
+                'semantic': {'value': semantic, 'weight': semantic_weight, 'contribution': semantic_weight * semantic},
+                'confidence': {'value': confidence, 'weight': confidence_weight, 'contribution': confidence_weight * confidence},
+                'recency': {'value': recency, 'weight': recency_weight, 'contribution': recency_weight * recency},
+                'final': final_score,
+            }
+        
+        ranked.append(r)
+    
+    # Sort by final score descending
+    ranked.sort(key=lambda x: x.get('final_score', 0), reverse=True)
+    
+    return ranked
+
+
 def format_age(dt: datetime) -> str:
     """Format datetime as human-readable age."""
     if not dt:
@@ -412,7 +561,7 @@ def cmd_add(args: argparse.Namespace) -> int:
 # ============================================================================
 
 def cmd_query(args: argparse.Namespace) -> int:
-    """Search beliefs with derivation chains visible."""
+    """Search beliefs with multi-signal ranking and derivation chains."""
     query = args.query
     
     # Use federated query if scope is federated
@@ -428,10 +577,27 @@ def cmd_query(args: argparse.Namespace) -> int:
         
         results = []
         
+        # Get ranking weights from args (with defaults)
+        recency_weight = getattr(args, 'recency_weight', 0.15) or 0.15
+        min_confidence = getattr(args, 'min_confidence', None)
+        explain = getattr(args, 'explain', False)
+        
+        # Semantic weight adjusts based on recency weight
+        # Default: semantic=0.50, confidence=0.35, recency=0.15
+        semantic_weight = 0.50
+        confidence_weight = 0.35
+        
+        # If recency_weight is overridden, scale others proportionally
+        if recency_weight != 0.15:
+            remaining = 1.0 - recency_weight
+            ratio = remaining / 0.85  # 0.85 = default semantic + confidence
+            semantic_weight = 0.50 * ratio
+            confidence_weight = 0.35 * ratio
+        
         if embedding:
             embedding_str = f"[{','.join(str(x) for x in embedding)}]"
             
-            # Semantic search with derivation info
+            # Semantic search with derivation info AND 6D confidence columns
             cur.execute("""
                 WITH ranked AS (
                     SELECT 
@@ -442,6 +608,12 @@ def cmd_query(args: argparse.Namespace) -> int:
                         b.created_at,
                         b.extraction_method,
                         b.supersedes_id,
+                        b.confidence_source,
+                        b.confidence_method,
+                        b.confidence_consistency,
+                        b.confidence_freshness,
+                        b.confidence_corroboration,
+                        b.confidence_applicability,
                         1 - (b.embedding <=> %s::vector) as similarity,
                         d.derivation_type,
                         d.method_description,
@@ -464,7 +636,7 @@ def cmd_query(args: argparse.Namespace) -> int:
                     WHERE ds.belief_id = r.id) as derivation_sources
                 FROM ranked r
                 WHERE r.similarity >= %s
-            """, (embedding_str, embedding_str, args.limit, args.threshold))
+            """, (embedding_str, embedding_str, args.limit * 2, args.threshold))  # Get extra for filtering
             
             results = cur.fetchall()
         
@@ -479,6 +651,12 @@ def cmd_query(args: argparse.Namespace) -> int:
                     b.created_at,
                     b.extraction_method,
                     b.supersedes_id,
+                    b.confidence_source,
+                    b.confidence_method,
+                    b.confidence_consistency,
+                    b.confidence_freshness,
+                    b.confidence_corroboration,
+                    b.confidence_applicability,
                     ts_rank(b.content_tsv, websearch_to_tsquery('english', %s)) as similarity,
                     d.derivation_type,
                     d.method_description,
@@ -497,31 +675,63 @@ def cmd_query(args: argparse.Namespace) -> int:
                   AND b.superseded_by_id IS NULL
                 ORDER BY ts_rank(b.content_tsv, websearch_to_tsquery('english', %s)) DESC
                 LIMIT %s
-            """, (query, query, query, args.limit))
+            """, (query, query, query, args.limit * 2))
             
             results = cur.fetchall()
+        
+        # Convert to list of dicts for processing
+        results = [dict(r) for r in results]
         
         # Domain filter
         if args.domain:
             results = [r for r in results if args.domain in (r.get('domain_path') or [])]
         
+        # Apply multi-signal ranking
+        results = multi_signal_rank(
+            results,
+            semantic_weight=semantic_weight,
+            confidence_weight=confidence_weight,
+            recency_weight=recency_weight,
+            min_confidence=min_confidence,
+            explain=explain,
+        )
+        
+        # Limit results after ranking
+        results = results[:args.limit]
+        
         if not results:
             print(f"🔍 No beliefs found for: {query}")
             return 0
         
-        print(f"🔍 Found {len(results)} belief(s) for: {query}\n")
+        print(f"🔍 Found {len(results)} belief(s) for: {query}")
+        if explain:
+            print(f"   Weights: semantic={semantic_weight:.2f}, confidence={confidence_weight:.2f}, recency={recency_weight:.2f}")
+        print()
         
         for i, r in enumerate(results, 1):
+            final_score = r.get('final_score', 0)
             sim = r.get('similarity', 0)
-            sim_pct = f"{sim:.0%}" if isinstance(sim, float) else "?"
             
             # Header
             print(f"{'─' * 60}")
             print(f"[{i}] {r['content'][:70]}{'...' if len(r['content']) > 70 else ''}")
-            print(f"    ID: {str(r['id'])[:8]}  Confidence: {format_confidence(r.get('confidence', {}))}  Similarity: {sim_pct}  Age: {format_age(r.get('created_at'))}")
+            
+            # Show final score and components
+            conf_score = compute_confidence_score(r)
+            print(f"    ID: {str(r['id'])[:8]}  Score: {final_score:.0%}  Confidence: {conf_score:.0%}  Semantic: {sim:.0%}  Age: {format_age(r.get('created_at'))}")
             
             if r.get('domain_path'):
                 print(f"    Domains: {', '.join(r['domain_path'])}")
+            
+            # Show score breakdown if explain mode
+            if explain and r.get('score_breakdown'):
+                bd = r['score_breakdown']
+                print(f"    ┌─ Score Breakdown:")
+                print(f"    │  Semantic:   {bd['semantic']['value']:.2f} × {bd['semantic']['weight']:.2f} = {bd['semantic']['contribution']:.3f}")
+                print(f"    │  Confidence: {bd['confidence']['value']:.2f} × {bd['confidence']['weight']:.2f} = {bd['confidence']['contribution']:.3f}")
+                print(f"    │  Recency:    {bd['recency']['value']:.2f} × {bd['recency']['weight']:.2f} = {bd['recency']['contribution']:.3f}")
+                print(f"    │  Final:      {bd['final']:.3f}")
+                print(f"    └─")
             
             # === DERIVATION CHAIN ===
             derivation_type = r.get('derivation_type') or r.get('extraction_method') or 'unknown'
@@ -1189,14 +1399,21 @@ Federation (Week 2):
     add_parser.add_argument('--method', '-m', help='Method description for derivation')
     
     # query
-    query_parser = subparsers.add_parser('query', help='Search beliefs')
+    query_parser = subparsers.add_parser('query', help='Search beliefs with multi-signal ranking')
     query_parser.add_argument('query', help='Search query')
     query_parser.add_argument('--limit', '-n', type=int, default=10, help='Max results')
-    query_parser.add_argument('--threshold', '-t', type=float, default=0.3, help='Min similarity')
+    query_parser.add_argument('--threshold', '-t', type=float, default=0.3, help='Min semantic similarity')
     query_parser.add_argument('--domain', '-d', help='Filter by domain')
     query_parser.add_argument('--chain', action='store_true', help='Show full supersession chains')
     query_parser.add_argument('--scope', '-s', choices=['local', 'federated'], default='local',
                             help='Search scope: local (default) or federated (include peer beliefs)')
+    # Multi-signal ranking options (Valence Query Protocol)
+    query_parser.add_argument('--recency-weight', '-r', type=float, default=0.15,
+                            help='Recency weight 0.0-1.0 (default 0.15). Higher = prefer newer beliefs')
+    query_parser.add_argument('--min-confidence', '-c', type=float, default=None,
+                            help='Filter beliefs below this confidence threshold (0.0-1.0)')
+    query_parser.add_argument('--explain', '-e', action='store_true',
+                            help='Show detailed score breakdown per result')
     
     # list
     list_parser = subparsers.add_parser('list', help='List recent beliefs')
@@ -1259,7 +1476,100 @@ Federation (Week 2):
     import_parser.add_argument('--trust', type=float, 
                               help='Override trust level (otherwise uses registry)')
     
+    # ========================================================================
+    # TRUST commands
+    # ========================================================================
+    
+    trust_parser = subparsers.add_parser('trust', help='Trust network management')
+    trust_subparsers = trust_parser.add_subparsers(dest='trust_command', required=True)
+    
+    # trust check
+    trust_check_parser = trust_subparsers.add_parser('check', help='Check for trust concentration issues')
+    trust_check_parser.add_argument('--json', '-j', action='store_true', 
+                                   help='Output as JSON')
+    trust_check_parser.add_argument('--single-threshold', type=float, default=None,
+                                   help='Custom threshold for single node dominance (default: 30%%)')
+    trust_check_parser.add_argument('--top3-threshold', type=float, default=None,
+                                   help='Custom threshold for top 3 nodes dominance (default: 50%%)')
+    trust_check_parser.add_argument('--min-sources', type=int, default=None,
+                                   help='Minimum trusted sources (default: 3)')
+    
     return parser
+
+
+# ============================================================================
+# TRUST Commands
+# ============================================================================
+
+def cmd_trust_check(args: argparse.Namespace) -> int:
+    """Check for trust concentration issues in the federation network."""
+    from ..federation.trust import check_trust_concentration
+    from ..federation.trust_policy import CONCENTRATION_THRESHOLDS
+    
+    # Build custom thresholds if provided
+    thresholds = dict(CONCENTRATION_THRESHOLDS)  # Copy defaults
+    if args.single_threshold is not None:
+        thresholds["single_node_warning"] = args.single_threshold
+    if args.top3_threshold is not None:
+        thresholds["top_3_warning"] = args.top3_threshold
+    if args.min_sources is not None:
+        thresholds["min_trusted_sources"] = args.min_sources
+    
+    try:
+        report = check_trust_concentration(thresholds)
+        
+        # JSON output
+        if args.json:
+            print(json.dumps(report.to_dict(), indent=2))
+            return 0 if not report.has_critical_warnings else 1
+        
+        # Human-readable output
+        print("🔍 Trust Concentration Analysis")
+        print("─" * 50)
+        
+        # Network metrics
+        print(f"\n📊 Network Metrics:")
+        print(f"   Total nodes:      {report.total_nodes}")
+        print(f"   Active nodes:     {report.active_nodes}")
+        print(f"   Trusted sources:  {report.trusted_sources}")
+        print(f"   Total trust:      {report.total_trust:.2f}")
+        print(f"   Top node share:   {report.top_node_share:.1%}")
+        print(f"   Top 3 share:      {report.top_3_share:.1%}")
+        if report.gini_coefficient is not None:
+            gini_desc = "equal" if report.gini_coefficient < 0.3 else (
+                "moderate" if report.gini_coefficient < 0.5 else "concentrated")
+            print(f"   Gini coefficient: {report.gini_coefficient:.2f} ({gini_desc})")
+        
+        # Warnings
+        if report.warnings:
+            print(f"\n⚠️  Warnings ({len(report.warnings)}):")
+            for warning in report.warnings:
+                print(f"\n   {warning}")
+                if warning.node_name:
+                    print(f"      Node: {warning.node_name}")
+                if warning.recommendation:
+                    print(f"      💡 {warning.recommendation}")
+        else:
+            print(f"\n✅ No trust concentration issues detected")
+        
+        print()
+        
+        return 0 if not report.has_critical_warnings else 1
+        
+    except Exception as e:
+        print(f"❌ Trust check failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
+
+def cmd_trust(args: argparse.Namespace) -> int:
+    """Dispatch trust subcommands."""
+    if args.trust_command == 'check':
+        return cmd_trust_check(args)
+    else:
+        print(f"Unknown trust command: {args.trust_command}")
+        return 1
 
 
 def main() -> int:
@@ -1277,6 +1587,7 @@ def main() -> int:
         'peer': cmd_peer,
         'export': cmd_export,
         'import': cmd_import,
+        'trust': cmd_trust,
     }
     
     handler = commands.get(args.command)
