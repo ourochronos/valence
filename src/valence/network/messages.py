@@ -1151,6 +1151,41 @@ class NetworkBaseline:
     last_updated: float = field(default_factory=time.time)
     delivery_rate_stddev: float = 0.05
     latency_stddev_ms: float = 50.0
+    
+    def is_delivery_rate_anomalous(self, rate: float, threshold_stddevs: float = 2.0) -> bool:
+        """Check if a delivery rate is anomalously low."""
+        threshold = self.avg_delivery_rate - (threshold_stddevs * self.delivery_rate_stddev)
+        return rate < threshold
+    
+    def is_latency_anomalous(self, latency_ms: float, threshold_stddevs: float = 2.0) -> bool:
+        """Check if latency is anomalously high."""
+        threshold = self.avg_latency_ms + (threshold_stddevs * self.latency_stddev_ms)
+        return latency_ms > threshold
+    
+    def to_dict(self) -> dict:
+        """Serialize to dict."""
+        return {
+            "avg_delivery_rate": self.avg_delivery_rate,
+            "avg_latency_ms": self.avg_latency_ms,
+            "avg_ack_success_rate": self.avg_ack_success_rate,
+            "sample_count": self.sample_count,
+            "last_updated": self.last_updated,
+            "delivery_rate_stddev": self.delivery_rate_stddev,
+            "latency_stddev_ms": self.latency_stddev_ms,
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> "NetworkBaseline":
+        """Deserialize from dict."""
+        return cls(
+            avg_delivery_rate=data.get("avg_delivery_rate", 0.95),
+            avg_latency_ms=data.get("avg_latency_ms", 100.0),
+            avg_ack_success_rate=data.get("avg_ack_success_rate", 0.95),
+            sample_count=data.get("sample_count", 0),
+            last_updated=data.get("last_updated", time.time()),
+            delivery_rate_stddev=data.get("delivery_rate_stddev", 0.05),
+            latency_stddev_ms=data.get("latency_stddev_ms", 50.0),
+        )
 
 
 # =============================================================================
@@ -1366,38 +1401,3 @@ class SeedRevocationList:
             True if the seed is revoked and the revocation is effective
         """
         return seed_id in self.get_revoked_seed_ids()
-    
-    def is_delivery_rate_anomalous(self, rate: float, threshold_stddevs: float = 2.0) -> bool:
-        """Check if a delivery rate is anomalously low."""
-        threshold = self.avg_delivery_rate - (threshold_stddevs * self.delivery_rate_stddev)
-        return rate < threshold
-    
-    def is_latency_anomalous(self, latency_ms: float, threshold_stddevs: float = 2.0) -> bool:
-        """Check if latency is anomalously high."""
-        threshold = self.avg_latency_ms + (threshold_stddevs * self.latency_stddev_ms)
-        return latency_ms > threshold
-    
-    def to_dict(self) -> dict:
-        """Serialize to dict."""
-        return {
-            "avg_delivery_rate": self.avg_delivery_rate,
-            "avg_latency_ms": self.avg_latency_ms,
-            "avg_ack_success_rate": self.avg_ack_success_rate,
-            "sample_count": self.sample_count,
-            "last_updated": self.last_updated,
-            "delivery_rate_stddev": self.delivery_rate_stddev,
-            "latency_stddev_ms": self.latency_stddev_ms,
-        }
-    
-    @classmethod
-    def from_dict(cls, data: dict) -> "NetworkBaseline":
-        """Deserialize from dict."""
-        return cls(
-            avg_delivery_rate=data.get("avg_delivery_rate", 0.95),
-            avg_latency_ms=data.get("avg_latency_ms", 100.0),
-            avg_ack_success_rate=data.get("avg_ack_success_rate", 0.95),
-            sample_count=data.get("sample_count", 0),
-            last_updated=data.get("last_updated", time.time()),
-            delivery_rate_stddev=data.get("delivery_rate_stddev", 0.05),
-            latency_stddev_ms=data.get("latency_stddev_ms", 50.0),
-        )

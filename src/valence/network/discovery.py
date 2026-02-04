@@ -244,6 +244,7 @@ class DiscoveryClient:
     - Seed health tracking (success rate, latency)
     - Intelligent seed ordering based on health
     - Response caching with configurable TTL
+    - Seed revocation support (Issue #121)
     
     Example:
         client = DiscoveryClient()
@@ -255,6 +256,11 @@ class DiscoveryClient:
         client.add_seed("https://my-seed.example.com:8470")
         # Or via constructor
         client = create_discovery_client(seeds=["https://seed1.example.com:8470"])
+    
+    With revocation list:
+        client = DiscoveryClient()
+        client.load_revocation_list("path/to/revocations.json")
+        # Revoked seeds will be skipped during discovery
     """
     
     # Hardcoded bootstrap seeds (can be overridden)
@@ -295,6 +301,12 @@ class DiscoveryClient:
     # Whether to order seeds by health score
     order_seeds_by_health: bool = True
     
+    # Revoked seeds (Issue #121): set of seed_ids that are revoked
+    _revoked_seeds: set = field(default_factory=set)
+    
+    # Revocation list file path for out-of-band revocations
+    _revocation_list_path: Optional[str] = field(default=None)
+    
     # Statistics
     _stats: Dict[str, int] = field(default_factory=lambda: {
         "queries": 0,
@@ -302,6 +314,7 @@ class DiscoveryClient:
         "seed_failures": 0,
         "signature_failures": 0,
         "seed_successes": 0,
+        "revoked_seeds_skipped": 0,  # Issue #121
     })
     
     # -------------------------------------------------------------------------
@@ -911,9 +924,23 @@ class DiscoveryClient:
         
         When order_seeds_by_health is True, seeds within each category
         are sorted by their health score (success rate, latency).
+        
+        Revoked seeds (Issue #121) are filtered out.
         """
         seeds: List[str] = []
         seen: set[str] = set()
+        
+        # Helper to check if seed is revoked (Issue #121)
+        def is_revoked(seed_url: str) -> bool:
+            """Check if seed is revoked by URL or seed_id."""
+            # Direct URL check
+            if seed_url in self._revoked_seeds:
+                return True
+            # Normalized URL check
+            normalized = seed_url.rstrip("/")
+            if normalized in self._revoked_seeds:
+                return True
+            return False
         
         # Helper to add seeds, optionally ordering by health
         def add_seeds(seed_list: List[str]) -> None:
@@ -929,18 +956,26 @@ class DiscoveryClient:
             
             for seed in sorted_seeds:
                 if seed not in seen:
+                    # Check revocation (Issue #121)
+                    if is_revoked(seed):
+                        self._stats["revoked_seeds_skipped"] += 1
+                        logger.debug(f"Skipping revoked seed: {seed}")
+                        continue
                     seeds.append(seed)
                     seen.add(seed)
         
-        # Last successful seed first (if it's still healthy)
+        # Last successful seed first (if it's still healthy and not revoked)
         if self.last_successful_seed:
-            health = self._get_seed_health(self.last_successful_seed)
-            # Only prefer if success rate > 50% and had success in last 24h
-            if health.success_rate > 0.5 and (
-                time.time() - health.last_success < 86400 if health.last_success > 0 else True
-            ):
-                seeds.append(self.last_successful_seed)
-                seen.add(self.last_successful_seed)
+            if is_revoked(self.last_successful_seed):
+                self.last_successful_seed = None  # Clear revoked seed
+            else:
+                health = self._get_seed_health(self.last_successful_seed)
+                # Only prefer if success rate > 50% and had success in last 24h
+                if health.success_rate > 0.5 and (
+                    time.time() - health.last_success < 86400 if health.last_success > 0 else True
+                ):
+                    seeds.append(self.last_successful_seed)
+                    seen.add(self.last_successful_seed)
         
         # Custom seeds (highest priority after last successful)
         add_seeds(self.custom_seeds)
@@ -1010,6 +1045,171 @@ class DiscoveryClient:
         else:
             self.seed_health.clear()
             self.last_successful_seed = None
+    
+    # -------------------------------------------------------------------------
+    # SEED REVOCATION (Issue #121)
+    # -------------------------------------------------------------------------
+    
+    def add_revoked_seed(self, seed_id_or_url: str) -> None:
+        """
+        Add a seed to the revocation set.
+        
+        Revoked seeds will be skipped during discovery.
+        
+        Args:
+            seed_id_or_url: Seed ID (public key hex) or seed URL to revoke
+        """
+        self._revoked_seeds.add(seed_id_or_url)
+        self._revoked_seeds.add(seed_id_or_url.rstrip("/"))
+        logger.info(f"Added seed to revocation set: {seed_id_or_url[:50]}...")
+    
+    def remove_revoked_seed(self, seed_id_or_url: str) -> None:
+        """
+        Remove a seed from the revocation set.
+        
+        Args:
+            seed_id_or_url: Seed ID or URL to unrevoke
+        """
+        self._revoked_seeds.discard(seed_id_or_url)
+        self._revoked_seeds.discard(seed_id_or_url.rstrip("/"))
+    
+    def is_seed_revoked(self, seed_id_or_url: str) -> bool:
+        """
+        Check if a seed is revoked.
+        
+        Args:
+            seed_id_or_url: Seed ID or URL to check
+            
+        Returns:
+            True if the seed is revoked
+        """
+        if seed_id_or_url in self._revoked_seeds:
+            return True
+        if seed_id_or_url.rstrip("/") in self._revoked_seeds:
+            return True
+        return False
+    
+    def get_revoked_seeds(self) -> set:
+        """Get the set of revoked seed IDs/URLs."""
+        return self._revoked_seeds.copy()
+    
+    def clear_revocations(self) -> None:
+        """Clear all revocations."""
+        self._revoked_seeds.clear()
+    
+    def load_revocation_list(self, file_path: str) -> tuple[int, List[str]]:
+        """
+        Load seed revocations from an out-of-band file.
+        
+        The file should contain a JSON SeedRevocationList.
+        
+        Args:
+            file_path: Path to the revocation list file
+            
+        Returns:
+            Tuple of (loaded_count: int, errors: List[str])
+        """
+        errors = []
+        loaded_count = 0
+        
+        try:
+            with open(file_path, 'r') as f:
+                data = json.load(f)
+        except FileNotFoundError:
+            errors.append(f"file_not_found:{file_path}")
+            return 0, errors
+        except json.JSONDecodeError as e:
+            errors.append(f"invalid_json:{e}")
+            return 0, errors
+        except Exception as e:
+            errors.append(f"read_error:{e}")
+            return 0, errors
+        
+        # Import here to avoid circular imports
+        from valence.network.messages import SeedRevocationList
+        
+        try:
+            revocation_list = SeedRevocationList.from_dict(data)
+        except Exception as e:
+            errors.append(f"parse_error:{e}")
+            return 0, errors
+        
+        # Process each revocation
+        now = time.time()
+        for revocation in revocation_list.revocations:
+            # Check if revocation is effective
+            if revocation.effective_at <= now:
+                self.add_revoked_seed(revocation.seed_id)
+                loaded_count += 1
+        
+        self._revocation_list_path = file_path
+        logger.info(
+            f"Loaded {loaded_count} seed revocations from {file_path} "
+            f"(version={revocation_list.version})"
+        )
+        
+        return loaded_count, errors
+    
+    async def fetch_revocations_from_seed(self, seed_url: str) -> tuple[int, List[str]]:
+        """
+        Fetch seed revocations from a seed node.
+        
+        Args:
+            seed_url: URL of the seed to query
+            
+        Returns:
+            Tuple of (loaded_count: int, errors: List[str])
+        """
+        errors = []
+        loaded_count = 0
+        
+        try:
+            url = f"{seed_url.rstrip('/')}/revocations"
+            timeout = aiohttp.ClientTimeout(total=self.request_timeout)
+            
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url) as resp:
+                    if resp.status != 200:
+                        errors.append(f"http_error:{resp.status}")
+                        return 0, errors
+                    
+                    data = await resp.json()
+                    
+        except aiohttp.ClientError as e:
+            errors.append(f"connection_error:{e}")
+            return 0, errors
+        except asyncio.TimeoutError:
+            errors.append("timeout")
+            return 0, errors
+        except Exception as e:
+            errors.append(f"error:{e}")
+            return 0, errors
+        
+        # Process revocations from response
+        now = time.time()
+        revocations = data.get("revocations", [])
+        
+        for rev_data in revocations:
+            effective_at = rev_data.get("effective_at", 0)
+            if effective_at <= now:
+                seed_id = rev_data.get("seed_id")
+                if seed_id:
+                    self.add_revoked_seed(seed_id)
+                    loaded_count += 1
+        
+        logger.info(
+            f"Fetched {loaded_count} seed revocations from {seed_url}"
+        )
+        
+        return loaded_count, errors
+    
+    def get_revocation_stats(self) -> Dict[str, Any]:
+        """Get revocation statistics."""
+        return {
+            "revoked_count": len(self._revoked_seeds),
+            "revoked_seeds_skipped": self._stats.get("revoked_seeds_skipped", 0),
+            "revocation_list_path": self._revocation_list_path,
+        }
 
 
 # =============================================================================

@@ -2218,6 +2218,9 @@ class SeedNode:
     # Seed peering / gossip
     _peer_manager: Optional[SeedPeerManager] = field(default=None, repr=False)
     
+    # Seed revocation management (Issue #121)
+    _revocation_manager: Optional[SeedRevocationManager] = field(default=None, repr=False)
+    
     # Misbehavior reports (Issue #119): {router_id: {reporter_id: report_data}}
     _misbehavior_reports: Dict[str, Dict[str, Dict[str, Any]]] = field(default_factory=dict, repr=False)
     
@@ -2260,6 +2263,13 @@ class SeedNode:
         if not hasattr(self, '_sybil_resistance') or self._sybil_resistance is None:
             self._sybil_resistance = SybilResistance(self.config)
         return self._sybil_resistance
+    
+    @property
+    def revocation_manager(self) -> SeedRevocationManager:
+        """Get the seed revocation manager, creating if needed (Issue #121)."""
+        if self._revocation_manager is None:
+            self._revocation_manager = SeedRevocationManager(self.config)
+        return self._revocation_manager
     
     # -------------------------------------------------------------------------
     # ROUTER SELECTION
@@ -3088,6 +3098,9 @@ class SeedNode:
         # Get misbehavior stats (Issue #119)
         misbehavior_stats = self.get_misbehavior_stats()
         
+        # Get revocation stats (Issue #121)
+        revocation_stats = self.revocation_manager.get_stats() if self._revocation_manager else {}
+        
         return web.json_response({
             "seed_id": self.seed_id,
             "status": "running" if self._running else "stopped",
@@ -3099,6 +3112,7 @@ class SeedNode:
             "health_monitor": health_stats,
             "sybil_resistance": sybil_stats,
             "misbehavior": misbehavior_stats,
+            "revocations": revocation_stats,
             "known_seeds": len(self.known_seeds),
             "peering": peer_stats,
         })
@@ -3291,6 +3305,130 @@ class SeedNode:
         return False
     
     # -------------------------------------------------------------------------
+    # SEED REVOCATION (Issue #121)
+    # -------------------------------------------------------------------------
+    
+    async def handle_revoke_seed(self, request: web.Request) -> web.Response:
+        """
+        Handle seed revocation submission (Issue #121).
+        
+        POST /revoke_seed
+        {
+            "revocation_id": "uuid",
+            "seed_id": "seed public key hex",
+            "reason": "key_compromise|malicious_behavior|retired|admin_action|security_audit",
+            "reason_detail": "Optional detailed explanation",
+            "timestamp": 1234567890.123,
+            "effective_at": 1234567890.123,
+            "issuer_id": "issuer public key hex (seed itself or authority)",
+            "signature": "Ed25519 signature hex"
+        }
+        
+        The revocation must be signed by either:
+        - The seed being revoked (self-revocation)
+        - A trusted authority (from config.seed_revocation_trusted_authorities)
+        """
+        if not self.config.seed_revocation_enabled:
+            return web.json_response(
+                {"status": "rejected", "reason": "revocation_disabled"},
+                status=400
+            )
+        
+        try:
+            data = await request.json()
+        except Exception as e:
+            return web.json_response(
+                {"status": "error", "reason": "invalid_json", "detail": str(e)},
+                status=400
+            )
+        
+        seed_id = data.get("seed_id")
+        if not seed_id:
+            return web.json_response(
+                {"status": "error", "reason": "missing_seed_id"},
+                status=400
+            )
+        
+        # Add the revocation
+        success, error = self.revocation_manager.add_revocation(data, source="direct")
+        
+        if not success:
+            return web.json_response(
+                {"status": "rejected", "reason": error},
+                status=400
+            )
+        
+        # Get the record for response
+        record = self.revocation_manager.get_revocation(seed_id)
+        
+        logger.info(
+            f"Accepted seed revocation: {seed_id[:20]}... "
+            f"reason={data.get('reason')}"
+        )
+        
+        return web.json_response({
+            "status": "accepted",
+            "seed_id": seed_id,
+            "revocation_id": record.revocation_id if record else data.get("revocation_id"),
+            "effective_at": record.effective_at if record else data.get("effective_at"),
+        })
+    
+    async def handle_get_revocations(self, request: web.Request) -> web.Response:
+        """
+        Get current seed revocations (Issue #121).
+        
+        GET /revocations
+        GET /revocations?seed_id=<seed_id>
+        
+        Returns list of all revocations, or single revocation if seed_id specified.
+        """
+        if not self.config.seed_revocation_enabled:
+            return web.json_response(
+                {"status": "error", "reason": "revocation_disabled"},
+                status=400
+            )
+        
+        seed_id = request.query.get("seed_id")
+        
+        if seed_id:
+            # Return single revocation
+            record = self.revocation_manager.get_revocation(seed_id)
+            if record is None:
+                return web.json_response({
+                    "revoked": False,
+                    "seed_id": seed_id,
+                })
+            
+            return web.json_response({
+                "revoked": True,
+                "seed_id": seed_id,
+                "revocation": record.to_dict(),
+            })
+        
+        # Return all revocations
+        revocations = self.revocation_manager.get_all_revocations()
+        revoked_ids = self.revocation_manager.get_revoked_seed_ids()
+        
+        return web.json_response({
+            "total": len(revocations),
+            "effective": len(revoked_ids),
+            "revoked_seed_ids": list(revoked_ids),
+            "revocations": [r.to_dict() for r in revocations],
+        })
+    
+    def is_seed_revoked(self, seed_id: str) -> bool:
+        """
+        Check if a seed is revoked (Issue #121).
+        
+        Args:
+            seed_id: The seed ID to check
+            
+        Returns:
+            True if the seed is revoked
+        """
+        return self.revocation_manager.is_seed_revoked(seed_id)
+    
+    # -------------------------------------------------------------------------
     # LIFECYCLE
     # -------------------------------------------------------------------------
     
@@ -3305,6 +3443,10 @@ class SeedNode:
         
         # Misbehavior report endpoint (Issue #119)
         app.router.add_post("/report_misbehavior", self.handle_misbehavior_report)
+        
+        # Seed revocation endpoints (Issue #121)
+        app.router.add_post("/revoke_seed", self.handle_revoke_seed)
+        app.router.add_get("/revocations", self.handle_get_revocations)
         
         # Gossip endpoints (seed-to-seed)
         app.router.add_post("/gossip/exchange", self.peer_manager.handle_gossip_exchange)
@@ -3338,6 +3480,9 @@ class SeedNode:
         # Start seed peering / gossip
         await self.peer_manager.start()
         
+        # Start revocation manager (Issue #121)
+        await self.revocation_manager.start()
+        
         self._running = True
         logger.info(
             f"Seed node {self.seed_id} listening on "
@@ -3348,6 +3493,10 @@ class SeedNode:
         """Stop the seed node server."""
         if not self._running:
             return
+        
+        # Stop revocation manager (Issue #121)
+        if self._revocation_manager:
+            await self._revocation_manager.stop()
         
         # Stop seed peering / gossip
         if self._peer_manager:
