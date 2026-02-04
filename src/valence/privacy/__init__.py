@@ -2,6 +2,15 @@
 
 from .types import ShareLevel, EnforcementType, PropagationRules, SharePolicy
 from .encryption import EncryptionEnvelope
+from .canary import (
+    CanaryToken,
+    CanaryRegistry,
+    EmbeddingStrategy,
+    LeakReport,
+    embed_canary,
+    detect_canaries,
+    strip_canaries,
+)
 from .sharing import (
     ShareRequest,
     ShareResult,
@@ -41,6 +50,46 @@ from .domains import (
     MembershipNotFoundError,
     PermissionDeniedError,
 )
+from .provenance import (
+    ProvenanceTier,
+    ProvenanceChain,
+    FilteredProvenance,
+    filter_provenance,
+    get_tier_for_audience,
+)
+from .capabilities import (
+    Capability,
+    CapabilityError,
+    CapabilityExpiredError,
+    CapabilityInvalidSignatureError,
+    DEFAULT_TTL_SECONDS,
+)
+from .audit import (
+    AuditEvent,
+    AuditEventType,
+    AuditLog,
+    AuditLogger,
+    AuditBackend,
+    InMemoryAuditBackend,
+    FileAuditBackend,
+    ChainVerificationError,
+    verify_chain,
+    get_audit_logger,
+    set_audit_logger,
+)
+from .elevation import (
+    ProposalStatus,
+    ElevationProposal,
+    ElevationError,
+    ProposalNotFoundError,
+    ProposalAlreadyResolvedError,
+    InvalidElevationError,
+    propose_elevation,
+    approve_elevation,
+    reject_elevation,
+    create_redacted_content,
+    ElevationService,
+)
 
 __all__ = [
     # Types
@@ -50,6 +99,14 @@ __all__ = [
     "SharePolicy",
     # Encryption
     "EncryptionEnvelope",
+    # Canary tokens (Issue #93)
+    "CanaryToken",
+    "CanaryRegistry",
+    "EmbeddingStrategy",
+    "LeakReport",
+    "embed_canary",
+    "detect_canaries",
+    "strip_canaries",
     # Sharing
     "ShareRequest",
     "ShareResult",
@@ -85,4 +142,40 @@ __all__ = [
     "MembershipExistsError",
     "MembershipNotFoundError",
     "PermissionDeniedError",
+    # Capabilities (Issue #77)
+    "Capability",
+    "CapabilityError",
+    "CapabilityExpiredError",
+    "CapabilityInvalidSignatureError",
+    "DEFAULT_TTL_SECONDS",
+    # Audit (Issue #81, #82)
+    "AuditEvent",
+    "AuditEventType",
+    "AuditLog",
+    "AuditLogger",
+    "AuditBackend",
+    "InMemoryAuditBackend",
+    "FileAuditBackend",
+    "ChainVerificationError",
+    "verify_chain",
+    "get_audit_logger",
+    "set_audit_logger",
+    # Elevation (Issue #94)
+    "ProposalStatus",
+    "ElevationProposal",
+    "ElevationError",
+    "ProposalNotFoundError",
+    "ProposalAlreadyResolvedError",
+    "InvalidElevationError",
+    "propose_elevation",
+    "approve_elevation",
+    "reject_elevation",
+    "create_redacted_content",
+    "ElevationService",
+    # Provenance tiers (Issue #97)
+    "ProvenanceTier",
+    "ProvenanceChain",
+    "FilteredProvenance",
+    "filter_provenance",
+    "get_tier_for_audience",
 ]
