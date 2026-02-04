@@ -14,7 +14,14 @@ from valence.network.crypto import (
 )
 from valence.network.messages import RelayMessage, DeliverPayload
 from valence.network.router import RouterNode, Connection, QueuedMessage
-from valence.network.seed import SeedNode, RouterRecord, SeedConfig
+from valence.network.seed import (
+    SeedNode,
+    RouterRecord,
+    SeedConfig,
+    HealthStatus,
+    HealthState,
+    HealthMonitor,
+)
 from valence.network.discovery import (
     DiscoveryClient,
     RouterInfo,
@@ -51,6 +58,10 @@ __all__ = [
     "SeedNode",
     "RouterRecord",
     "SeedConfig",
+    # Health Monitoring
+    "HealthStatus",
+    "HealthState",
+    "HealthMonitor",
     # Discovery
     "DiscoveryClient",
     "RouterInfo",
