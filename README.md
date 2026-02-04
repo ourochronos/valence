@@ -1,5 +1,7 @@
 # Valence
 
+[![Coverage](https://codecov.io/gh/orobobos/valence/branch/main/graph/badge.svg)](https://codecov.io/gh/orobobos/valence)
+
 **The trust layer for AI agents.**
 
 Every AI agent wakes up alone. Reinvents what's true. Starts from zero with each conversation. Can't share what it learned in a way others can trust.
