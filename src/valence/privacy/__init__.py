@@ -166,6 +166,7 @@ __all__ = [
     "CapabilityError",
     "CapabilityExpiredError",
     "CapabilityInvalidSignatureError",
+    "CapabilityInvalidError",
     "CapabilityRevokedError",
     "CapabilityNotFoundError",
     "CapabilityTTLExceededError",
