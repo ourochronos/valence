@@ -18,8 +18,8 @@ keywords = [
 ]
 
 dependencies = [
+    # Core only - playwright, matrix-nio are optional
     "mcp>=1.0",
-    "matrix-nio>=0.24",
     "openai>=1.0",
     "psycopg2-binary>=2.9",
     "numpy>=1.24",
@@ -28,10 +28,12 @@ dependencies = [
     "uvicorn[standard]>=0.30.0",
     "pydantic-settings>=2.0.0",
     "PyJWT>=2.8.0",
-    "playwright>=1.40",
 ]
 
 [project.optional-dependencies]
+browser = ["playwright>=1.40"]
+matrix = ["matrix-nio[e2e]>=0.24"]
+all = ["valence[browser,matrix]"]
 dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",

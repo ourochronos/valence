@@ -44,6 +44,10 @@ from .corroboration_endpoints import (
     belief_corroboration_endpoint,
     most_corroborated_beliefs_endpoint,
 )
+from .compliance_endpoints import (
+    delete_user_data_endpoint,
+    get_deletion_verification_endpoint,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -649,7 +653,12 @@ async def info_endpoint(request: Request) -> JSONResponse:
 
     from ..substrate.tools import SUBSTRATE_TOOLS
     from ..vkb.tools import VKB_TOOLS
-    from ..playwright.tools import PLAYWRIGHT_TOOLS
+
+    # Playwright tools are optional
+    try:
+        from ..playwright.tools import PLAYWRIGHT_TOOLS
+    except ImportError:
+        PLAYWRIGHT_TOOLS: list = []  # type: ignore[no-redef]
 
     response_data: dict[str, Any] = {
         "server": settings.server_name,
@@ -754,6 +763,9 @@ def create_app() -> Starlette:
         # Corroboration endpoints (versioned)
         Route(f"{API_V1}/beliefs/{{belief_id}}/corroboration", belief_corroboration_endpoint, methods=["GET"]),
         Route(f"{API_V1}/beliefs/most-corroborated", most_corroborated_beliefs_endpoint, methods=["GET"]),
+        # Compliance endpoints (Issue #25: GDPR deletion)
+        Route(f"{API_V1}/users/{{id}}/data", delete_user_data_endpoint, methods=["DELETE"]),
+        Route(f"{API_V1}/tombstones/{{id}}/verification", get_deletion_verification_endpoint, methods=["GET"]),
     ]
 
     # Define middleware
@@ -761,7 +773,7 @@ def create_app() -> Starlette:
         Middleware(
             CORSMiddleware,
             allow_origins=settings.allowed_origins,
-            allow_methods=["GET", "POST", "OPTIONS"],
+            allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
             allow_headers=["Authorization", "Content-Type", "Mcp-Session-Id"],
             expose_headers=["Mcp-Session-Id"],
         ),

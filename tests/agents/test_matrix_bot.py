@@ -1,4 +1,7 @@
-"""Tests for valence.agents.matrix_bot module."""
+"""Tests for valence.agents.matrix_bot module.
+
+Requires the 'matrix' extra: pip install valence[matrix]
+"""
 
 from __future__ import annotations
 
@@ -9,6 +12,18 @@ import subprocess
 from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 
 import pytest
+
+# Skip all tests in this module if matrix-nio is not installed
+try:
+    import nio
+    NIO_AVAILABLE = True
+except ImportError:
+    NIO_AVAILABLE = False
+
+pytestmark = pytest.mark.skipif(
+    not NIO_AVAILABLE,
+    reason="matrix-nio not installed (install with: pip install valence[matrix])"
+)
 
 
 # ============================================================================

@@ -8,6 +8,8 @@ Key features:
 - Plugin integration for knowledge substrate
 - Cross-session memory via substrate queries
 - VKB conversation tracking
+
+Requires the 'matrix' extra: pip install valence[matrix]
 """
 
 from __future__ import annotations
@@ -21,16 +23,29 @@ import sys
 from dataclasses import dataclass, field
 from typing import Any
 
-from nio import (
-    AsyncClient,
-    AsyncClientConfig,
-    InviteMemberEvent,
-    JoinError,
-    LoginResponse,
-    MatrixRoom,
-    RoomMessageText,
-    SyncResponse,
-)
+try:
+    from nio import (
+        AsyncClient,
+        AsyncClientConfig,
+        InviteMemberEvent,
+        JoinError,
+        LoginResponse,
+        MatrixRoom,
+        RoomMessageText,
+        SyncResponse,
+    )
+    NIO_AVAILABLE = True
+except ImportError:
+    NIO_AVAILABLE = False
+    # Provide stub types for type checking when nio is not installed
+    AsyncClient = None  # type: ignore[assignment,misc]
+    AsyncClientConfig = None  # type: ignore[assignment,misc]
+    InviteMemberEvent = None  # type: ignore[assignment,misc]
+    JoinError = None  # type: ignore[assignment,misc]
+    LoginResponse = None  # type: ignore[assignment,misc]
+    MatrixRoom = None  # type: ignore[assignment,misc]
+    RoomMessageText = None  # type: ignore[assignment,misc]
+    SyncResponse = None  # type: ignore[assignment,misc]
 
 from ..core.db import get_cursor
 from ..core.exceptions import DatabaseException
@@ -114,6 +129,15 @@ class SessionManager:
             logger.warning(f"Could not load sessions from database: {e}")
 
 
+def _check_nio_available() -> None:
+    """Check that matrix-nio is installed, raise helpful error if not."""
+    if not NIO_AVAILABLE:
+        raise ImportError(
+            "matrix-nio is required for the Matrix bot. "
+            "Install it with: pip install valence[matrix]"
+        )
+
+
 class ValenceBot:
     """Matrix bot that uses Claude Code with session resumption."""
 
@@ -125,6 +149,8 @@ class ValenceBot:
         device_name: str = "ValenceBot",
         plugin_dir: str | None = None,
     ):
+        _check_nio_available()
+
         self.homeserver = homeserver
         self.user_id = user_id
         self.password = password
@@ -481,6 +507,13 @@ class ValenceBot:
 
 def main() -> None:
     """Entry point for the Matrix bot."""
+    if not NIO_AVAILABLE:
+        logger.error(
+            "matrix-nio is required for the Matrix bot. "
+            "Install it with: pip install valence[matrix]"
+        )
+        sys.exit(1)
+
     # Get configuration from environment
     homeserver = os.environ.get("MATRIX_HOMESERVER", "https://pod.zonk1024.info")
     user_id = os.environ.get("MATRIX_USER", "@valence-bot:pod.zonk1024.info")
