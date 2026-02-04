@@ -28,6 +28,13 @@ class ShareRequest:
 
 
 @dataclass
+class ReceiveRequest:
+    """Request to receive and acknowledge a shared belief."""
+    
+    share_id: str
+
+
+@dataclass
 class ShareResult:
     """Result of a successful share operation."""
     
@@ -53,6 +60,18 @@ class RevokeResult:
     consent_chain_id: str
     revoked_at: float
     affected_recipients: int
+
+
+@dataclass
+class ReceiveResult:
+    """Result of a successful receive operation."""
+    
+    share_id: str
+    belief_id: str
+    content: bytes  # Decrypted content
+    sharer_did: str
+    received_at: float
+    consent_chain_id: str
 
 
 @dataclass
@@ -82,7 +101,9 @@ class Share:
     encrypted_envelope: dict
     recipient_did: str
     created_at: float
+    belief_id: Optional[str] = None
     accessed_at: Optional[float] = None
+    received_at: Optional[float] = None
 
 
 class DatabaseProtocol(Protocol):
@@ -111,6 +132,7 @@ class DatabaseProtocol(Protocol):
         consent_chain_id: str,
         encrypted_envelope: dict,
         recipient_did: str,
+        belief_id: Optional[str] = None,
     ) -> None:
         """Create a share record."""
         ...
@@ -149,6 +171,29 @@ class DatabaseProtocol(Protocol):
     ) -> list[Share]:
         """Get all shares associated with a consent chain."""
         ...
+    
+    async def acknowledge_share(
+        self,
+        share_id: str,
+        received_at: float,
+    ) -> None:
+        """Mark a share as received/acknowledged."""
+        ...
+    
+    async def add_consent_chain_hop(
+        self,
+        consent_chain_id: str,
+        hop: dict,
+    ) -> None:
+        """Add a hop to a consent chain."""
+        ...
+    
+    async def get_pending_shares(
+        self,
+        recipient_did: str,
+    ) -> list[Share]:
+        """Get shares that haven't been received yet for a recipient."""
+        ...
 
 
 class IdentityProtocol(Protocol):
@@ -156,6 +201,10 @@ class IdentityProtocol(Protocol):
     
     async def get_public_key(self, did: str) -> Optional[bytes]:
         """Get the X25519 public key for a DID."""
+        ...
+    
+    async def get_private_key(self, did: str) -> Optional[bytes]:
+        """Get the X25519 private key for a DID (only for local identities)."""
         ...
     
     def sign(self, data: dict) -> bytes:
@@ -272,6 +321,7 @@ class SharingService:
             consent_chain_id=consent_chain_id,
             encrypted_envelope=envelope.to_dict(),
             recipient_did=request.recipient_did,
+            belief_id=request.belief_id,
         )
         
         logger.info(
@@ -392,6 +442,105 @@ class SharingService:
             revoked_at=revoked_at,
             affected_recipients=affected,
         )
+    
+    async def receive(
+        self, request: ReceiveRequest, recipient_did: str
+    ) -> ReceiveResult:
+        """Receive and acknowledge a shared belief.
+        
+        This method:
+        1. Validates the recipient is the intended recipient
+        2. Checks the share hasn't been revoked or already received
+        3. Decrypts the content using the recipient's private key
+        4. Records the acknowledgment
+        5. Adds a hop to the consent chain
+        
+        Args:
+            request: The receive request containing share_id
+            recipient_did: The DID of the recipient receiving the share
+            
+        Returns:
+            ReceiveResult with decrypted content and metadata
+            
+        Raises:
+            ValueError: If share not found, already received, or revoked
+            PermissionError: If caller is not the intended recipient
+        """
+        # Get the share
+        share = await self.db.get_share(request.share_id)
+        if not share:
+            raise ValueError("Share not found")
+        
+        # Verify recipient
+        if share.recipient_did != recipient_did:
+            raise PermissionError("Not the intended recipient")
+        
+        # Check if already received
+        if share.received_at:
+            raise ValueError("Already received")
+        
+        # Get consent chain and check if revoked
+        consent_chain = await self.db.get_consent_chain(share.consent_chain_id)
+        if not consent_chain:
+            raise ValueError("Consent chain not found")
+        
+        if consent_chain.revoked:
+            raise ValueError("Share has been revoked")
+        
+        # Decrypt content
+        recipient_private_key = await self.identity.get_private_key(recipient_did)
+        if not recipient_private_key:
+            raise ValueError("Recipient private key not available")
+        
+        envelope = EncryptionEnvelope.from_dict(share.encrypted_envelope)
+        content = EncryptionEnvelope.decrypt(envelope, recipient_private_key)
+        
+        # Record acknowledgment
+        received_at = time.time()
+        await self.db.acknowledge_share(
+            share_id=request.share_id,
+            received_at=received_at,
+        )
+        
+        # Add hop to consent chain
+        hop = {
+            "recipient": recipient_did,
+            "received_at": received_at,
+            "acknowledged": True,
+            "signature": self.identity.sign({
+                "share_id": request.share_id,
+                "received_at": received_at,
+            }),
+        }
+        await self.db.add_consent_chain_hop(
+            consent_chain_id=share.consent_chain_id,
+            hop=hop,
+        )
+        
+        logger.info(
+            f"Received share {request.share_id} by {recipient_did} "
+            f"(consent_chain={share.consent_chain_id})"
+        )
+        
+        return ReceiveResult(
+            share_id=request.share_id,
+            belief_id=share.belief_id or consent_chain.belief_id,
+            content=content,
+            sharer_did=consent_chain.origin_sharer,
+            received_at=received_at,
+            consent_chain_id=share.consent_chain_id,
+        )
+    
+    async def list_pending_shares(self, recipient_did: str) -> list[Share]:
+        """List shares waiting to be received by a recipient.
+        
+        Args:
+            recipient_did: The DID of the recipient
+            
+        Returns:
+            List of shares that haven't been received yet
+        """
+        return await self.db.get_pending_shares(recipient_did)
     
     async def _propagate_revocation(
         self, consent_chain: ConsentChainEntry, revoker_did: str

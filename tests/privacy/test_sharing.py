@@ -10,6 +10,8 @@ import hashlib
 from valence.privacy.sharing import (
     ShareRequest,
     ShareResult,
+    ReceiveRequest,
+    ReceiveResult,
     RevokeRequest,
     RevokeResult,
     SharingService,
@@ -69,6 +71,7 @@ class MockDatabase:
         consent_chain_id: str,
         encrypted_envelope: dict,
         recipient_did: str,
+        belief_id: str = None,
     ) -> None:
         import time
         self.shares[id] = {
@@ -76,8 +79,10 @@ class MockDatabase:
             "consent_chain_id": consent_chain_id,
             "encrypted_envelope": encrypted_envelope,
             "recipient_did": recipient_did,
+            "belief_id": belief_id,
             "created_at": time.time(),
             "accessed_at": None,
+            "received_at": None,
         }
     
     async def get_share(self, share_id: str) -> Optional[Share]:
@@ -90,7 +95,9 @@ class MockDatabase:
             encrypted_envelope=data["encrypted_envelope"],
             recipient_did=data["recipient_did"],
             created_at=data["created_at"],
-            accessed_at=data["accessed_at"],
+            belief_id=data.get("belief_id"),
+            accessed_at=data.get("accessed_at"),
+            received_at=data.get("received_at"),
         )
     
     async def list_shares(
@@ -116,7 +123,9 @@ class MockDatabase:
                 encrypted_envelope=data["encrypted_envelope"],
                 recipient_did=data["recipient_did"],
                 created_at=data["created_at"],
-                accessed_at=data["accessed_at"],
+                belief_id=data.get("belief_id"),
+                accessed_at=data.get("accessed_at"),
+                received_at=data.get("received_at"),
             ))
             if len(results) >= limit:
                 break
@@ -169,8 +178,55 @@ class MockDatabase:
                     encrypted_envelope=data["encrypted_envelope"],
                     recipient_did=data["recipient_did"],
                     created_at=data["created_at"],
-                    accessed_at=data["accessed_at"],
+                    belief_id=data.get("belief_id"),
+                    accessed_at=data.get("accessed_at"),
+                    received_at=data.get("received_at"),
                 ))
+        return results
+    
+    async def acknowledge_share(
+        self,
+        share_id: str,
+        received_at: float,
+    ) -> None:
+        """Mark a share as received/acknowledged."""
+        if share_id in self.shares:
+            self.shares[share_id]["received_at"] = received_at
+    
+    async def add_consent_chain_hop(
+        self,
+        consent_chain_id: str,
+        hop: dict,
+    ) -> None:
+        """Add a hop to a consent chain."""
+        if consent_chain_id in self.consent_chains:
+            self.consent_chains[consent_chain_id]["hops"].append(hop)
+    
+    async def get_pending_shares(
+        self,
+        recipient_did: str,
+    ) -> list[Share]:
+        """Get shares that haven't been received yet for a recipient."""
+        results = []
+        for data in self.shares.values():
+            if data["recipient_did"] != recipient_did:
+                continue
+            if data.get("received_at") is not None:
+                continue
+            # Filter out revoked shares
+            consent_chain = self.consent_chains.get(data["consent_chain_id"])
+            if consent_chain and consent_chain.get("revoked"):
+                continue
+            results.append(Share(
+                id=data["id"],
+                consent_chain_id=data["consent_chain_id"],
+                encrypted_envelope=data["encrypted_envelope"],
+                recipient_did=data["recipient_did"],
+                created_at=data["created_at"],
+                belief_id=data.get("belief_id"),
+                accessed_at=data.get("accessed_at"),
+                received_at=data.get("received_at"),
+            ))
         return results
 
 
@@ -193,6 +249,11 @@ class MockIdentityService:
     async def get_public_key(self, did: str) -> Optional[bytes]:
         if did in self.keypairs:
             return self.keypairs[did][1]
+        return None
+    
+    async def get_private_key(self, did: str) -> Optional[bytes]:
+        if did in self.keypairs:
+            return self.keypairs[did][0]
         return None
     
     def sign(self, data: dict) -> bytes:
@@ -756,3 +817,287 @@ class TestRevocationFiltering:
         assert chain.revoked_at == revoke_result.revoked_at
         assert chain.revoked_by == identity.get_did()
         assert chain.revoke_reason == "Detailed revocation test"
+
+
+class TestReceive:
+    """Tests for share receive/acknowledgment functionality."""
+    
+    @pytest.fixture
+    def db(self):
+        return MockDatabase()
+    
+    @pytest.fixture
+    def identity(self):
+        return MockIdentityService()
+    
+    @pytest.fixture
+    def service(self, db, identity):
+        return SharingService(db, identity)
+    
+    async def _create_share(
+        self, service, db, identity, 
+        belief_id="belief-receive-001",
+        recipient_did="did:key:recipient-receive",
+        content="Secret content to share"
+    ):
+        """Helper to create a share for testing."""
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content=content)
+        identity.add_identity(recipient_did)
+        
+        request = ShareRequest(belief_id=belief_id, recipient_did=recipient_did)
+        return await service.share(request, identity.get_did()), recipient_did
+    
+    @pytest.mark.asyncio
+    async def test_receive_success(self, service, db, identity):
+        """Test successful receive and decryption of a share."""
+        original_content = "This is the secret shared content."
+        share_result, recipient_did = await self._create_share(
+            service, db, identity,
+            content=original_content
+        )
+        
+        # Receive the share
+        receive_request = ReceiveRequest(share_id=share_result.share_id)
+        result = await service.receive(receive_request, recipient_did)
+        
+        # Verify result
+        assert result.share_id == share_result.share_id
+        assert result.belief_id == "belief-receive-001"
+        assert result.content.decode("utf-8") == original_content
+        assert result.sharer_did == identity.get_did()
+        assert result.received_at > 0
+        assert result.consent_chain_id == share_result.consent_chain_id
+    
+    @pytest.mark.asyncio
+    async def test_receive_decryption_verification(self, service, db, identity):
+        """Test that decryption produces correct content."""
+        test_cases = [
+            "Simple text",
+            "Unicode: 你好世界 🌍",
+            "Long content " * 100,
+            '{"json": "data", "number": 123}',
+        ]
+        
+        for i, content in enumerate(test_cases):
+            belief_id = f"belief-decrypt-{i}"
+            recipient_did = f"did:key:decrypt-recipient-{i}"
+            
+            share_result, recipient = await self._create_share(
+                service, db, identity,
+                belief_id=belief_id,
+                recipient_did=recipient_did,
+                content=content
+            )
+            
+            receive_request = ReceiveRequest(share_id=share_result.share_id)
+            result = await service.receive(receive_request, recipient)
+            
+            assert result.content.decode("utf-8") == content
+    
+    @pytest.mark.asyncio
+    async def test_receive_not_intended_recipient(self, service, db, identity):
+        """Test that only intended recipient can receive."""
+        share_result, recipient_did = await self._create_share(service, db, identity)
+        
+        # Try to receive as different DID
+        receive_request = ReceiveRequest(share_id=share_result.share_id)
+        
+        with pytest.raises(PermissionError, match="Not the intended recipient"):
+            await service.receive(receive_request, "did:key:imposter")
+    
+    @pytest.mark.asyncio
+    async def test_receive_already_received(self, service, db, identity):
+        """Test that share can only be received once."""
+        share_result, recipient_did = await self._create_share(
+            service, db, identity,
+            belief_id="belief-once",
+            recipient_did="did:key:once-recipient"
+        )
+        
+        receive_request = ReceiveRequest(share_id=share_result.share_id)
+        
+        # First receive should succeed
+        await service.receive(receive_request, recipient_did)
+        
+        # Second receive should fail
+        with pytest.raises(ValueError, match="Already received"):
+            await service.receive(receive_request, recipient_did)
+    
+    @pytest.mark.asyncio
+    async def test_receive_revoked_share(self, service, db, identity):
+        """Test that revoked share cannot be received."""
+        share_result, recipient_did = await self._create_share(
+            service, db, identity,
+            belief_id="belief-revoke-before-receive",
+            recipient_did="did:key:revoke-recipient"
+        )
+        
+        # Revoke the share first
+        revoke_request = RevokeRequest(share_id=share_result.share_id)
+        await service.revoke_share(revoke_request, identity.get_did())
+        
+        # Try to receive
+        receive_request = ReceiveRequest(share_id=share_result.share_id)
+        
+        with pytest.raises(ValueError, match="Share has been revoked"):
+            await service.receive(receive_request, recipient_did)
+    
+    @pytest.mark.asyncio
+    async def test_receive_share_not_found(self, service, db, identity):
+        """Test receive with non-existent share."""
+        receive_request = ReceiveRequest(share_id="nonexistent-share-id")
+        
+        with pytest.raises(ValueError, match="Share not found"):
+            await service.receive(receive_request, "did:key:anyone")
+    
+    @pytest.mark.asyncio
+    async def test_receive_creates_consent_chain_hop(self, service, db, identity):
+        """Test that receiving adds a hop to the consent chain."""
+        share_result, recipient_did = await self._create_share(
+            service, db, identity,
+            belief_id="belief-hop",
+            recipient_did="did:key:hop-recipient"
+        )
+        
+        # Verify no hops initially
+        chain_before = db.consent_chains[share_result.consent_chain_id]
+        assert len(chain_before["hops"]) == 0
+        
+        # Receive
+        receive_request = ReceiveRequest(share_id=share_result.share_id)
+        result = await service.receive(receive_request, recipient_did)
+        
+        # Verify hop was added
+        chain_after = db.consent_chains[share_result.consent_chain_id]
+        assert len(chain_after["hops"]) == 1
+        
+        hop = chain_after["hops"][0]
+        assert hop["recipient"] == recipient_did
+        assert hop["received_at"] == result.received_at
+        assert hop["acknowledged"] is True
+        assert "signature" in hop
+    
+    @pytest.mark.asyncio
+    async def test_receive_updates_share_received_at(self, service, db, identity):
+        """Test that receiving updates the share's received_at field."""
+        share_result, recipient_did = await self._create_share(
+            service, db, identity,
+            belief_id="belief-timestamp",
+            recipient_did="did:key:timestamp-recipient"
+        )
+        
+        # Verify not received initially
+        share_before = await service.get_share(share_result.share_id)
+        assert share_before.received_at is None
+        
+        # Receive
+        receive_request = ReceiveRequest(share_id=share_result.share_id)
+        result = await service.receive(receive_request, recipient_did)
+        
+        # Verify received_at was set
+        share_after = await service.get_share(share_result.share_id)
+        assert share_after.received_at == result.received_at
+
+
+class TestListPendingShares:
+    """Tests for listing pending shares."""
+    
+    @pytest.fixture
+    def db(self):
+        return MockDatabase()
+    
+    @pytest.fixture
+    def identity(self):
+        return MockIdentityService()
+    
+    @pytest.fixture
+    def service(self, db, identity):
+        return SharingService(db, identity)
+    
+    @pytest.mark.asyncio
+    async def test_list_pending_shares(self, service, db, identity):
+        """Test listing pending shares for a recipient."""
+        recipient_did = "did:key:pending-recipient"
+        identity.add_identity(recipient_did)
+        
+        # Create multiple shares to same recipient
+        for i in range(3):
+            belief_id = f"belief-pending-{i}"
+            db.beliefs[belief_id] = MockBelief(id=belief_id, content=f"Content {i}")
+            
+            request = ShareRequest(belief_id=belief_id, recipient_did=recipient_did)
+            await service.share(request, identity.get_did())
+        
+        # All should be pending
+        pending = await service.list_pending_shares(recipient_did)
+        assert len(pending) == 3
+    
+    @pytest.mark.asyncio
+    async def test_list_pending_excludes_received(self, service, db, identity):
+        """Test that received shares are excluded from pending."""
+        recipient_did = "did:key:pending-exclude"
+        identity.add_identity(recipient_did)
+        
+        # Create 3 shares
+        share_ids = []
+        for i in range(3):
+            belief_id = f"belief-pending-ex-{i}"
+            db.beliefs[belief_id] = MockBelief(id=belief_id, content=f"Content {i}")
+            
+            request = ShareRequest(belief_id=belief_id, recipient_did=recipient_did)
+            result = await service.share(request, identity.get_did())
+            share_ids.append(result.share_id)
+        
+        # Receive one of them
+        receive_request = ReceiveRequest(share_id=share_ids[0])
+        await service.receive(receive_request, recipient_did)
+        
+        # Only 2 should be pending
+        pending = await service.list_pending_shares(recipient_did)
+        assert len(pending) == 2
+        
+        pending_ids = [s.id for s in pending]
+        assert share_ids[0] not in pending_ids
+        assert share_ids[1] in pending_ids
+        assert share_ids[2] in pending_ids
+    
+    @pytest.mark.asyncio
+    async def test_list_pending_excludes_revoked(self, service, db, identity):
+        """Test that revoked shares are excluded from pending."""
+        recipient_did = "did:key:pending-revoked"
+        identity.add_identity(recipient_did)
+        
+        # Create 2 shares
+        share_ids = []
+        for i in range(2):
+            belief_id = f"belief-pending-rev-{i}"
+            db.beliefs[belief_id] = MockBelief(id=belief_id, content=f"Content {i}")
+            
+            request = ShareRequest(belief_id=belief_id, recipient_did=recipient_did)
+            result = await service.share(request, identity.get_did())
+            share_ids.append(result.share_id)
+        
+        # Revoke one of them
+        revoke_request = RevokeRequest(share_id=share_ids[0])
+        await service.revoke_share(revoke_request, identity.get_did())
+        
+        # Only 1 should be pending
+        pending = await service.list_pending_shares(recipient_did)
+        assert len(pending) == 1
+        assert pending[0].id == share_ids[1]
+    
+    @pytest.mark.asyncio
+    async def test_list_pending_empty_for_other_recipient(self, service, db, identity):
+        """Test that pending list is empty for unrelated recipient."""
+        recipient_did = "did:key:actual-recipient"
+        identity.add_identity(recipient_did)
+        
+        belief_id = "belief-other-recipient"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Content")
+        
+        request = ShareRequest(belief_id=belief_id, recipient_did=recipient_did)
+        await service.share(request, identity.get_did())
+        
+        # Different recipient should see no pending shares
+        pending = await service.list_pending_shares("did:key:other-person")
+        assert len(pending) == 0
