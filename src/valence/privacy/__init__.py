@@ -9,6 +9,12 @@ from .sharing import (
     Share,
     SharingService,
 )
+from .migration import (
+    migrate_visibility,
+    migrate_all_beliefs,
+    migrate_all_beliefs_sync,
+    get_share_policy_json,
+)
 
 __all__ = [
     # Types
@@ -24,4 +30,9 @@ __all__ = [
     "ConsentChainEntry",
     "Share",
     "SharingService",
+    # Migration
+    "migrate_visibility",
+    "migrate_all_beliefs",
+    "migrate_all_beliefs_sync",
+    "get_share_policy_json",
 ]
