@@ -2,10 +2,14 @@
 
 Instead of a single confidence score, beliefs have multiple dimensions
 that can be independently assessed and combined.
+
+Per spec (MATH.md), geometric mean is preferred for overall confidence
+calculation as it better penalizes imbalanced vectors.
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -32,6 +36,68 @@ DEFAULT_WEIGHTS: dict[ConfidenceDimension, float] = {
     ConfidenceDimension.CORROBORATION: 0.15,
     ConfidenceDimension.DOMAIN_APPLICABILITY: 0.10,
 }
+
+# Floor value to prevent zeros in geometric mean calculations
+EPSILON = 0.001
+
+
+def _compute_overall(
+    dims: dict[ConfidenceDimension, float],
+    weights: dict[ConfidenceDimension, float],
+    use_geometric: bool = True,
+) -> float:
+    """Compute overall confidence from dimension values.
+    
+    Per spec (MATH.md):
+    - Geometric mean: (∏v_i^{w_i})^{1/∑w_i} - penalizes imbalanced vectors
+    - Arithmetic mean: ∑(w_i * v_i) / ∑w_i - traditional weighted average
+    
+    Args:
+        dims: Dictionary of dimension -> value
+        weights: Dictionary of dimension -> weight
+        use_geometric: If True, use weighted geometric mean (recommended per spec)
+    
+    Returns:
+        Overall confidence score in [0, 1]
+    """
+    if not dims:
+        return 0.5  # Default when no dimensions present
+    
+    if use_geometric:
+        # Weighted geometric mean: (∏v_i^{w_i})^{1/∑w_i}
+        # Use log-space for numerical stability: exp(∑(w_i * log(v_i)) / ∑w_i)
+        log_sum = 0.0
+        total_weight = 0.0
+        
+        for dim, value in dims.items():
+            w = weights.get(dim, 0.0)
+            if w > 0:
+                # Use floor to prevent log(0)
+                safe_value = max(EPSILON, value)
+                log_sum += w * math.log(safe_value)
+                total_weight += w
+        
+        if total_weight > 0:
+            overall = math.exp(log_sum / total_weight)
+        else:
+            overall = 0.5
+    else:
+        # Weighted arithmetic mean: ∑(w_i * v_i) / ∑w_i
+        weighted_sum = 0.0
+        total_weight = 0.0
+        
+        for dim, value in dims.items():
+            w = weights.get(dim, 0.0)
+            if w > 0:
+                weighted_sum += w * value
+                total_weight += w
+        
+        if total_weight > 0:
+            overall = weighted_sum / total_weight
+        else:
+            overall = 0.5
+    
+    return min(1.0, max(0.0, overall))
 
 
 @dataclass
@@ -78,19 +144,26 @@ class DimensionalConfidence:
         corroboration: float,
         domain_applicability: float,
         weights: dict[ConfidenceDimension, float] | None = None,
+        use_geometric: bool = True,
     ) -> DimensionalConfidence:
-        """Create full dimensional confidence with calculated overall."""
+        """Create full dimensional confidence with calculated overall.
+        
+        Args:
+            use_geometric: If True (default), use weighted geometric mean per spec.
+                          This better penalizes imbalanced vectors.
+        """
         w = weights or DEFAULT_WEIGHTS
-        overall = (
-            source_reliability * w.get(ConfidenceDimension.SOURCE_RELIABILITY, 0.25) +
-            method_quality * w.get(ConfidenceDimension.METHOD_QUALITY, 0.15) +
-            internal_consistency * w.get(ConfidenceDimension.INTERNAL_CONSISTENCY, 0.20) +
-            temporal_freshness * w.get(ConfidenceDimension.TEMPORAL_FRESHNESS, 0.15) +
-            corroboration * w.get(ConfidenceDimension.CORROBORATION, 0.15) +
-            domain_applicability * w.get(ConfidenceDimension.DOMAIN_APPLICABILITY, 0.10)
-        )
+        dims = {
+            ConfidenceDimension.SOURCE_RELIABILITY: source_reliability,
+            ConfidenceDimension.METHOD_QUALITY: method_quality,
+            ConfidenceDimension.INTERNAL_CONSISTENCY: internal_consistency,
+            ConfidenceDimension.TEMPORAL_FRESHNESS: temporal_freshness,
+            ConfidenceDimension.CORROBORATION: corroboration,
+            ConfidenceDimension.DOMAIN_APPLICABILITY: domain_applicability,
+        }
+        overall = _compute_overall(dims, w, use_geometric=use_geometric)
         return cls(
-            overall=min(1.0, max(0.0, overall)),
+            overall=overall,
             source_reliability=source_reliability,
             method_quality=method_quality,
             internal_consistency=internal_consistency,
@@ -102,20 +175,25 @@ class DimensionalConfidence:
     def recalculate_overall(
         self,
         weights: dict[ConfidenceDimension, float] | None = None,
+        use_geometric: bool = True,
     ) -> DimensionalConfidence:
-        """Recalculate overall from dimensions."""
+        """Recalculate overall from dimensions.
+        
+        Args:
+            weights: Custom weights for each dimension.
+            use_geometric: If True (default), use weighted geometric mean per spec.
+        """
         w = weights or DEFAULT_WEIGHTS
-        total_weight = 0.0
-        weighted_sum = 0.0
-
-        for dim, default_weight in w.items():
+        dims = {}
+        for dim in ConfidenceDimension:
+            if dim == ConfidenceDimension.OVERALL:
+                continue
             value = getattr(self, dim.value, None)
             if value is not None:
-                weighted_sum += value * default_weight
-                total_weight += default_weight
+                dims[dim] = value
 
-        if total_weight > 0:
-            self.overall = min(1.0, max(0.0, weighted_sum / total_weight * sum(w.values())))
+        if dims:
+            self.overall = _compute_overall(dims, w, use_geometric=use_geometric)
 
         return self
 
@@ -221,14 +299,18 @@ def confidence_label(confidence: float) -> str:
 
 def aggregate_confidence(
     confidences: list[DimensionalConfidence],
-    method: str = "weighted_average",
+    method: str = "geometric",
 ) -> DimensionalConfidence:
     """Aggregate multiple confidences into one.
 
     Methods:
-    - weighted_average: Average weighted by each confidence's overall score
+    - geometric (default): Weighted geometric mean per spec (penalizes imbalance)
+    - weighted_average: Arithmetic average weighted by each confidence's overall score
     - minimum: Use the minimum of each dimension
     - maximum: Use the maximum of each dimension
+    
+    Per spec (MATH.md), geometric mean is preferred as it better handles
+    imbalanced vectors and propagates low confidence appropriately.
     """
     if not confidences:
         return DimensionalConfidence.simple(0.5)
@@ -258,7 +340,43 @@ def aggregate_confidence(
             domain_applicability=max((c.domain_applicability for c in confidences if c.domain_applicability is not None), default=None),
         )
 
-    else:  # weighted_average
+    elif method == "geometric":
+        # Weighted geometric mean per spec (MATH.md)
+        total_weight = sum(c.overall for c in confidences)
+        if total_weight == 0:
+            total_weight = len(confidences)
+
+        def weighted_geo(getter) -> float | None:
+            """Compute weighted geometric mean for a dimension."""
+            values = [(getter(c), c.overall) for c in confidences if getter(c) is not None]
+            if not values:
+                return None
+            # Geometric mean in log space: exp(∑(w * log(v)) / ∑w)
+            total_w = sum(w for _, w in values)
+            if total_w == 0:
+                total_w = len(values)
+            log_sum = sum(w * math.log(max(EPSILON, v)) for v, w in values)
+            return math.exp(log_sum / total_w)
+
+        # For overall, use geometric mean of the overall scores
+        overall_values = [c.overall for c in confidences]
+        overall_weights = [c.overall for c in confidences]  # Self-weighted
+        if sum(overall_weights) == 0:
+            overall_weights = [1.0] * len(confidences)
+        log_sum = sum(w * math.log(max(EPSILON, v)) for v, w in zip(overall_values, overall_weights))
+        geo_overall = math.exp(log_sum / sum(overall_weights))
+
+        return DimensionalConfidence(
+            overall=min(1.0, max(0.0, geo_overall)),
+            source_reliability=weighted_geo(lambda c: c.source_reliability),
+            method_quality=weighted_geo(lambda c: c.method_quality),
+            internal_consistency=weighted_geo(lambda c: c.internal_consistency),
+            temporal_freshness=weighted_geo(lambda c: c.temporal_freshness),
+            corroboration=weighted_geo(lambda c: c.corroboration),
+            domain_applicability=weighted_geo(lambda c: c.domain_applicability),
+        )
+
+    else:  # weighted_average (arithmetic)
         total_weight = sum(c.overall for c in confidences)
         if total_weight == 0:
             total_weight = len(confidences)
