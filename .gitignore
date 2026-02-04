@@ -40,4 +40,11 @@ infra/.env.*
 *.key
 credentials.json
 .claude/
+
+# Test artifacts
 .coverage
+coverage.xml
+coverage-*.xml
+htmlcov/
+.pytest_cache/
+coverage/
