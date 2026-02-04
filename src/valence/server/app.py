@@ -57,6 +57,10 @@ from .sharing_endpoints import (
     get_share_endpoint,
     revoke_share_endpoint,
 )
+from .notification_endpoints import (
+    list_notifications_endpoint,
+    acknowledge_notification_endpoint,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -851,6 +855,9 @@ def create_app() -> Starlette:
         Route(f"{API_V1}/shares", list_shares_endpoint, methods=["GET"]),
         Route(f"{API_V1}/shares/{{id}}", get_share_endpoint, methods=["GET"]),
         Route(f"{API_V1}/shares/{{id}}/revoke", revoke_share_endpoint, methods=["POST"]),
+        # Notification endpoints (Issue #55: revocation propagation)
+        Route(f"{API_V1}/notifications", list_notifications_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/notifications/{{id}}/acknowledge", acknowledge_notification_endpoint, methods=["POST"]),
     ]
 
     # Define middleware

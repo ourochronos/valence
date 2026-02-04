@@ -4,8 +4,8 @@ Implements basic share() API with DIRECT level support, consent chains,
 and cryptographic enforcement.
 """
 
-from dataclasses import dataclass
-from typing import Optional, Protocol, Any
+from dataclasses import dataclass, field, asdict
+from typing import Optional, Protocol, Any, List, AsyncIterator
 import uuid
 import time
 import hashlib
@@ -60,6 +60,30 @@ class RevokeResult:
     consent_chain_id: str
     revoked_at: float
     affected_recipients: int
+
+
+@dataclass
+class RevocationNotification:
+    """Notification sent to recipients when a share is revoked."""
+    
+    id: str
+    consent_chain_id: str
+    belief_id: str
+    revoked_by: str
+    revoked_at: float
+    reason: Optional[str] = None
+
+
+@dataclass
+class Notification:
+    """A stored notification pending delivery."""
+    
+    id: str
+    recipient_did: str
+    notification_type: str
+    payload: dict
+    created_at: float
+    acknowledged_at: Optional[float] = None
 
 
 @dataclass
@@ -194,6 +218,39 @@ class DatabaseProtocol(Protocol):
     ) -> list[Share]:
         """Get shares that haven't been received yet for a recipient."""
         ...
+    
+    async def create_notification(
+        self,
+        id: str,
+        recipient_did: str,
+        notification_type: str,
+        payload: dict,
+        created_at: float,
+    ) -> None:
+        """Create a notification for a recipient."""
+        ...
+    
+    async def get_pending_notifications(
+        self,
+        recipient_did: str,
+    ) -> list[Notification]:
+        """Get pending notifications for a recipient."""
+        ...
+    
+    async def acknowledge_notification(
+        self,
+        notification_id: str,
+        acknowledged_at: float,
+    ) -> None:
+        """Mark a notification as acknowledged/delivered."""
+        ...
+    
+    async def get_notification(
+        self,
+        notification_id: str,
+    ) -> Optional[Notification]:
+        """Get a notification by ID."""
+        ...
 
 
 class IdentityProtocol(Protocol):
@@ -223,11 +280,14 @@ class SharingService:
     - Cryptographic enforcement (encryption for recipient)
     - Consent chain creation and signing
     - Policy validation
+    - Revocation propagation to all recipients in consent chain
     """
     
     def __init__(self, db: DatabaseProtocol, identity_service: IdentityProtocol):
         self.db = db
         self.identity = identity_service
+        # In-memory queue for immediate delivery attempts
+        self._revocation_queue: List[tuple[str, RevocationNotification]] = []
     
     async def share(self, request: ShareRequest, sharer_did: str) -> ShareResult:
         """Share a belief with a specific recipient.
@@ -429,7 +489,8 @@ class SharingService:
         
         # Trigger revocation propagation (for future BOUNDED/CASCADING)
         # This will notify downstream recipients
-        await self._propagate_revocation(consent_chain, revoker_did)
+        # Note: Pass the reason explicitly since consent_chain was fetched before update
+        await self._propagate_revocation(consent_chain, revoker_did, request.reason)
         
         logger.info(
             f"Revoked share {request.share_id} (consent_chain={consent_chain.id}) "
@@ -543,47 +604,184 @@ class SharingService:
         return await self.db.get_pending_shares(recipient_did)
     
     async def _propagate_revocation(
-        self, consent_chain: ConsentChainEntry, revoker_did: str
-    ) -> None:
-        """Propagate revocation to downstream recipients.
+        self, consent_chain: ConsentChainEntry, revoker_did: str, reason: Optional[str] = None
+    ) -> int:
+        """Propagate revocation to all downstream recipients.
         
         For DIRECT shares, notifies the single recipient.
-        For BOUNDED/CASCADING, traverses hops and notifies all.
+        For BOUNDED/CASCADING, traverses hops and notifies all downstream recipients.
         
         Args:
             consent_chain: The consent chain being revoked
             revoker_did: The DID of the revoker
+            reason: The revocation reason (passed explicitly since consent_chain
+                    may have been fetched before the update)
+            
+        Returns:
+            Number of notifications sent
         """
         # Get all shares from this consent chain
         shares = await self.db.get_shares_by_consent_chain(consent_chain.id)
         
+        notifications_sent = 0
+        revoked_at = time.time()
+        
+        # Track recipients to avoid duplicate notifications
+        notified_recipients: set[str] = set()
+        
+        # Notify direct share recipients
         for share in shares:
-            # Queue revocation notification for recipient
-            await self._queue_revocation_notification(
-                recipient_did=share.recipient_did,
-                consent_chain_id=consent_chain.id,
-                revoked_by=revoker_did,
-            )
+            if share.recipient_did not in notified_recipients:
+                notification = RevocationNotification(
+                    id=str(uuid.uuid4()),
+                    consent_chain_id=consent_chain.id,
+                    belief_id=consent_chain.belief_id,
+                    revoked_by=revoker_did,
+                    revoked_at=revoked_at,
+                    reason=reason,
+                )
+                
+                await self._queue_revocation_notification(
+                    recipient_did=share.recipient_did,
+                    notification=notification,
+                )
+                notified_recipients.add(share.recipient_did)
+                notifications_sent += 1
+        
+        # For BOUNDED/CASCADING shares, traverse hops and notify downstream
+        for hop in consent_chain.hops:
+            # Notify the hop recipient if not already notified
+            hop_recipient = hop.get("recipient")
+            if hop_recipient and hop_recipient not in notified_recipients:
+                notification = RevocationNotification(
+                    id=str(uuid.uuid4()),
+                    consent_chain_id=consent_chain.id,
+                    belief_id=consent_chain.belief_id,
+                    revoked_by=revoker_did,
+                    revoked_at=revoked_at,
+                    reason=reason,
+                )
+                
+                await self._queue_revocation_notification(
+                    recipient_did=hop_recipient,
+                    notification=notification,
+                )
+                notified_recipients.add(hop_recipient)
+                notifications_sent += 1
+            
+            # Handle reshared_to for future BOUNDED/CASCADING support
+            reshared_to = hop.get("reshared_to", [])
+            for downstream_recipient in reshared_to:
+                if downstream_recipient not in notified_recipients:
+                    notification = RevocationNotification(
+                        id=str(uuid.uuid4()),
+                        consent_chain_id=consent_chain.id,
+                        belief_id=consent_chain.belief_id,
+                        revoked_by=revoker_did,
+                        revoked_at=revoked_at,
+                        reason=reason,
+                    )
+                    
+                    await self._queue_revocation_notification(
+                        recipient_did=downstream_recipient,
+                        notification=notification,
+                    )
+                    notified_recipients.add(downstream_recipient)
+                    notifications_sent += 1
+        
+        logger.info(
+            f"Propagated revocation for consent_chain={consent_chain.id}: "
+            f"{notifications_sent} notifications queued"
+        )
+        
+        return notifications_sent
     
     async def _queue_revocation_notification(
         self,
         recipient_did: str,
-        consent_chain_id: str,
-        revoked_by: str,
+        notification: RevocationNotification,
     ) -> None:
         """Queue a revocation notification for delivery.
         
-        This will be sent via the network layer when available.
-        For now, just logs the notification intent.
+        Stores notification in database for persistence (survives restarts)
+        and adds to in-memory queue for immediate delivery attempt.
         
         Args:
             recipient_did: The DID of the notification recipient
-            consent_chain_id: The revoked consent chain ID
-            revoked_by: The DID of the revoker
+            notification: The revocation notification to deliver
         """
-        # This will be sent via the network layer when available
-        # For now, just log it
+        # Store in database for persistence
+        await self.db.create_notification(
+            id=notification.id,
+            recipient_did=recipient_did,
+            notification_type="revocation",
+            payload=asdict(notification),
+            created_at=notification.revoked_at,
+        )
+        
+        # Add to in-memory queue for immediate delivery attempt
+        self._revocation_queue.append((recipient_did, notification))
+        
         logger.debug(
             f"Queued revocation notification: recipient={recipient_did}, "
-            f"consent_chain={consent_chain_id}, revoked_by={revoked_by}"
+            f"notification_id={notification.id}, "
+            f"consent_chain={notification.consent_chain_id}"
         )
+    
+    async def process_revocation_queue(self) -> AsyncIterator[tuple[str, RevocationNotification]]:
+        """Process queued revocation notifications.
+        
+        Called by the network layer to get pending notifications for delivery.
+        
+        Yields:
+            Tuples of (recipient_did, notification) for each queued notification
+        """
+        while self._revocation_queue:
+            recipient_did, notification = self._revocation_queue.pop(0)
+            yield recipient_did, notification
+    
+    async def get_pending_notifications(self, recipient_did: str) -> list[Notification]:
+        """Get pending notifications for a recipient.
+        
+        Used by recipients to poll for notifications (e.g., when they come online).
+        
+        Args:
+            recipient_did: The DID of the recipient
+            
+        Returns:
+            List of pending notifications
+        """
+        return await self.db.get_pending_notifications(recipient_did)
+    
+    async def acknowledge_notification(self, notification_id: str, recipient_did: str) -> bool:
+        """Mark a notification as acknowledged/delivered.
+        
+        Args:
+            notification_id: The ID of the notification
+            recipient_did: The DID of the recipient (for authorization)
+            
+        Returns:
+            True if acknowledged successfully, False if not found or unauthorized
+            
+        Raises:
+            PermissionError: If recipient is not the notification recipient
+        """
+        notification = await self.db.get_notification(notification_id)
+        if not notification:
+            return False
+        
+        if notification.recipient_did != recipient_did:
+            raise PermissionError("Not the notification recipient")
+        
+        if notification.acknowledged_at is not None:
+            # Already acknowledged
+            return True
+        
+        await self.db.acknowledge_notification(notification_id, time.time())
+        
+        logger.debug(
+            f"Acknowledged notification: id={notification_id}, "
+            f"recipient={recipient_did}"
+        )
+        
+        return True

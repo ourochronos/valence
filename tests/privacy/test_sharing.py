@@ -14,6 +14,8 @@ from valence.privacy.sharing import (
     ReceiveResult,
     RevokeRequest,
     RevokeResult,
+    RevocationNotification,
+    Notification,
     SharingService,
     Share,
     ConsentChainEntry,
@@ -36,6 +38,7 @@ class MockDatabase:
         self.beliefs: dict[str, MockBelief] = {}
         self.consent_chains: dict[str, dict] = {}
         self.shares: dict[str, dict] = {}
+        self.notifications: dict[str, dict] = {}
     
     async def get_belief(self, belief_id: str) -> Optional[MockBelief]:
         return self.beliefs.get(belief_id)
@@ -228,6 +231,71 @@ class MockDatabase:
                 received_at=data.get("received_at"),
             ))
         return results
+    
+    async def create_notification(
+        self,
+        id: str,
+        recipient_did: str,
+        notification_type: str,
+        payload: dict,
+        created_at: float,
+    ) -> None:
+        """Create a notification for a recipient."""
+        self.notifications[id] = {
+            "id": id,
+            "recipient_did": recipient_did,
+            "notification_type": notification_type,
+            "payload": payload,
+            "created_at": created_at,
+            "acknowledged_at": None,
+        }
+    
+    async def get_pending_notifications(
+        self,
+        recipient_did: str,
+    ) -> list[Notification]:
+        """Get pending notifications for a recipient."""
+        results = []
+        for data in self.notifications.values():
+            if data["recipient_did"] != recipient_did:
+                continue
+            if data.get("acknowledged_at") is not None:
+                continue
+            results.append(Notification(
+                id=data["id"],
+                recipient_did=data["recipient_did"],
+                notification_type=data["notification_type"],
+                payload=data["payload"],
+                created_at=data["created_at"],
+                acknowledged_at=data.get("acknowledged_at"),
+            ))
+        return results
+    
+    async def acknowledge_notification(
+        self,
+        notification_id: str,
+        acknowledged_at: float,
+    ) -> None:
+        """Mark a notification as acknowledged/delivered."""
+        if notification_id in self.notifications:
+            self.notifications[notification_id]["acknowledged_at"] = acknowledged_at
+    
+    async def get_notification(
+        self,
+        notification_id: str,
+    ) -> Optional[Notification]:
+        """Get a notification by ID."""
+        data = self.notifications.get(notification_id)
+        if not data:
+            return None
+        return Notification(
+            id=data["id"],
+            recipient_did=data["recipient_did"],
+            notification_type=data["notification_type"],
+            payload=data["payload"],
+            created_at=data["created_at"],
+            acknowledged_at=data.get("acknowledged_at"),
+        )
 
 
 class MockIdentityService:
@@ -1100,4 +1168,440 @@ class TestListPendingShares:
         
         # Different recipient should see no pending shares
         pending = await service.list_pending_shares("did:key:other-person")
+        assert len(pending) == 0
+
+
+class TestRevocationPropagation:
+    """Tests for revocation propagation to recipients (Issue #55)."""
+    
+    @pytest.fixture
+    def db(self):
+        return MockDatabase()
+    
+    @pytest.fixture
+    def identity(self):
+        return MockIdentityService()
+    
+    @pytest.fixture
+    def service(self, db, identity):
+        return SharingService(db, identity)
+    
+    async def _create_share(
+        self, service, db, identity, 
+        belief_id="belief-prop-001",
+        recipient_did="did:key:recipient-prop",
+        content="Content to propagate revocation"
+    ):
+        """Helper to create a share for testing."""
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content=content)
+        identity.add_identity(recipient_did)
+        
+        request = ShareRequest(belief_id=belief_id, recipient_did=recipient_did)
+        return await service.share(request, identity.get_did()), recipient_did
+    
+    @pytest.mark.asyncio
+    async def test_revocation_creates_notification(self, service, db, identity):
+        """Test that revoking a share creates a notification for the recipient."""
+        share_result, recipient_did = await self._create_share(service, db, identity)
+        
+        # Revoke the share
+        revoke_request = RevokeRequest(
+            share_id=share_result.share_id,
+            reason="Testing notification creation",
+        )
+        await service.revoke_share(revoke_request, identity.get_did())
+        
+        # Check notification was created
+        assert len(db.notifications) == 1
+        
+        notification = list(db.notifications.values())[0]
+        assert notification["recipient_did"] == recipient_did
+        assert notification["notification_type"] == "revocation"
+        assert notification["payload"]["consent_chain_id"] == share_result.consent_chain_id
+        assert notification["payload"]["belief_id"] == "belief-prop-001"
+        assert notification["payload"]["revoked_by"] == identity.get_did()
+        assert notification["payload"]["reason"] == "Testing notification creation"
+    
+    @pytest.mark.asyncio
+    async def test_revocation_notification_in_memory_queue(self, service, db, identity):
+        """Test that revocation notification is added to in-memory queue."""
+        share_result, recipient_did = await self._create_share(
+            service, db, identity,
+            belief_id="belief-queue",
+            recipient_did="did:key:queue-recipient"
+        )
+        
+        # Verify queue is empty initially
+        assert len(service._revocation_queue) == 0
+        
+        # Revoke the share
+        revoke_request = RevokeRequest(share_id=share_result.share_id)
+        await service.revoke_share(revoke_request, identity.get_did())
+        
+        # Check notification is in queue
+        assert len(service._revocation_queue) == 1
+        queued_recipient, queued_notification = service._revocation_queue[0]
+        assert queued_recipient == recipient_did
+        assert queued_notification.consent_chain_id == share_result.consent_chain_id
+    
+    @pytest.mark.asyncio
+    async def test_process_revocation_queue(self, service, db, identity):
+        """Test processing the revocation queue."""
+        share_result, recipient_did = await self._create_share(
+            service, db, identity,
+            belief_id="belief-process",
+            recipient_did="did:key:process-recipient"
+        )
+        
+        # Revoke to add to queue
+        revoke_request = RevokeRequest(share_id=share_result.share_id)
+        await service.revoke_share(revoke_request, identity.get_did())
+        
+        # Process the queue
+        processed = []
+        async for recipient, notification in service.process_revocation_queue():
+            processed.append((recipient, notification))
+        
+        assert len(processed) == 1
+        assert processed[0][0] == recipient_did
+        assert processed[0][1].consent_chain_id == share_result.consent_chain_id
+        
+        # Queue should be empty after processing
+        assert len(service._revocation_queue) == 0
+    
+    @pytest.mark.asyncio
+    async def test_multiple_shares_same_consent_chain(self, service, db, identity):
+        """Test that all recipients in a consent chain are notified."""
+        # For DIRECT shares, there's only one recipient per consent chain
+        # This test verifies the mechanism works correctly
+        recipient_did = "did:key:multi-recipient"
+        identity.add_identity(recipient_did)
+        
+        belief_id = "belief-multi"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Multi content")
+        
+        request = ShareRequest(belief_id=belief_id, recipient_did=recipient_did)
+        share_result = await service.share(request, identity.get_did())
+        
+        # Revoke
+        revoke_request = RevokeRequest(share_id=share_result.share_id)
+        await service.revoke_share(revoke_request, identity.get_did())
+        
+        # Verify notification was created
+        notifications = await service.get_pending_notifications(recipient_did)
+        assert len(notifications) == 1
+        assert notifications[0].notification_type == "revocation"
+    
+    @pytest.mark.asyncio
+    async def test_revocation_propagation_with_hops(self, service, db, identity):
+        """Test that revocation propagates to hop recipients."""
+        recipient_did = "did:key:hop-notify-recipient"
+        identity.add_identity(recipient_did)
+        
+        belief_id = "belief-hop-notify"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Hop content")
+        
+        # Create share
+        request = ShareRequest(belief_id=belief_id, recipient_did=recipient_did)
+        share_result = await service.share(request, identity.get_did())
+        
+        # Receive the share (creates a hop)
+        receive_request = ReceiveRequest(share_id=share_result.share_id)
+        await service.receive(receive_request, recipient_did)
+        
+        # Manually add a reshared_to hop for testing BOUNDED/CASCADING scenario
+        downstream_did = "did:key:downstream"
+        db.consent_chains[share_result.consent_chain_id]["hops"].append({
+            "recipient": "did:key:intermediate",
+            "reshared_to": [downstream_did],
+        })
+        
+        # Revoke
+        revoke_request = RevokeRequest(share_id=share_result.share_id)
+        await service.revoke_share(revoke_request, identity.get_did())
+        
+        # Should have notifications for:
+        # 1. Original recipient
+        # 2. Intermediate hop recipient (already notified via first hop)
+        # 3. Downstream recipient
+        # Note: recipient_did is notified once (deduplication)
+        assert len(db.notifications) >= 2  # At least recipient + downstream
+        
+        # Verify downstream got notification
+        downstream_notifications = [
+            n for n in db.notifications.values()
+            if n["recipient_did"] == downstream_did
+        ]
+        assert len(downstream_notifications) == 1
+    
+    @pytest.mark.asyncio
+    async def test_no_duplicate_notifications(self, service, db, identity):
+        """Test that recipients don't get duplicate notifications."""
+        recipient_did = "did:key:no-dup-recipient"
+        identity.add_identity(recipient_did)
+        
+        belief_id = "belief-no-dup"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="No dup content")
+        
+        # Create share
+        request = ShareRequest(belief_id=belief_id, recipient_did=recipient_did)
+        share_result = await service.share(request, identity.get_did())
+        
+        # Receive (creates hop with same recipient)
+        receive_request = ReceiveRequest(share_id=share_result.share_id)
+        await service.receive(receive_request, recipient_did)
+        
+        # Revoke
+        revoke_request = RevokeRequest(share_id=share_result.share_id)
+        await service.revoke_share(revoke_request, identity.get_did())
+        
+        # Should only have 1 notification despite appearing in shares and hops
+        notifications_for_recipient = [
+            n for n in db.notifications.values()
+            if n["recipient_did"] == recipient_did
+        ]
+        assert len(notifications_for_recipient) == 1
+
+
+class TestNotificationHandling:
+    """Tests for notification retrieval and acknowledgment."""
+    
+    @pytest.fixture
+    def db(self):
+        return MockDatabase()
+    
+    @pytest.fixture
+    def identity(self):
+        return MockIdentityService()
+    
+    @pytest.fixture
+    def service(self, db, identity):
+        return SharingService(db, identity)
+    
+    async def _create_and_revoke_share(
+        self, service, db, identity, 
+        belief_id="belief-notify-001",
+        recipient_did="did:key:notify-recipient",
+    ):
+        """Helper to create and revoke a share."""
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Content")
+        identity.add_identity(recipient_did)
+        
+        request = ShareRequest(belief_id=belief_id, recipient_did=recipient_did)
+        share_result = await service.share(request, identity.get_did())
+        
+        revoke_request = RevokeRequest(share_id=share_result.share_id, reason="Test")
+        await service.revoke_share(revoke_request, identity.get_did())
+        
+        return share_result, recipient_did
+    
+    @pytest.mark.asyncio
+    async def test_get_pending_notifications(self, service, db, identity):
+        """Test retrieving pending notifications for a recipient."""
+        share_result, recipient_did = await self._create_and_revoke_share(
+            service, db, identity
+        )
+        
+        # Get pending notifications
+        notifications = await service.get_pending_notifications(recipient_did)
+        
+        assert len(notifications) == 1
+        assert notifications[0].notification_type == "revocation"
+        assert notifications[0].recipient_did == recipient_did
+        assert notifications[0].acknowledged_at is None
+    
+    @pytest.mark.asyncio
+    async def test_acknowledge_notification(self, service, db, identity):
+        """Test acknowledging a notification."""
+        share_result, recipient_did = await self._create_and_revoke_share(
+            service, db, identity,
+            belief_id="belief-ack",
+            recipient_did="did:key:ack-recipient"
+        )
+        
+        # Get notification ID
+        notifications = await service.get_pending_notifications(recipient_did)
+        notification_id = notifications[0].id
+        
+        # Acknowledge it
+        success = await service.acknowledge_notification(notification_id, recipient_did)
+        assert success is True
+        
+        # Should no longer be in pending
+        pending = await service.get_pending_notifications(recipient_did)
+        assert len(pending) == 0
+    
+    @pytest.mark.asyncio
+    async def test_acknowledge_notification_not_found(self, service, db, identity):
+        """Test acknowledging a non-existent notification."""
+        success = await service.acknowledge_notification(
+            "nonexistent-notification-id",
+            "did:key:anyone"
+        )
+        assert success is False
+    
+    @pytest.mark.asyncio
+    async def test_acknowledge_notification_wrong_recipient(self, service, db, identity):
+        """Test that wrong recipient cannot acknowledge notification."""
+        share_result, recipient_did = await self._create_and_revoke_share(
+            service, db, identity,
+            belief_id="belief-wrong-ack",
+            recipient_did="did:key:correct-recipient"
+        )
+        
+        # Get notification ID
+        notifications = await service.get_pending_notifications(recipient_did)
+        notification_id = notifications[0].id
+        
+        # Try to acknowledge as wrong recipient
+        with pytest.raises(PermissionError, match="Not the notification recipient"):
+            await service.acknowledge_notification(notification_id, "did:key:imposter")
+    
+    @pytest.mark.asyncio
+    async def test_acknowledge_already_acknowledged(self, service, db, identity):
+        """Test acknowledging an already acknowledged notification."""
+        share_result, recipient_did = await self._create_and_revoke_share(
+            service, db, identity,
+            belief_id="belief-double-ack",
+            recipient_did="did:key:double-ack-recipient"
+        )
+        
+        # Get notification ID
+        notifications = await service.get_pending_notifications(recipient_did)
+        notification_id = notifications[0].id
+        
+        # Acknowledge twice
+        success1 = await service.acknowledge_notification(notification_id, recipient_did)
+        success2 = await service.acknowledge_notification(notification_id, recipient_did)
+        
+        assert success1 is True
+        assert success2 is True  # Idempotent
+    
+    @pytest.mark.asyncio
+    async def test_multiple_notifications_for_recipient(self, service, db, identity):
+        """Test handling multiple notifications for the same recipient."""
+        recipient_did = "did:key:multi-notify-recipient"
+        identity.add_identity(recipient_did)
+        
+        # Create and revoke multiple shares
+        share_ids = []
+        for i in range(3):
+            belief_id = f"belief-multi-notify-{i}"
+            db.beliefs[belief_id] = MockBelief(id=belief_id, content=f"Content {i}")
+            
+            request = ShareRequest(belief_id=belief_id, recipient_did=recipient_did)
+            share_result = await service.share(request, identity.get_did())
+            share_ids.append(share_result.share_id)
+            
+            revoke_request = RevokeRequest(share_id=share_result.share_id)
+            await service.revoke_share(revoke_request, identity.get_did())
+        
+        # Should have 3 notifications
+        notifications = await service.get_pending_notifications(recipient_did)
+        assert len(notifications) == 3
+        
+        # Acknowledge one
+        await service.acknowledge_notification(notifications[0].id, recipient_did)
+        
+        # Should have 2 remaining
+        pending = await service.get_pending_notifications(recipient_did)
+        assert len(pending) == 2
+    
+    @pytest.mark.asyncio
+    async def test_notifications_for_different_recipients_isolated(self, service, db, identity):
+        """Test that notifications are isolated per recipient."""
+        identity.add_identity("did:key:alice-notify")
+        identity.add_identity("did:key:bob-notify")
+        
+        # Create and revoke shares for both
+        for i, recipient in enumerate(["did:key:alice-notify", "did:key:bob-notify"]):
+            belief_id = f"belief-isolated-{i}"
+            db.beliefs[belief_id] = MockBelief(id=belief_id, content=f"Content {i}")
+            
+            request = ShareRequest(belief_id=belief_id, recipient_did=recipient)
+            share_result = await service.share(request, identity.get_did())
+            
+            revoke_request = RevokeRequest(share_id=share_result.share_id)
+            await service.revoke_share(revoke_request, identity.get_did())
+        
+        # Each should only see their own notifications
+        alice_notifications = await service.get_pending_notifications("did:key:alice-notify")
+        bob_notifications = await service.get_pending_notifications("did:key:bob-notify")
+        
+        assert len(alice_notifications) == 1
+        assert len(bob_notifications) == 1
+        
+        # They should be different notifications
+        assert alice_notifications[0].id != bob_notifications[0].id
+
+
+class TestOfflineRecipientHandling:
+    """Tests for handling offline recipients via notification persistence."""
+    
+    @pytest.fixture
+    def db(self):
+        return MockDatabase()
+    
+    @pytest.fixture
+    def identity(self):
+        return MockIdentityService()
+    
+    @pytest.fixture
+    def service(self, db, identity):
+        return SharingService(db, identity)
+    
+    @pytest.mark.asyncio
+    async def test_notifications_persist_for_offline_recipients(self, service, db, identity):
+        """Test that notifications are stored in DB for later retrieval."""
+        recipient_did = "did:key:offline-recipient"
+        identity.add_identity(recipient_did)
+        
+        belief_id = "belief-offline"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content="Offline content")
+        
+        # Create and revoke share
+        request = ShareRequest(belief_id=belief_id, recipient_did=recipient_did)
+        share_result = await service.share(request, identity.get_did())
+        
+        revoke_request = RevokeRequest(share_id=share_result.share_id)
+        await service.revoke_share(revoke_request, identity.get_did())
+        
+        # Clear in-memory queue (simulating restart)
+        service._revocation_queue.clear()
+        
+        # Notification should still be in database
+        notifications = await service.get_pending_notifications(recipient_did)
+        assert len(notifications) == 1
+        assert notifications[0].notification_type == "revocation"
+    
+    @pytest.mark.asyncio
+    async def test_recipient_can_poll_notifications(self, service, db, identity):
+        """Test that recipient can poll for notifications after coming online."""
+        recipient_did = "did:key:polling-recipient"
+        identity.add_identity(recipient_did)
+        
+        # Create multiple revocations while "offline"
+        for i in range(3):
+            belief_id = f"belief-poll-{i}"
+            db.beliefs[belief_id] = MockBelief(id=belief_id, content=f"Poll content {i}")
+            
+            request = ShareRequest(belief_id=belief_id, recipient_did=recipient_did)
+            share_result = await service.share(request, identity.get_did())
+            
+            revoke_request = RevokeRequest(share_id=share_result.share_id)
+            await service.revoke_share(revoke_request, identity.get_did())
+        
+        # Clear in-memory queue (simulating recipient was offline)
+        service._revocation_queue.clear()
+        
+        # "Come online" and poll
+        notifications = await service.get_pending_notifications(recipient_did)
+        assert len(notifications) == 3
+        
+        # Acknowledge all
+        for notification in notifications:
+            await service.acknowledge_notification(notification.id, recipient_did)
+        
+        # Should be empty now
+        pending = await service.get_pending_notifications(recipient_did)
         assert len(pending) == 0
