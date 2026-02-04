@@ -171,6 +171,37 @@ Detects:
 
 ---
 
+## Scripts
+
+### Re-Embedding Script
+
+After migrating to local embeddings (migration 009), populate the new `embedding_384` columns:
+
+```bash
+# Process all tables
+python scripts/reembed_all.py
+
+# Dry run - see what would be done
+python scripts/reembed_all.py --dry-run
+
+# Process specific table only
+python scripts/reembed_all.py --table beliefs
+
+# Custom batch size (default: 100)
+python scripts/reembed_all.py --batch-size 50
+
+# Disable progress tracking (no resume capability)
+python scripts/reembed_all.py --no-progress
+```
+
+Features:
+- **Batch processing** with progress bar (tqdm)
+- **Resume capability** - automatically resumes from `.reembed_progress.json`
+- **Verification** - confirms embedding coverage after processing
+- **~100 beliefs/sec** on CPU
+
+---
+
 ## Architecture
 
 ```
