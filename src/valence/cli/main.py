@@ -15,12 +15,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import UUID
+
+logger = logging.getLogger(__name__)
 
 # Try to load .env from common locations
 for env_path in [Path.cwd() / '.env', Path.home() / '.valence' / '.env']:
@@ -882,7 +885,8 @@ def cmd_stats(args: argparse.Namespace) -> int:
         try:
             cur.execute("SELECT COUNT(DISTINCT d) as count FROM beliefs, LATERAL unnest(domain_path) as d")
             domains = cur.fetchone()['count']
-        except:
+        except (Exception,) as e:
+            logger.debug(f"Could not count domains (column may not exist): {e}")
             domains = 0
         
         cur.execute("SELECT COUNT(*) as derivations FROM belief_derivations")
@@ -892,7 +896,8 @@ def cmd_stats(args: argparse.Namespace) -> int:
         try:
             cur.execute("SELECT COUNT(*) as federated FROM beliefs WHERE is_local = FALSE")
             federated = cur.fetchone()['federated']
-        except:
+        except (Exception,) as e:
+            logger.debug(f"Could not count federated beliefs (column may not exist): {e}")
             federated = 0
         
         print("📊 Valence Statistics")
