@@ -6,6 +6,14 @@
 ALTER TABLE beliefs 
 ADD COLUMN IF NOT EXISTS share_policy JSONB DEFAULT '{"level": "private", "enforcement": "policy"}';
 
+-- Index for querying beliefs by share level (closes #49)
+CREATE INDEX IF NOT EXISTS idx_beliefs_share_level 
+ON beliefs ((share_policy->>'level'));
+
+-- GIN index for flexible share_policy queries
+CREATE INDEX IF NOT EXISTS idx_beliefs_share_policy 
+ON beliefs USING GIN (share_policy);
+
 -- Create consent_chains table for tracking sharing provenance
 CREATE TABLE IF NOT EXISTS consent_chains (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
