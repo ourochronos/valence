@@ -8,7 +8,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Nothing yet
+- **Verification Protocol with Staking** (Issue #14)
+  - Full implementation of `spec/components/verification-protocol/`
+  - `verification.py` module with complete data models:
+    - `Verification`, `Dispute`, `Evidence`, `Stake`, `ReputationScore`
+    - All enums: `VerificationResult`, `VerificationStatus`, `StakeType`, 
+      `EvidenceType`, `EvidenceContribution`, `DisputeType`, `DisputeOutcome`
+  - Stake calculation functions per REPUTATION.md:
+    - `calculate_min_stake()`, `calculate_max_stake()`, `calculate_dispute_min_stake()`
+    - `calculate_bounty()` for discrepancy bounties
+  - Reputation update calculations:
+    - `calculate_confirmation_reward()`, `calculate_contradiction_reward()`
+    - `calculate_holder_confirmation_bonus()`, `calculate_holder_contradiction_penalty()`
+    - `calculate_partial_reward()` for PARTIAL verifications
+  - Full validation suite:
+    - `validate_verification_submission()`, `validate_evidence_requirements()`
+    - `validate_dispute_submission()`
+  - `VerificationService` class with complete lifecycle:
+    - `submit_verification()`, `accept_verification()`
+    - `dispute_verification()`, `resolve_dispute()`
+    - Stake locking/release, reputation event logging
+  - Database migration `006-verification.sql`:
+    - Tables: `verifications`, `disputes`, `reputations`, `stake_positions`,
+      `reputation_events`, `discrepancy_bounties`
+    - PostgreSQL functions for atomic stake operations
+    - Views: `belief_verification_stats`, `verifier_leaderboard`, `pending_disputes`
+  - 120 comprehensive tests covering all functionality
 
 ---
 

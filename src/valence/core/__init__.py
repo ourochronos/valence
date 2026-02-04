@@ -24,6 +24,32 @@ from .exceptions import (
     EmbeddingException,
     MCPException,
 )
+from .verification import (
+    # Enums
+    VerificationResult,
+    VerificationStatus,
+    StakeType,
+    EvidenceType,
+    EvidenceContribution,
+    ContradictionType,
+    DisputeType,
+    DisputeOutcome,
+    DisputeStatus,
+    # Models
+    Evidence,
+    Verification,
+    Dispute,
+    Stake,
+    ReputationScore,
+    DiscrepancyBounty,
+    # Service
+    VerificationService,
+    # Functions
+    calculate_min_stake,
+    calculate_max_stake,
+    calculate_bounty,
+    create_evidence,
+)
 from .health import (
     HealthStatus,
     run_health_check,
@@ -92,4 +118,25 @@ __all__ = [
     "success_response",
     "error_response",
     "not_found_response",
+    # Verification Protocol
+    "VerificationResult",
+    "VerificationStatus",
+    "StakeType",
+    "EvidenceType",
+    "EvidenceContribution",
+    "ContradictionType",
+    "DisputeType",
+    "DisputeOutcome",
+    "DisputeStatus",
+    "Evidence",
+    "Verification",
+    "Dispute",
+    "Stake",
+    "ReputationScore",
+    "DiscrepancyBounty",
+    "VerificationService",
+    "calculate_min_stake",
+    "calculate_max_stake",
+    "calculate_bounty",
+    "create_evidence",
 ]
