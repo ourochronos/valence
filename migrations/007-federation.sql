@@ -6,6 +6,7 @@
 --
 -- Tables:
 --   - federation_nodes: Known peer nodes in the federation network
+--   - node_trust: Trust information for each peer node
 --   - sync_state: Tracks sync progress with each peer
 --
 -- Adds to beliefs:
@@ -17,24 +18,38 @@
 -- PHASE 1: ENUM TYPES
 -- ============================================================================
 
--- Federation node status
+-- Federation node status (matches models.NodeStatus)
 DO $$ BEGIN
     CREATE TYPE federation_node_status AS ENUM (
-        'pending',    -- Awaiting approval
-        'active',     -- Approved and operational
-        'suspended',  -- Temporarily disabled
-        'revoked'     -- Permanently removed
+        'discovered',   -- Found but not yet connected
+        'connecting',   -- Connection in progress
+        'active',       -- Connected and syncing
+        'suspended',    -- Temporarily suspended
+        'unreachable'   -- Cannot connect
     );
 EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;
 
--- Sync state status
+-- Trust phase (matches models.TrustPhase)
+DO $$ BEGIN
+    CREATE TYPE trust_phase AS ENUM (
+        'observer',     -- Days 1-7: Read-only
+        'contributor',  -- Days 7-30: Limited contribution
+        'participant',  -- Day 30+: Full participation
+        'anchor'        -- Earned: Can vouch for others
+    );
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+-- Sync state status (matches models.SyncStatus)
 DO $$ BEGIN
     CREATE TYPE sync_status AS ENUM (
         'idle',       -- No sync in progress
         'syncing',    -- Sync currently active
-        'error'       -- Last sync failed
+        'error',      -- Last sync failed
+        'paused'      -- Manually paused
     );
 EXCEPTION
     WHEN duplicate_object THEN null;
@@ -48,21 +63,37 @@ CREATE TABLE IF NOT EXISTS federation_nodes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     
     -- Identity
-    did TEXT UNIQUE NOT NULL,              -- Decentralized Identifier
-    name TEXT,                              -- Human-readable name
-    endpoint TEXT NOT NULL,                 -- API endpoint URL
-    public_key TEXT,                        -- Node's public key for verification
+    did TEXT UNIQUE NOT NULL,                    -- Decentralized Identifier (did:vkb:...)
     
-    -- Status and trust
-    status federation_node_status NOT NULL DEFAULT 'pending',
-    capabilities TEXT[] DEFAULT '{}',       -- Supported protocol features
-    trust_score REAL NOT NULL DEFAULT 0.5   -- 0.0-1.0, adjusts based on behavior
-        CHECK (trust_score >= 0.0 AND trust_score <= 1.0),
+    -- Connection endpoints
+    federation_endpoint TEXT,                    -- Federation API endpoint URL
+    mcp_endpoint TEXT,                           -- Model Context Protocol endpoint
     
-    -- Tracking
-    last_seen TIMESTAMPTZ,                  -- Last successful communication
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    -- Cryptographic identity
+    public_key_multibase TEXT NOT NULL DEFAULT '', -- Node's public key (multibase encoded)
+    
+    -- Profile
+    name TEXT,                                   -- Human-readable name
+    domains TEXT[] DEFAULT '{}',                 -- Knowledge domains this node specializes in
+    
+    -- Capabilities
+    capabilities TEXT[] DEFAULT '{}',            -- Supported protocol features
+    
+    -- Status and trust phase
+    status federation_node_status NOT NULL DEFAULT 'discovered',
+    trust_phase trust_phase NOT NULL DEFAULT 'observer',
+    phase_started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    
+    -- Protocol
+    protocol_version TEXT NOT NULL DEFAULT '1.0',
+    
+    -- Timestamps
+    discovered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen_at TIMESTAMPTZ,
+    last_sync_at TIMESTAMPTZ,
+    
+    -- Metadata (extensible)
+    metadata JSONB NOT NULL DEFAULT '{}'
 );
 
 -- Indexes for federation_nodes
@@ -70,28 +101,90 @@ CREATE INDEX IF NOT EXISTS idx_federation_nodes_did
     ON federation_nodes(did);
 CREATE INDEX IF NOT EXISTS idx_federation_nodes_status 
     ON federation_nodes(status) WHERE status = 'active';
-CREATE INDEX IF NOT EXISTS idx_federation_nodes_trust 
-    ON federation_nodes(trust_score DESC) WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS idx_federation_nodes_trust_phase 
+    ON federation_nodes(trust_phase);
 CREATE INDEX IF NOT EXISTS idx_federation_nodes_last_seen 
-    ON federation_nodes(last_seen DESC NULLS LAST);
+    ON federation_nodes(last_seen_at DESC NULLS LAST);
+CREATE INDEX IF NOT EXISTS idx_federation_nodes_domains 
+    ON federation_nodes USING GIN(domains);
 
--- Trigger to update updated_at
-CREATE OR REPLACE FUNCTION update_federation_nodes_updated_at()
+-- ============================================================================
+-- PHASE 3: NODE_TRUST TABLE
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS node_trust (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    
+    -- Reference to peer node
+    node_id UUID NOT NULL REFERENCES federation_nodes(id) ON DELETE CASCADE,
+    
+    -- Trust dimensions stored as JSONB
+    -- Contains: overall, belief_accuracy, extraction_quality, curation_accuracy,
+    --           uptime_reliability, contribution_consistency, endorsement_strength,
+    --           domain_expertise (nested object)
+    trust JSONB NOT NULL DEFAULT '{"overall": 0.1}',
+    
+    -- Trust factors / statistics
+    beliefs_received INTEGER NOT NULL DEFAULT 0,
+    beliefs_sent INTEGER NOT NULL DEFAULT 0,
+    beliefs_corroborated INTEGER NOT NULL DEFAULT 0,
+    beliefs_disputed INTEGER NOT NULL DEFAULT 0,
+    sync_requests_served INTEGER NOT NULL DEFAULT 0,
+    aggregation_participations INTEGER NOT NULL DEFAULT 0,
+    
+    -- Social trust
+    endorsements_received INTEGER NOT NULL DEFAULT 0,
+    endorsements_given INTEGER NOT NULL DEFAULT 0,
+    
+    -- Relationship timeline
+    relationship_started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_interaction_at TIMESTAMPTZ,
+    last_sync_at TIMESTAMPTZ,
+    
+    -- Extended node info (from DID document)
+    capabilities JSONB,                          -- Detailed capability info
+    protocol_version TEXT,                       -- Peer's protocol version
+    public_key_multibase TEXT,                   -- Cached public key
+    profile JSONB,                               -- Cached profile info
+    services JSONB,                              -- Cached service endpoints
+    
+    -- Manual adjustments
+    manual_trust_adjustment REAL NOT NULL DEFAULT 0.0,
+    adjustment_reason TEXT,
+    
+    -- Timestamps
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    modified_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    
+    -- Each node has exactly one trust record
+    CONSTRAINT node_trust_node_unique UNIQUE (node_id)
+);
+
+-- Indexes for node_trust
+CREATE INDEX IF NOT EXISTS idx_node_trust_node 
+    ON node_trust(node_id);
+CREATE INDEX IF NOT EXISTS idx_node_trust_overall 
+    ON node_trust(((trust->>'overall')::numeric) DESC);
+CREATE INDEX IF NOT EXISTS idx_node_trust_last_interaction 
+    ON node_trust(last_interaction_at DESC NULLS LAST);
+
+-- Trigger to update modified_at
+CREATE OR REPLACE FUNCTION update_node_trust_modified_at()
 RETURNS TRIGGER AS $$
 BEGIN
-    NEW.updated_at = NOW();
+    NEW.modified_at = NOW();
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trg_federation_nodes_updated_at ON federation_nodes;
-CREATE TRIGGER trg_federation_nodes_updated_at
-    BEFORE UPDATE ON federation_nodes
+DROP TRIGGER IF EXISTS trg_node_trust_modified_at ON node_trust;
+CREATE TRIGGER trg_node_trust_modified_at
+    BEFORE UPDATE ON node_trust
     FOR EACH ROW
-    EXECUTE FUNCTION update_federation_nodes_updated_at();
+    EXECUTE FUNCTION update_node_trust_modified_at();
 
 -- ============================================================================
--- PHASE 3: SYNC_STATE TABLE
+-- PHASE 4: SYNC_STATE TABLE
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS sync_state (
@@ -159,7 +252,7 @@ CREATE TRIGGER trg_sync_state_modified_at
     EXECUTE FUNCTION update_sync_state_modified_at();
 
 -- ============================================================================
--- PHASE 4: ADD FEDERATION COLUMNS TO BELIEFS
+-- PHASE 5: ADD FEDERATION COLUMNS TO BELIEFS
 -- ============================================================================
 
 -- Flag for locally-originated beliefs
@@ -177,7 +270,7 @@ CREATE INDEX IF NOT EXISTS idx_beliefs_origin_node
     ON beliefs(origin_node_id) WHERE origin_node_id IS NOT NULL;
 
 -- ============================================================================
--- PHASE 5: HELPER FUNCTIONS
+-- PHASE 6: HELPER FUNCTIONS
 -- ============================================================================
 
 -- Get active federation nodes for sync
@@ -186,9 +279,9 @@ RETURNS TABLE (
     id UUID,
     did TEXT,
     name TEXT,
-    endpoint TEXT,
-    trust_score REAL,
-    last_seen TIMESTAMPTZ
+    federation_endpoint TEXT,
+    trust_phase trust_phase,
+    last_seen_at TIMESTAMPTZ
 ) AS $$
 BEGIN
     RETURN QUERY
@@ -196,12 +289,12 @@ BEGIN
         fn.id,
         fn.did,
         fn.name,
-        fn.endpoint,
-        fn.trust_score,
-        fn.last_seen
+        fn.federation_endpoint,
+        fn.trust_phase,
+        fn.last_seen_at
     FROM federation_nodes fn
     WHERE fn.status = 'active'
-    ORDER BY fn.trust_score DESC;
+    ORDER BY fn.last_seen_at DESC NULLS LAST;
 END;
 $$ LANGUAGE plpgsql STABLE;
 
@@ -210,7 +303,7 @@ CREATE OR REPLACE FUNCTION get_nodes_due_for_sync()
 RETURNS TABLE (
     node_id UUID,
     did TEXT,
-    endpoint TEXT,
+    federation_endpoint TEXT,
     last_sync_at TIMESTAMPTZ,
     next_sync_scheduled TIMESTAMPTZ
 ) AS $$
@@ -219,7 +312,7 @@ BEGIN
     SELECT 
         fn.id,
         fn.did,
-        fn.endpoint,
+        fn.federation_endpoint,
         ss.last_sync_at,
         ss.next_sync_scheduled
     FROM federation_nodes fn
@@ -274,10 +367,17 @@ BEGIN
         modified_at = NOW()
     WHERE node_id = p_node_id;
     
-    -- Update node last_seen
+    -- Update node last_seen_at
     UPDATE federation_nodes
-    SET last_seen = NOW()
+    SET last_seen_at = NOW(),
+        last_sync_at = NOW()
     WHERE id = p_node_id;
+    
+    -- Update node_trust last_sync_at
+    UPDATE node_trust
+    SET last_sync_at = NOW(),
+        last_interaction_at = NOW()
+    WHERE node_id = p_node_id;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -300,13 +400,24 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ============================================================================
--- PHASE 6: COMMENTS
+-- PHASE 7: COMMENTS
 -- ============================================================================
 
 COMMENT ON TABLE federation_nodes IS 'Known peer nodes in the federation network';
 COMMENT ON COLUMN federation_nodes.did IS 'Decentralized Identifier (DID) for the node';
-COMMENT ON COLUMN federation_nodes.trust_score IS 'Dynamic trust score based on node behavior (0.0-1.0)';
+COMMENT ON COLUMN federation_nodes.federation_endpoint IS 'URL for the federation protocol endpoint';
+COMMENT ON COLUMN federation_nodes.mcp_endpoint IS 'URL for the Model Context Protocol endpoint';
+COMMENT ON COLUMN federation_nodes.public_key_multibase IS 'Public key in multibase encoding for signature verification';
+COMMENT ON COLUMN federation_nodes.domains IS 'Knowledge domains this node specializes in';
+COMMENT ON COLUMN federation_nodes.trust_phase IS 'Current trust establishment phase';
 COMMENT ON COLUMN federation_nodes.capabilities IS 'Protocol features supported by this node';
+
+COMMENT ON TABLE node_trust IS 'Trust dimensions and statistics for federation peers';
+COMMENT ON COLUMN node_trust.trust IS 'JSONB containing trust dimensions (overall, belief_accuracy, etc.)';
+COMMENT ON COLUMN node_trust.beliefs_received IS 'Total beliefs received from this node';
+COMMENT ON COLUMN node_trust.beliefs_corroborated IS 'Beliefs from this node that were corroborated';
+COMMENT ON COLUMN node_trust.beliefs_disputed IS 'Beliefs from this node that were disputed';
+COMMENT ON COLUMN node_trust.relationship_started_at IS 'When we first connected to this node';
 
 COMMENT ON TABLE sync_state IS 'Tracks synchronization state with each federation peer';
 COMMENT ON COLUMN sync_state.vector_clock IS 'Lamport vector clock for causal ordering';
