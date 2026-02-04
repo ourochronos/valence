@@ -15,6 +15,19 @@ from .migration import (
     migrate_all_beliefs_sync,
     get_share_policy_json,
 )
+from .trust import TrustEdge
+from .domains import (
+    Domain,
+    DomainMembership,
+    DomainRole,
+    DomainService,
+    DomainError,
+    DomainNotFoundError,
+    DomainExistsError,
+    MembershipExistsError,
+    MembershipNotFoundError,
+    PermissionDeniedError,
+)
 
 __all__ = [
     # Types
@@ -35,4 +48,17 @@ __all__ = [
     "migrate_all_beliefs",
     "migrate_all_beliefs_sync",
     "get_share_policy_json",
+    # Trust
+    "TrustEdge",
+    # Domains
+    "Domain",
+    "DomainMembership",
+    "DomainRole",
+    "DomainService",
+    "DomainError",
+    "DomainNotFoundError",
+    "DomainExistsError",
+    "MembershipExistsError",
+    "MembershipNotFoundError",
+    "PermissionDeniedError",
 ]

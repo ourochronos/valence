@@ -14,13 +14,15 @@ from valence.privacy.sharing import (
     ReceiveResult,
     RevokeRequest,
     RevokeResult,
+    ReshareRequest,
+    ReshareResult,
     RevocationNotification,
     Notification,
     SharingService,
     Share,
     ConsentChainEntry,
 )
-from valence.privacy.types import SharePolicy, ShareLevel, EnforcementType
+from valence.privacy.types import SharePolicy, ShareLevel, EnforcementType, PropagationRules
 from valence.privacy.encryption import generate_keypair, EncryptionEnvelope
 
 
@@ -62,6 +64,7 @@ class MockDatabase:
             "origin_signature": origin_signature,
             "chain_hash": chain_hash,
             "hops": [],
+            "current_hop": 0,
             "revoked": False,
             "revoked_at": None,
             "revoked_by": None,
@@ -147,6 +150,7 @@ class MockDatabase:
             origin_signature=data["origin_signature"],
             hops=data["hops"],
             chain_hash=data["chain_hash"],
+            current_hop=data.get("current_hop", 0),
             revoked=data["revoked"],
             revoked_at=data.get("revoked_at"),
             revoked_by=data.get("revoked_by"),
@@ -204,6 +208,15 @@ class MockDatabase:
         """Add a hop to a consent chain."""
         if consent_chain_id in self.consent_chains:
             self.consent_chains[consent_chain_id]["hops"].append(hop)
+    
+    async def update_consent_chain_hop_count(
+        self,
+        consent_chain_id: str,
+        current_hop: int,
+    ) -> None:
+        """Update the current hop count of a consent chain."""
+        if consent_chain_id in self.consent_chains:
+            self.consent_chains[consent_chain_id]["current_hop"] = current_hop
     
     async def get_pending_shares(
         self,
@@ -333,6 +346,37 @@ class MockIdentityService:
         return self.did
 
 
+class MockDomainService:
+    """Mock domain service for testing BOUNDED sharing."""
+    
+    def __init__(self):
+        # Maps DID -> set of domains they belong to
+        self.memberships: dict[str, set[str]] = {}
+    
+    def add_member(self, did: str, domain: str) -> None:
+        """Add a DID to a domain."""
+        if did not in self.memberships:
+            self.memberships[did] = set()
+        self.memberships[did].add(domain)
+    
+    def remove_member(self, did: str, domain: str) -> None:
+        """Remove a DID from a domain."""
+        if did in self.memberships:
+            self.memberships[did].discard(domain)
+    
+    async def is_member(self, did: str, domain: str) -> bool:
+        """Check if a DID is a member of a domain."""
+        if did not in self.memberships:
+            return False
+        return domain in self.memberships[did]
+    
+    async def get_domains_for_did(self, did: str) -> list[str]:
+        """Get all domains a DID belongs to."""
+        if did not in self.memberships:
+            return []
+        return list(self.memberships[did])
+
+
 class TestSharingService:
     """Tests for SharingService."""
     
@@ -439,16 +483,16 @@ class TestSharingService:
             await service.share(request, identity.get_did())
     
     @pytest.mark.asyncio
-    async def test_share_non_direct_level_rejected(self, service, db, identity):
-        """Test that non-DIRECT levels are rejected in v1."""
+    async def test_share_unsupported_level_rejected(self, service, db, identity):
+        """Test that unsupported levels (CASCADING, PUBLIC) are rejected."""
         belief_id = "belief-001"
         db.beliefs[belief_id] = MockBelief(id=belief_id, content="Content")
         
         recipient_did = "did:key:recipient"
         identity.add_identity(recipient_did)
         
-        # Try BOUNDED level
-        policy = SharePolicy.bounded(max_hops=3)
+        # Try PUBLIC level (not yet supported)
+        policy = SharePolicy.public()
         
         request = ShareRequest(
             belief_id=belief_id,
@@ -456,7 +500,7 @@ class TestSharingService:
             policy=policy,
         )
         
-        with pytest.raises(ValueError, match="Only DIRECT sharing supported"):
+        with pytest.raises(ValueError, match="Only DIRECT and BOUNDED sharing supported"):
             await service.share(request, identity.get_did())
     
     @pytest.mark.asyncio
