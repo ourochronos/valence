@@ -237,6 +237,32 @@ from .challenges import (
     validate_challenge,
 )
 
+from .aggregation import (
+    # Constants
+    CONFLICT_SEMANTIC_THRESHOLD,
+    CONFLICT_CONFIDENCE_DIVERGENCE,
+    MIN_FEDERATION_TRUST,
+    DEFAULT_TRUST_WEIGHT,
+    MIN_FEDERATIONS_FOR_AGGREGATE,
+    # Enums
+    ConflictType,
+    ConflictResolution,
+    AggregationStrategy,
+    # Data classes
+    FederationContribution,
+    DetectedConflict,
+    AggregationConfig,
+    CrossFederationAggregateResult,
+    # Classes
+    ConflictDetector,
+    TrustWeightedAggregator,
+    PrivacyPreservingAggregator,
+    FederationAggregator,
+    # Functions
+    aggregate_cross_federation,
+    create_contribution,
+)
+
 __all__ = [
     # Enums
     "NodeStatus",
@@ -424,4 +450,23 @@ __all__ = [
     "compute_topic_hash",
     "compute_private_aggregate",
     "PrivateAggregateResult",
+    # Aggregation (Issue #15 - Federation Layer with Aggregation)
+    "CONFLICT_SEMANTIC_THRESHOLD",
+    "CONFLICT_CONFIDENCE_DIVERGENCE",
+    "MIN_FEDERATION_TRUST",
+    "DEFAULT_TRUST_WEIGHT",
+    "MIN_FEDERATIONS_FOR_AGGREGATE",
+    "ConflictType",
+    "ConflictResolution",
+    "AggregationStrategy",
+    "FederationContribution",
+    "DetectedConflict",
+    "AggregationConfig",
+    "CrossFederationAggregateResult",
+    "ConflictDetector",
+    "TrustWeightedAggregator",
+    "PrivacyPreservingAggregator",
+    "FederationAggregator",
+    "aggregate_cross_federation",
+    "create_contribution",
 ]
