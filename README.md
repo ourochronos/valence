@@ -34,6 +34,40 @@ Three forces converging:
 
 ---
 
+## Prerequisites
+
+- **Python 3.11+**
+- **PostgreSQL 14+** with pgvector extension
+- **Docker** (recommended) or local PostgreSQL installation
+
+### Quick Start with Docker
+
+The easiest way to get PostgreSQL with pgvector:
+
+```bash
+docker run -d --name valence-db -p 5432:5432 \
+  -e POSTGRES_PASSWORD=valence \
+  -e POSTGRES_USER=valence \
+  -e POSTGRES_DB=valence \
+  ankane/pgvector
+```
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `VKB_DB_HOST` | PostgreSQL host | `localhost` |
+| `VKB_DB_NAME` | Database name | `valence` |
+| `VKB_DB_USER` | Database user | `valence` |
+| `VKB_DB_PASSWORD` | Database password | (required) |
+| `OPENAI_API_KEY` | OpenAI API key for embeddings | (required for semantic search) |
+| `VALENCE_HOST` | Server bind host | `127.0.0.1` |
+| `VALENCE_PORT` | Server bind port | `8420` |
+| `VALENCE_OAUTH_ENABLED` | Enable OAuth 2.1 | `true` |
+| `VALENCE_OAUTH_PASSWORD` | OAuth login password | (required if OAuth enabled) |
+
+---
+
 ## Quick Start
 
 ```bash
