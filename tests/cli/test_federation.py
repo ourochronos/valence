@@ -222,9 +222,10 @@ class TestParser:
         assert args.wait is True
     
     def test_json_flag(self):
-        """Test global --json flag."""
+        """Test --json flag on subcommand."""
         parser = create_parser()
-        args = parser.parse_args(["--json", "status"])
+        # Each subcommand has its own --json flag (after the subcommand)
+        args = parser.parse_args(["status", "--json"])
         
         assert args.json is True
 

@@ -11,6 +11,7 @@ Implements:
 from __future__ import annotations
 
 import hashlib
+import html
 import logging
 import secrets
 import urllib.parse
@@ -444,9 +445,13 @@ def _login_page(params: dict[str, Any], client_name: str, error: str | None = No
     # Preserve query params for form submission
     query_string = urllib.parse.urlencode(params)
 
+    # Escape user-controlled values to prevent XSS
+    safe_client_name = html.escape(client_name)
+
     error_html = ""
     if error:
-        error_html = f'<div class="error">{error}</div>'
+        safe_error = html.escape(error)
+        error_html = f'<div class="error">{safe_error}</div>'
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -553,7 +558,7 @@ def _login_page(params: dict[str, Any], client_name: str, error: str | None = No
         <h1>Valence</h1>
         <p class="subtitle">Personal Knowledge Substrate</p>
         <div class="client-name">
-            Authorize <span>{client_name}</span>
+            Authorize <span>{safe_client_name}</span>
         </div>
         {error_html}
         <form method="POST" action="/oauth/authorize?{query_string}">
@@ -573,6 +578,8 @@ def _login_page(params: dict[str, Any], client_name: str, error: str | None = No
 
 def _error_page(message: str) -> str:
     """Generate an error page HTML."""
+    # Escape user-controlled values to prevent XSS
+    safe_message = html.escape(message)
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -604,7 +611,7 @@ def _error_page(message: str) -> str:
 <body>
     <div class="container">
         <h1>Error</h1>
-        <p>{message}</p>
+        <p>{safe_message}</p>
     </div>
 </body>
 </html>"""

