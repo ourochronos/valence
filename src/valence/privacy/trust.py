@@ -112,6 +112,10 @@ class TrustEdge:
         if not 0.0 <= self.decay_rate <= 1.0:
             raise ValueError(f"decay_rate must be between 0.0 and 1.0, got {self.decay_rate}")
         
+        # Validate delegation_depth
+        if self.delegation_depth < 0:
+            raise ValueError(f"delegation_depth must be >= 0, got {self.delegation_depth}")
+        
         # Convert string decay_model to enum if needed
         if isinstance(self.decay_model, str):
             self.decay_model = DecayModel.from_string(self.decay_model)

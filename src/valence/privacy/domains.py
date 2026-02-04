@@ -757,3 +757,208 @@ class DomainService:
             raise PermissionDeniedError(
                 f"User {requester_did} cannot manage members in domain {domain_id}"
             )
+    
+    async def set_verification_requirement(
+        self,
+        domain_id: str,
+        requirement: Optional[VerificationRequirement],
+        requester_did: Optional[str] = None,
+    ) -> Domain:
+        """Set or clear the verification requirement for a domain.
+        
+        Only domain owners can modify verification requirements.
+        
+        Args:
+            domain_id: The domain UUID
+            requirement: Verification requirement (None to clear)
+            requester_did: DID of the user making the request (for auth check)
+            
+        Returns:
+            The updated Domain
+            
+        Raises:
+            DomainNotFoundError: If domain doesn't exist
+            PermissionDeniedError: If requester is not the owner
+        """
+        domain = await self.get_domain(domain_id)
+        
+        # Only owner can set verification requirements
+        if requester_did and requester_did != domain.owner_did:
+            raise PermissionDeniedError(
+                f"Only the domain owner can set verification requirements"
+            )
+        
+        await self.db.set_verification_requirement(
+            domain_id=domain_id,
+            requirement=requirement.to_dict() if requirement else None,
+        )
+        
+        logger.info(
+            f"Set verification requirement for domain {domain_id}: "
+            f"{requirement.method.value if requirement else 'none'}"
+        )
+        
+        # Return updated domain
+        domain.verification_requirement = requirement
+        return domain
+    
+    async def verify_membership(
+        self,
+        domain_id: str,
+        member_did: str,
+        evidence: Optional[Dict[str, Any]] = None,
+        verifier: Optional[Verifier] = None,
+    ) -> VerificationResult:
+        """Verify a membership claim for a domain.
+        
+        Checks if the member_did can prove membership according to the
+        domain's verification requirements.
+        
+        Args:
+            domain_id: The domain UUID
+            member_did: DID claiming membership
+            evidence: Proof/credentials for verification
+            verifier: Optional custom verifier (uses default based on method)
+            
+        Returns:
+            VerificationResult indicating success/failure
+            
+        Raises:
+            DomainNotFoundError: If domain doesn't exist
+            MembershipNotFoundError: If not a member of the domain
+        """
+        domain = await self.get_domain(domain_id)
+        
+        # Check if actually a member first
+        if not await self.is_member(domain_id, member_did):
+            raise MembershipNotFoundError(
+                f"Member {member_did} is not in domain {domain_id}"
+            )
+        
+        requirement = domain.verification_requirement
+        
+        # If no verification required, auto-verify
+        if not requirement or requirement.method == VerificationMethod.NONE:
+            result = VerificationResult(
+                verified=True,
+                method=VerificationMethod.NONE,
+                details="No verification required",
+            )
+            await self.db.store_verification_result(
+                domain_id, member_did, result.to_dict()
+            )
+            return result
+        
+        # Get appropriate verifier
+        if verifier is None:
+            verifier = self._get_default_verifier(requirement.method)
+        
+        if verifier is None:
+            result = VerificationResult(
+                verified=False,
+                method=requirement.method,
+                details=f"No verifier available for method {requirement.method.value}",
+            )
+            return result
+        
+        # Perform verification
+        result = await verifier.verify(
+            domain_id=domain_id,
+            member_did=member_did,
+            requirement=requirement,
+            evidence=evidence,
+        )
+        
+        # Store result
+        await self.db.store_verification_result(
+            domain_id, member_did, result.to_dict()
+        )
+        
+        logger.info(
+            f"Verification for {member_did} in domain {domain_id}: "
+            f"{'success' if result.verified else 'failed'}"
+        )
+        
+        return result
+    
+    async def get_verification_status(
+        self,
+        domain_id: str,
+        member_did: str,
+    ) -> Optional[VerificationResult]:
+        """Get the current verification status for a membership.
+        
+        Args:
+            domain_id: The domain UUID
+            member_did: The member's DID
+            
+        Returns:
+            The latest VerificationResult, or None if never verified
+        """
+        data = await self.db.get_verification_result(domain_id, member_did)
+        if data:
+            return VerificationResult.from_dict(data)
+        return None
+    
+    async def is_verified_member(
+        self,
+        domain_id: str,
+        member_did: str,
+    ) -> bool:
+        """Check if a member has verified their membership.
+        
+        Args:
+            domain_id: The domain UUID
+            member_did: The member's DID
+            
+        Returns:
+            True if member is verified (or no verification required)
+        """
+        domain = await self.get_domain(domain_id)
+        
+        # Check membership first
+        if not await self.is_member(domain_id, member_did):
+            return False
+        
+        # If no verification required, they're verified by default
+        requirement = domain.verification_requirement
+        if not requirement or requirement.method == VerificationMethod.NONE:
+            return True
+        
+        # If verification is optional, membership is enough
+        if not requirement.required:
+            return True
+        
+        # Check verification status
+        result = await self.get_verification_status(domain_id, member_did)
+        return result is not None and result.verified
+    
+    def _get_default_verifier(self, method: VerificationMethod) -> Optional[Verifier]:
+        """Get the default verifier for a verification method.
+        
+        Args:
+            method: The verification method
+            
+        Returns:
+            A Verifier instance, or None if not supported
+        """
+        if method == VerificationMethod.ADMIN_SIGNATURE:
+            return AdminSignatureVerifier()
+        elif method == VerificationMethod.DNS_TXT:
+            return DNSTxtVerifier()
+        return None
+    
+    def register_verifier(
+        self,
+        method: VerificationMethod,
+        verifier: Verifier,
+    ) -> None:
+        """Register a custom verifier for a verification method.
+        
+        Args:
+            method: The verification method to handle
+            verifier: The Verifier implementation
+        """
+        if not hasattr(self, '_custom_verifiers'):
+            self._custom_verifiers: Dict[VerificationMethod, Verifier] = {}
+        self._custom_verifiers[method] = verifier

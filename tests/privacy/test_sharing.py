@@ -23,6 +23,7 @@ from valence.privacy.sharing import (
     SharingService,
     Share,
     ConsentChainEntry,
+    strip_fields_from_content,
 )
 from valence.privacy.types import SharePolicy, ShareLevel, EnforcementType, PropagationRules
 from valence.privacy.encryption import generate_keypair, EncryptionEnvelope
@@ -3303,6 +3304,763 @@ class TestReshareWithDomains:
         # Should fail - need domain service for domain-restricted resharing
         with pytest.raises(ValueError, match="Domain service required"):
             await service_without_domains.reshare(reshare_request, resharer_did)
+
+
+class TestStripOnForward:
+    """Tests for strip_on_forward field redaction (Issue #71)."""
+    
+    @pytest.fixture
+    def db(self):
+        return MockDatabase()
+    
+    @pytest.fixture
+    def identity(self):
+        return MockIdentityService()
+    
+    @pytest.fixture
+    def domain_service(self):
+        return MockDomainService()
+    
+    @pytest.fixture
+    def service(self, db, identity, domain_service):
+        return SharingService(db, identity, domain_service)
+    
+    @pytest.mark.asyncio
+    async def test_strip_flat_field_on_reshare(self, service, db, identity, domain_service):
+        """Test stripping a top-level field on reshare."""
+        # Content with a field to strip
+        original_content = json.dumps({
+            "message": "Hello world",
+            "secret_api_key": "sk_live_1234567890",
+            "public_data": "visible",
+        })
+        
+        belief_id = "belief-strip-flat"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content=original_content)
+        
+        first_recipient = "did:key:first-strip"
+        second_recipient = "did:key:second-strip"
+        identity.add_identity(first_recipient)
+        identity.add_identity(second_recipient)
+        domain_service.add_member(first_recipient, "test-domain")
+        domain_service.add_member(second_recipient, "test-domain")
+        
+        # Create share with strip_on_forward
+        policy = SharePolicy(
+            level=ShareLevel.BOUNDED,
+            enforcement=EnforcementType.POLICY,
+            propagation=PropagationRules(
+                max_hops=3,
+                allowed_domains=["test-domain"],
+                strip_on_forward=["secret_api_key"],
+            ),
+        )
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=first_recipient,
+            policy=policy,
+        )
+        share_result = await service.share(request, identity.get_did())
+        
+        # First recipient receives
+        receive_request = ReceiveRequest(share_id=share_result.share_id)
+        receive_result = await service.receive(receive_request, first_recipient)
+        
+        # Original content should still have the secret key
+        received_content = json.loads(receive_result.content.decode("utf-8"))
+        assert "secret_api_key" in received_content
+        assert received_content["secret_api_key"] == "sk_live_1234567890"
+        
+        # First recipient reshares to second
+        reshare_request = ReshareRequest(
+            original_share_id=share_result.share_id,
+            recipient_did=second_recipient,
+        )
+        reshare_result = await service.reshare(reshare_request, first_recipient)
+        
+        # Second recipient receives the reshared content
+        receive_request2 = ReceiveRequest(share_id=reshare_result.share_id)
+        receive_result2 = await service.receive(receive_request2, second_recipient)
+        
+        # Reshared content should NOT have the secret key
+        reshared_content = json.loads(receive_result2.content.decode("utf-8"))
+        assert "secret_api_key" not in reshared_content
+        assert reshared_content["message"] == "Hello world"
+        assert reshared_content["public_data"] == "visible"
+    
+    @pytest.mark.asyncio
+    async def test_strip_nested_field_on_reshare(self, service, db, identity, domain_service):
+        """Test stripping a nested field using dot notation."""
+        # Content with nested structure
+        original_content = json.dumps({
+            "message": "Important message",
+            "metadata": {
+                "source": "internal-system",
+                "timestamp": "2026-02-04T12:00:00Z",
+                "author": "Alice",
+            },
+            "public": True,
+        })
+        
+        belief_id = "belief-strip-nested"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content=original_content)
+        
+        first_recipient = "did:key:first-nested"
+        second_recipient = "did:key:second-nested"
+        identity.add_identity(first_recipient)
+        identity.add_identity(second_recipient)
+        domain_service.add_member(first_recipient, "test-domain")
+        domain_service.add_member(second_recipient, "test-domain")
+        
+        # Create share with nested strip_on_forward
+        policy = SharePolicy(
+            level=ShareLevel.BOUNDED,
+            enforcement=EnforcementType.POLICY,
+            propagation=PropagationRules(
+                max_hops=3,
+                allowed_domains=["test-domain"],
+                strip_on_forward=["metadata.source", "metadata.author"],
+            ),
+        )
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=first_recipient,
+            policy=policy,
+        )
+        share_result = await service.share(request, identity.get_did())
+        
+        # First recipient receives
+        receive_request = ReceiveRequest(share_id=share_result.share_id)
+        receive_result = await service.receive(receive_request, first_recipient)
+        
+        # Original content should have all metadata fields
+        received_content = json.loads(receive_result.content.decode("utf-8"))
+        assert received_content["metadata"]["source"] == "internal-system"
+        assert received_content["metadata"]["author"] == "Alice"
+        
+        # First recipient reshares to second
+        reshare_request = ReshareRequest(
+            original_share_id=share_result.share_id,
+            recipient_did=second_recipient,
+        )
+        reshare_result = await service.reshare(reshare_request, first_recipient)
+        
+        # Second recipient receives the reshared content
+        receive_request2 = ReceiveRequest(share_id=reshare_result.share_id)
+        receive_result2 = await service.receive(receive_request2, second_recipient)
+        
+        # Reshared content should have metadata but without source and author
+        reshared_content = json.loads(receive_result2.content.decode("utf-8"))
+        assert "metadata" in reshared_content
+        assert "source" not in reshared_content["metadata"]
+        assert "author" not in reshared_content["metadata"]
+        assert reshared_content["metadata"]["timestamp"] == "2026-02-04T12:00:00Z"
+        assert reshared_content["message"] == "Important message"
+        assert reshared_content["public"] is True
+    
+    @pytest.mark.asyncio
+    async def test_strip_deeply_nested_field(self, service, db, identity, domain_service):
+        """Test stripping a deeply nested field (3+ levels)."""
+        original_content = json.dumps({
+            "data": {
+                "user": {
+                    "profile": {
+                        "email": "secret@example.com",
+                        "name": "John Doe",
+                    },
+                    "id": "user123",
+                },
+            },
+            "public_info": "visible",
+        })
+        
+        belief_id = "belief-strip-deep"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content=original_content)
+        
+        first_recipient = "did:key:first-deep"
+        second_recipient = "did:key:second-deep"
+        identity.add_identity(first_recipient)
+        identity.add_identity(second_recipient)
+        domain_service.add_member(first_recipient, "test-domain")
+        domain_service.add_member(second_recipient, "test-domain")
+        
+        # Strip deeply nested email
+        policy = SharePolicy(
+            level=ShareLevel.BOUNDED,
+            enforcement=EnforcementType.POLICY,
+            propagation=PropagationRules(
+                max_hops=3,
+                allowed_domains=["test-domain"],
+                strip_on_forward=["data.user.profile.email"],
+            ),
+        )
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=first_recipient,
+            policy=policy,
+        )
+        share_result = await service.share(request, identity.get_did())
+        
+        # First recipient receives and reshares
+        await service.receive(ReceiveRequest(share_id=share_result.share_id), first_recipient)
+        
+        reshare_result = await service.reshare(
+            ReshareRequest(original_share_id=share_result.share_id, recipient_did=second_recipient),
+            first_recipient
+        )
+        
+        # Second recipient receives
+        receive_result = await service.receive(
+            ReceiveRequest(share_id=reshare_result.share_id), second_recipient
+        )
+        
+        reshared_content = json.loads(receive_result.content.decode("utf-8"))
+        
+        # Email should be stripped, but name should remain
+        assert "email" not in reshared_content["data"]["user"]["profile"]
+        assert reshared_content["data"]["user"]["profile"]["name"] == "John Doe"
+        assert reshared_content["data"]["user"]["id"] == "user123"
+        assert reshared_content["public_info"] == "visible"
+    
+    @pytest.mark.asyncio
+    async def test_strip_multiple_fields(self, service, db, identity, domain_service):
+        """Test stripping multiple fields at once."""
+        original_content = json.dumps({
+            "message": "Hello",
+            "field1": "strip this",
+            "field2": "strip this too",
+            "keep_this": "visible",
+            "nested": {
+                "secret": "remove",
+                "public": "keep",
+            },
+        })
+        
+        belief_id = "belief-strip-multi"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content=original_content)
+        
+        first_recipient = "did:key:first-multi"
+        second_recipient = "did:key:second-multi"
+        identity.add_identity(first_recipient)
+        identity.add_identity(second_recipient)
+        domain_service.add_member(first_recipient, "test-domain")
+        domain_service.add_member(second_recipient, "test-domain")
+        
+        # Strip multiple fields
+        policy = SharePolicy(
+            level=ShareLevel.BOUNDED,
+            enforcement=EnforcementType.POLICY,
+            propagation=PropagationRules(
+                max_hops=3,
+                allowed_domains=["test-domain"],
+                strip_on_forward=["field1", "field2", "nested.secret"],
+            ),
+        )
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=first_recipient,
+            policy=policy,
+        )
+        share_result = await service.share(request, identity.get_did())
+        
+        # First recipient receives and reshares
+        await service.receive(ReceiveRequest(share_id=share_result.share_id), first_recipient)
+        
+        reshare_result = await service.reshare(
+            ReshareRequest(original_share_id=share_result.share_id, recipient_did=second_recipient),
+            first_recipient
+        )
+        
+        # Second recipient receives
+        receive_result = await service.receive(
+            ReceiveRequest(share_id=reshare_result.share_id), second_recipient
+        )
+        
+        reshared_content = json.loads(receive_result.content.decode("utf-8"))
+        
+        # All specified fields should be stripped
+        assert "field1" not in reshared_content
+        assert "field2" not in reshared_content
+        assert "secret" not in reshared_content["nested"]
+        
+        # These should remain
+        assert reshared_content["message"] == "Hello"
+        assert reshared_content["keep_this"] == "visible"
+        assert reshared_content["nested"]["public"] == "keep"
+    
+    @pytest.mark.asyncio
+    async def test_strip_nonexistent_field_no_error(self, service, db, identity, domain_service):
+        """Test that stripping a nonexistent field doesn't cause an error."""
+        original_content = json.dumps({
+            "message": "Hello",
+            "data": {"key": "value"},
+        })
+        
+        belief_id = "belief-strip-missing"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content=original_content)
+        
+        first_recipient = "did:key:first-missing"
+        second_recipient = "did:key:second-missing"
+        identity.add_identity(first_recipient)
+        identity.add_identity(second_recipient)
+        domain_service.add_member(first_recipient, "test-domain")
+        domain_service.add_member(second_recipient, "test-domain")
+        
+        # Try to strip fields that don't exist
+        policy = SharePolicy(
+            level=ShareLevel.BOUNDED,
+            enforcement=EnforcementType.POLICY,
+            propagation=PropagationRules(
+                max_hops=3,
+                allowed_domains=["test-domain"],
+                strip_on_forward=["nonexistent_field", "data.nonexistent", "a.b.c.d"],
+            ),
+        )
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=first_recipient,
+            policy=policy,
+        )
+        share_result = await service.share(request, identity.get_did())
+        
+        # First recipient receives and reshares - should not error
+        await service.receive(ReceiveRequest(share_id=share_result.share_id), first_recipient)
+        
+        reshare_result = await service.reshare(
+            ReshareRequest(original_share_id=share_result.share_id, recipient_did=second_recipient),
+            first_recipient
+        )
+        
+        # Second recipient receives
+        receive_result = await service.receive(
+            ReceiveRequest(share_id=reshare_result.share_id), second_recipient
+        )
+        
+        # Content should be unchanged (except formatted as JSON)
+        reshared_content = json.loads(receive_result.content.decode("utf-8"))
+        assert reshared_content["message"] == "Hello"
+        assert reshared_content["data"]["key"] == "value"
+    
+    @pytest.mark.asyncio
+    async def test_strip_with_non_json_content_no_error(self, service, db, identity, domain_service):
+        """Test that stripping on non-JSON content doesn't cause an error."""
+        # Plain text content (not JSON)
+        original_content = "This is plain text, not JSON"
+        
+        belief_id = "belief-strip-text"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content=original_content)
+        
+        first_recipient = "did:key:first-text"
+        second_recipient = "did:key:second-text"
+        identity.add_identity(first_recipient)
+        identity.add_identity(second_recipient)
+        domain_service.add_member(first_recipient, "test-domain")
+        domain_service.add_member(second_recipient, "test-domain")
+        
+        # Try to strip fields from non-JSON content
+        policy = SharePolicy(
+            level=ShareLevel.BOUNDED,
+            enforcement=EnforcementType.POLICY,
+            propagation=PropagationRules(
+                max_hops=3,
+                allowed_domains=["test-domain"],
+                strip_on_forward=["some.field"],
+            ),
+        )
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=first_recipient,
+            policy=policy,
+        )
+        share_result = await service.share(request, identity.get_did())
+        
+        # First recipient receives and reshares - should not error
+        await service.receive(ReceiveRequest(share_id=share_result.share_id), first_recipient)
+        
+        reshare_result = await service.reshare(
+            ReshareRequest(original_share_id=share_result.share_id, recipient_did=second_recipient),
+            first_recipient
+        )
+        
+        # Second recipient receives
+        receive_result = await service.receive(
+            ReceiveRequest(share_id=reshare_result.share_id), second_recipient
+        )
+        
+        # Content should be unchanged
+        assert receive_result.content.decode("utf-8") == original_content
+    
+    @pytest.mark.asyncio
+    async def test_original_content_not_modified(self, service, db, identity, domain_service):
+        """Test that the original share's content is not modified by stripping."""
+        original_content = json.dumps({
+            "message": "Original message",
+            "secret": "should be stripped on forward",
+        })
+        
+        belief_id = "belief-original-intact"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content=original_content)
+        
+        first_recipient = "did:key:first-intact"
+        second_recipient = "did:key:second-intact"
+        third_recipient = "did:key:third-intact"
+        identity.add_identity(first_recipient)
+        identity.add_identity(second_recipient)
+        identity.add_identity(third_recipient)
+        domain_service.add_member(first_recipient, "test-domain")
+        domain_service.add_member(second_recipient, "test-domain")
+        domain_service.add_member(third_recipient, "test-domain")
+        
+        policy = SharePolicy(
+            level=ShareLevel.BOUNDED,
+            enforcement=EnforcementType.POLICY,
+            propagation=PropagationRules(
+                max_hops=5,
+                allowed_domains=["test-domain"],
+                strip_on_forward=["secret"],
+            ),
+        )
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=first_recipient,
+            policy=policy,
+        )
+        share_result = await service.share(request, identity.get_did())
+        
+        # First recipient receives
+        receive1 = await service.receive(
+            ReceiveRequest(share_id=share_result.share_id), first_recipient
+        )
+        
+        # First recipient reshares to second
+        reshare1 = await service.reshare(
+            ReshareRequest(original_share_id=share_result.share_id, recipient_did=second_recipient),
+            first_recipient
+        )
+        
+        # First recipient re-reads original - it should still have the secret
+        # We can verify by checking what first_recipient received initially
+        content1 = json.loads(receive1.content.decode("utf-8"))
+        assert "secret" in content1
+        assert content1["secret"] == "should be stripped on forward"
+        
+        # Second recipient receives - should NOT have secret
+        receive2 = await service.receive(
+            ReceiveRequest(share_id=reshare1.share_id), second_recipient
+        )
+        content2 = json.loads(receive2.content.decode("utf-8"))
+        assert "secret" not in content2
+
+
+class TestStripOnForwardWithPropagate:
+    """Tests for strip_on_forward in propagate() method (Issue #71)."""
+    
+    @pytest.fixture
+    def db(self):
+        return MockDatabase()
+    
+    @pytest.fixture
+    def identity(self):
+        return MockIdentityService()
+    
+    @pytest.fixture
+    def domain_service(self):
+        return MockDomainService()
+    
+    @pytest.fixture
+    def service(self, db, identity, domain_service):
+        return SharingService(db, identity, domain_service)
+    
+    @pytest.mark.asyncio
+    async def test_propagate_strips_original_fields(self, service, db, identity, domain_service):
+        """Test that propagate() strips fields from original policy."""
+        from valence.privacy.sharing import PropagateRequest
+        
+        original_content = json.dumps({
+            "message": "Propagate me",
+            "internal_id": "secret-123",
+            "metadata": {"source": "internal"},
+        })
+        
+        belief_id = "belief-propagate-strip"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content=original_content)
+        
+        first_recipient = "did:key:first-prop"
+        second_recipient = "did:key:second-prop"
+        identity.add_identity(first_recipient)
+        identity.add_identity(second_recipient)
+        domain_service.add_member(first_recipient, "test-domain")
+        domain_service.add_member(second_recipient, "test-domain")
+        
+        # Original policy with strip_on_forward
+        policy = SharePolicy(
+            level=ShareLevel.BOUNDED,
+            enforcement=EnforcementType.POLICY,
+            propagation=PropagationRules(
+                max_hops=5,
+                allowed_domains=["test-domain"],
+                strip_on_forward=["internal_id"],
+            ),
+        )
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=first_recipient,
+            policy=policy,
+        )
+        share_result = await service.share(request, identity.get_did())
+        
+        # First recipient receives
+        await service.receive(ReceiveRequest(share_id=share_result.share_id), first_recipient)
+        
+        # First recipient propagates with no additional restrictions
+        propagate_result = await service.propagate(
+            PropagateRequest(
+                share_id=share_result.share_id,
+                recipient_did=second_recipient,
+            ),
+            first_recipient
+        )
+        
+        # Second recipient receives
+        receive_result = await service.receive(
+            ReceiveRequest(share_id=propagate_result.share_id), second_recipient
+        )
+        
+        content = json.loads(receive_result.content.decode("utf-8"))
+        
+        # internal_id should be stripped
+        assert "internal_id" not in content
+        assert content["message"] == "Propagate me"
+        assert content["metadata"]["source"] == "internal"
+    
+    @pytest.mark.asyncio
+    async def test_propagate_composes_strip_fields(self, service, db, identity, domain_service):
+        """Test that propagate() unions strip fields from original and additional restrictions."""
+        from valence.privacy.sharing import PropagateRequest
+        
+        original_content = json.dumps({
+            "message": "Propagate and strip more",
+            "field_a": "from original",
+            "field_b": "from additional",
+            "field_c": "keep this",
+        })
+        
+        belief_id = "belief-propagate-compose"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content=original_content)
+        
+        first_recipient = "did:key:first-compose"
+        second_recipient = "did:key:second-compose"
+        identity.add_identity(first_recipient)
+        identity.add_identity(second_recipient)
+        domain_service.add_member(first_recipient, "test-domain")
+        domain_service.add_member(second_recipient, "test-domain")
+        
+        # Original policy strips field_a
+        policy = SharePolicy(
+            level=ShareLevel.BOUNDED,
+            enforcement=EnforcementType.POLICY,
+            propagation=PropagationRules(
+                max_hops=5,
+                allowed_domains=["test-domain"],
+                strip_on_forward=["field_a"],
+            ),
+        )
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=first_recipient,
+            policy=policy,
+        )
+        share_result = await service.share(request, identity.get_did())
+        
+        # First recipient receives
+        await service.receive(ReceiveRequest(share_id=share_result.share_id), first_recipient)
+        
+        # First recipient propagates with additional strip_on_forward for field_b
+        propagate_result = await service.propagate(
+            PropagateRequest(
+                share_id=share_result.share_id,
+                recipient_did=second_recipient,
+                additional_restrictions=PropagationRules(
+                    strip_on_forward=["field_b"],
+                ),
+            ),
+            first_recipient
+        )
+        
+        # Verify composed restrictions include both fields
+        assert "field_a" in propagate_result.composed_restrictions["strip_on_forward"]
+        assert "field_b" in propagate_result.composed_restrictions["strip_on_forward"]
+        
+        # Second recipient receives
+        receive_result = await service.receive(
+            ReceiveRequest(share_id=propagate_result.share_id), second_recipient
+        )
+        
+        content = json.loads(receive_result.content.decode("utf-8"))
+        
+        # Both field_a and field_b should be stripped
+        assert "field_a" not in content
+        assert "field_b" not in content
+        assert content["message"] == "Propagate and strip more"
+        assert content["field_c"] == "keep this"
+    
+    @pytest.mark.asyncio
+    async def test_propagate_nested_field_stripping(self, service, db, identity, domain_service):
+        """Test propagate() with nested field stripping."""
+        from valence.privacy.sharing import PropagateRequest
+        
+        original_content = json.dumps({
+            "data": {
+                "public": "visible",
+                "private": {
+                    "ssn": "123-45-6789",
+                    "name": "John",
+                },
+            },
+        })
+        
+        belief_id = "belief-propagate-nested"
+        db.beliefs[belief_id] = MockBelief(id=belief_id, content=original_content)
+        
+        first_recipient = "did:key:first-pnested"
+        second_recipient = "did:key:second-pnested"
+        identity.add_identity(first_recipient)
+        identity.add_identity(second_recipient)
+        domain_service.add_member(first_recipient, "test-domain")
+        domain_service.add_member(second_recipient, "test-domain")
+        
+        # Original policy with nested strip
+        policy = SharePolicy(
+            level=ShareLevel.BOUNDED,
+            enforcement=EnforcementType.POLICY,
+            propagation=PropagationRules(
+                max_hops=5,
+                allowed_domains=["test-domain"],
+                strip_on_forward=["data.private.ssn"],
+            ),
+        )
+        
+        request = ShareRequest(
+            belief_id=belief_id,
+            recipient_did=first_recipient,
+            policy=policy,
+        )
+        share_result = await service.share(request, identity.get_did())
+        
+        # First recipient receives
+        await service.receive(ReceiveRequest(share_id=share_result.share_id), first_recipient)
+        
+        # Propagate
+        propagate_result = await service.propagate(
+            PropagateRequest(
+                share_id=share_result.share_id,
+                recipient_did=second_recipient,
+            ),
+            first_recipient
+        )
+        
+        # Second recipient receives
+        receive_result = await service.receive(
+            ReceiveRequest(share_id=propagate_result.share_id), second_recipient
+        )
+        
+        content = json.loads(receive_result.content.decode("utf-8"))
+        
+        # SSN should be stripped, but structure and other fields should remain
+        assert content["data"]["public"] == "visible"
+        assert "ssn" not in content["data"]["private"]
+        assert content["data"]["private"]["name"] == "John"
+
+
+class TestStripFieldsHelper:
+    """Unit tests for the strip_fields_from_content helper function."""
+    
+    def test_strip_single_flat_field(self):
+        """Test stripping a single top-level field."""
+        from valence.privacy.sharing import strip_fields_from_content
+        
+        content = json.dumps({"a": 1, "b": 2, "c": 3}).encode("utf-8")
+        result = strip_fields_from_content(content, ["b"])
+        
+        result_dict = json.loads(result.decode("utf-8"))
+        assert "a" in result_dict
+        assert "b" not in result_dict
+        assert "c" in result_dict
+    
+    def test_strip_nested_field(self):
+        """Test stripping a nested field."""
+        from valence.privacy.sharing import strip_fields_from_content
+        
+        content = json.dumps({
+            "level1": {
+                "level2": {
+                    "secret": "hidden",
+                    "public": "visible",
+                }
+            }
+        }).encode("utf-8")
+        
+        result = strip_fields_from_content(content, ["level1.level2.secret"])
+        result_dict = json.loads(result.decode("utf-8"))
+        
+        assert "secret" not in result_dict["level1"]["level2"]
+        assert result_dict["level1"]["level2"]["public"] == "visible"
+    
+    def test_strip_nonexistent_field(self):
+        """Test that stripping nonexistent field doesn't error."""
+        from valence.privacy.sharing import strip_fields_from_content
+        
+        content = json.dumps({"a": 1}).encode("utf-8")
+        result = strip_fields_from_content(content, ["nonexistent", "a.b.c"])
+        
+        result_dict = json.loads(result.decode("utf-8"))
+        assert result_dict == {"a": 1}
+    
+    def test_strip_empty_list(self):
+        """Test stripping with empty list returns original."""
+        from valence.privacy.sharing import strip_fields_from_content
+        
+        content = json.dumps({"a": 1}).encode("utf-8")
+        result = strip_fields_from_content(content, [])
+        
+        assert result == content
+    
+    def test_strip_non_json_returns_original(self):
+        """Test that non-JSON content is returned unchanged."""
+        from valence.privacy.sharing import strip_fields_from_content
+        
+        content = b"This is not JSON"
+        result = strip_fields_from_content(content, ["field"])
+        
+        assert result == content
+    
+    def test_strip_does_not_modify_original(self):
+        """Test that original content is not modified."""
+        from valence.privacy.sharing import strip_fields_from_content
+        import copy
+        
+        original = {"nested": {"secret": "value", "other": "keep"}}
+        content = json.dumps(original).encode("utf-8")
+        original_copy = copy.deepcopy(original)
+        
+        result = strip_fields_from_content(content, ["nested.secret"])
+        
+        # Original should be unchanged
+        original_after = json.loads(content.decode("utf-8"))
+        assert original_after == original_copy
+        
+        # Result should have field stripped
+        result_dict = json.loads(result.decode("utf-8"))
+        assert "secret" not in result_dict["nested"]
 
 
 class TestPropagateAPI:

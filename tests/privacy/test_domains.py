@@ -1,6 +1,7 @@
 """Tests for Domain schema and DomainService."""
 
 import pytest
+import hashlib
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
@@ -15,6 +16,13 @@ from valence.privacy.domains import (
     MembershipExistsError,
     MembershipNotFoundError,
     PermissionDeniedError,
+    VerificationMethod,
+    VerificationRequirement,
+    VerificationResult,
+    VerificationError,
+    VerificationRequiredError,
+    AdminSignatureVerifier,
+    DNSTxtVerifier,
 )
 
 
@@ -170,6 +178,7 @@ class MockDomainDatabase:
     def __init__(self):
         self.domains: Dict[str, dict] = {}
         self.memberships: Dict[str, Dict[str, dict]] = {}  # domain_id -> member_did -> membership
+        self.verification_results: Dict[str, Dict[str, dict]] = {}  # domain_id -> member_did -> result
     
     async def create_domain(
         self,
@@ -184,8 +193,10 @@ class MockDomainDatabase:
             "owner_did": owner_did,
             "description": description,
             "created_at": datetime.now(timezone.utc).isoformat(),
+            "verification_requirement": None,
         }
         self.memberships[domain_id] = {}
+        self.verification_results[domain_id] = {}
     
     async def get_domain(self, domain_id: str) -> Optional[dict]:
         return self.domains.get(domain_id)
@@ -245,6 +256,33 @@ class MockDomainDatabase:
                 if domain:
                     result.append(domain)
         return result
+    
+    async def set_verification_requirement(
+        self,
+        domain_id: str,
+        requirement: Optional[dict],
+    ) -> None:
+        if domain_id in self.domains:
+            self.domains[domain_id]["verification_requirement"] = requirement
+    
+    async def store_verification_result(
+        self,
+        domain_id: str,
+        member_did: str,
+        result: dict,
+    ) -> None:
+        if domain_id not in self.verification_results:
+            self.verification_results[domain_id] = {}
+        self.verification_results[domain_id][member_did] = result
+    
+    async def get_verification_result(
+        self,
+        domain_id: str,
+        member_did: str,
+    ) -> Optional[dict]:
+        if domain_id in self.verification_results:
+            return self.verification_results[domain_id].get(member_did)
+        return None
 
 
 @pytest.fixture
