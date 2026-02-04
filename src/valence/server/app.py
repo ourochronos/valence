@@ -317,7 +317,15 @@ async def _dispatch_method(method: str, params: dict[str, Any]) -> Any:
     """
     from ..substrate.tools import SUBSTRATE_TOOLS, handle_substrate_tool
     from ..vkb.tools import VKB_TOOLS, handle_vkb_tool
-    from ..playwright.tools import PLAYWRIGHT_TOOLS, handle_playwright_tool
+
+    # Playwright tools are optional - only load if the module exists
+    try:
+        from ..playwright.tools import PLAYWRIGHT_TOOLS, handle_playwright_tool
+        playwright_available = True
+    except ImportError:
+        PLAYWRIGHT_TOOLS: list = []  # type: ignore[no-redef]
+        handle_playwright_tool = None  # type: ignore[assignment]
+        playwright_available = False
 
     settings = get_settings()
 
@@ -347,11 +355,16 @@ async def _dispatch_method(method: str, params: dict[str, Any]) -> Any:
     elif method == "tools/list":
         tools = []
         for tool in SUBSTRATE_TOOLS + VKB_TOOLS + PLAYWRIGHT_TOOLS:
+            # Add version to inputSchema for tool versioning
+            schema_with_version = {
+                **tool.inputSchema,
+                "x-version": "1.0",  # Tool schema version for API versioning
+            }
             tools.append(
                 {
                     "name": tool.name,
                     "description": tool.description,
-                    "inputSchema": tool.inputSchema,
+                    "inputSchema": schema_with_version,
                 }
             )
         return {"tools": tools}
@@ -372,7 +385,7 @@ async def _dispatch_method(method: str, params: dict[str, Any]) -> Any:
             result = handle_substrate_tool(tool_name, arguments)
         elif tool_name in vkb_tool_names:
             result = handle_vkb_tool(tool_name, arguments)
-        elif tool_name in playwright_tool_names:
+        elif playwright_available and tool_name in playwright_tool_names:
             result = await handle_playwright_tool(tool_name, arguments)
         else:
             raise MethodNotFoundError(f"Unknown tool: {tool_name}")
@@ -585,7 +598,12 @@ def _get_tool_reference() -> str:
     """Get the tool reference resource content."""
     from ..substrate.tools import SUBSTRATE_TOOLS
     from ..vkb.tools import VKB_TOOLS
-    from ..playwright.tools import PLAYWRIGHT_TOOLS
+
+    # Playwright tools are optional
+    try:
+        from ..playwright.tools import PLAYWRIGHT_TOOLS
+    except ImportError:
+        PLAYWRIGHT_TOOLS: list = []  # type: ignore[no-redef]
 
     lines = ["# Valence Tool Reference\n"]
 
@@ -600,10 +618,11 @@ def _get_tool_reference() -> str:
         desc = tool.description.split("\n")[0]
         lines.append(f"- **{tool.name}**: {desc}")
 
-    lines.append("\n## Browser Automation Tools\n")
-    for tool in PLAYWRIGHT_TOOLS:
-        desc = tool.description.split("\n")[0]
-        lines.append(f"- **{tool.name}**: {desc}")
+    if PLAYWRIGHT_TOOLS:
+        lines.append("\n## Browser Automation Tools\n")
+        for tool in PLAYWRIGHT_TOOLS:
+            desc = tool.description.split("\n")[0]
+            lines.append(f"- **{tool.name}**: {desc}")
 
     return "\n".join(lines)
 
@@ -635,6 +654,7 @@ async def info_endpoint(request: Request) -> JSONResponse:
     response_data: dict[str, Any] = {
         "server": settings.server_name,
         "version": settings.server_version,
+        "apiVersion": "v1",
         "protocol": "mcp",
         "protocolVersion": "2024-11-05",
         "transport": "http",
@@ -645,9 +665,11 @@ async def info_endpoint(request: Request) -> JSONResponse:
             "total": len(SUBSTRATE_TOOLS) + len(VKB_TOOLS) + len(PLAYWRIGHT_TOOLS),
         },
         "endpoints": {
-            "mcp": "/mcp",
-            "health": "/health",
+            "mcp": "/api/v1/mcp",
+            "health": "/api/v1/health",
             "info": "/",
+            "federation": "/api/v1/federation/status",
+            "beliefs": "/api/v1/beliefs",
         },
         "authentication": {
             "methods": ["bearer"],
@@ -660,9 +682,9 @@ async def info_endpoint(request: Request) -> JSONResponse:
         response_data["authentication"]["oauth"] = {
             "authorization_server_metadata": "/.well-known/oauth-authorization-server",
             "protected_resource_metadata": "/.well-known/oauth-protected-resource",
-            "authorization_endpoint": "/oauth/authorize",
-            "token_endpoint": "/oauth/token",
-            "registration_endpoint": "/oauth/register",
+            "authorization_endpoint": "/api/v1/oauth/authorize",
+            "token_endpoint": "/api/v1/oauth/token",
+            "registration_endpoint": "/api/v1/oauth/register",
         }
 
     return JSONResponse(response_data)
@@ -708,25 +730,30 @@ def create_app() -> Starlette:
     """Create the Starlette ASGI application."""
     settings = get_settings()
 
+    # API version prefix for all REST endpoints
+    API_V1 = "/api/v1"
+
     # Define routes
     routes = [
+        # Root info (no version prefix - serves as discovery endpoint)
         Route("/", info_endpoint, methods=["GET"]),
-        Route("/health", health_endpoint, methods=["GET"]),
-        Route("/mcp", mcp_endpoint, methods=["POST"]),
-        # OAuth 2.1 endpoints
+        # Versioned API endpoints
+        Route(f"{API_V1}/health", health_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/mcp", mcp_endpoint, methods=["POST"]),
+        # OAuth 2.1 endpoints (well-known paths per RFC, no version prefix)
         Route("/.well-known/oauth-protected-resource", protected_resource_metadata, methods=["GET"]),
         Route("/.well-known/oauth-authorization-server", authorization_server_metadata, methods=["GET"]),
-        Route("/oauth/register", register_client, methods=["POST"]),
-        Route("/oauth/authorize", authorize, methods=["GET", "POST"]),
-        Route("/oauth/token", token, methods=["POST"]),
-        # Federation discovery endpoints (no auth required)
+        Route(f"{API_V1}/oauth/register", register_client, methods=["POST"]),
+        Route(f"{API_V1}/oauth/authorize", authorize, methods=["GET", "POST"]),
+        Route(f"{API_V1}/oauth/token", token, methods=["POST"]),
+        # Federation discovery endpoints (well-known paths, no version prefix)
         Route("/.well-known/vfp-node-metadata", vfp_node_metadata, methods=["GET"]),
         Route("/.well-known/vfp-trust-anchors", vfp_trust_anchors, methods=["GET"]),
-        # Federation API endpoints (TODO: add auth middleware)
-        Route("/federation/status", federation_status, methods=["GET"]),
-        # Corroboration endpoints
-        Route("/beliefs/{belief_id}/corroboration", belief_corroboration_endpoint, methods=["GET"]),
-        Route("/beliefs/most-corroborated", most_corroborated_beliefs_endpoint, methods=["GET"]),
+        # Federation API endpoints (versioned)
+        Route(f"{API_V1}/federation/status", federation_status, methods=["GET"]),
+        # Corroboration endpoints (versioned)
+        Route(f"{API_V1}/beliefs/{{belief_id}}/corroboration", belief_corroboration_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/beliefs/most-corroborated", most_corroborated_beliefs_endpoint, methods=["GET"]),
     ]
 
     # Define middleware

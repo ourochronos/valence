@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import os
 import secrets
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -41,9 +42,9 @@ class ServerSettings(BaseSettings):
 
     # OAuth 2.1 settings
     oauth_enabled: bool = Field(default=True, description="Enable OAuth 2.1 authentication")
-    oauth_jwt_secret: str = Field(
-        default_factory=lambda: secrets.token_hex(32),
-        description="Secret for signing JWTs (generate with: python -c 'import secrets; print(secrets.token_hex(32))')",
+    oauth_jwt_secret: str | None = Field(
+        default=None,
+        description="Secret for signing JWTs (REQUIRED in production - set VALENCE_OAUTH_JWT_SECRET)",
     )
     oauth_jwt_algorithm: str = Field(default="HS256", description="JWT signing algorithm")
     oauth_access_token_expiry: int = Field(
@@ -173,6 +174,38 @@ class ServerSettings(BaseSettings):
         description="Minimum contributors required for aggregation results",
     )
 
+    @model_validator(mode="after")
+    def validate_production_settings(self) -> "ServerSettings":
+        """Validate security settings for production environments.
+
+        In production (when host is not localhost/127.0.0.1 or external_url is set),
+        require explicit JWT secret configuration.
+        """
+        is_production = (
+            self.external_url is not None
+            or self.host not in ("localhost", "127.0.0.1", "0.0.0.0")
+            or os.environ.get("VALENCE_PRODUCTION", "").lower() in ("true", "1", "yes")
+        )
+
+        if is_production and self.oauth_enabled:
+            if not self.oauth_jwt_secret:
+                raise ValueError(
+                    "VALENCE_OAUTH_JWT_SECRET is required in production. "
+                    "Generate one with: python -c 'import secrets; print(secrets.token_hex(32))'"
+                )
+            # Warn if secret looks weak (too short)
+            if len(self.oauth_jwt_secret) < 32:
+                raise ValueError(
+                    "VALENCE_OAUTH_JWT_SECRET must be at least 32 characters. "
+                    "Generate a secure one with: python -c 'import secrets; print(secrets.token_hex(32))'"
+                )
+
+        # For development, generate a random secret if not provided
+        if not self.oauth_jwt_secret:
+            object.__setattr__(self, "oauth_jwt_secret", secrets.token_hex(32))
+
+        return self
+
     @property
     def database_url(self) -> str:
         """Construct database URL."""
@@ -193,7 +226,7 @@ class ServerSettings(BaseSettings):
     @property
     def mcp_resource_url(self) -> str:
         """Get the MCP resource URL."""
-        return f"{self.base_url}/mcp"
+        return f"{self.base_url}/api/v1/mcp"
 
 
 # Global settings instance - lazy loaded

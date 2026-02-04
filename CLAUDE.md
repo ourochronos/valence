@@ -48,7 +48,7 @@ valence-token verify vt_xxxxxxxxxxxx
 
 **Claude Code (native HTTP support):**
 ```bash
-claude mcp add --transport http valence https://your-domain.com/mcp \
+claude mcp add --transport http valence https://your-domain.com/api/v1/mcp \
   --header "Authorization: Bearer vt_xxxxxxxxxxxx"
 ```
 
@@ -64,7 +64,7 @@ Claude Desktop only supports stdio transport. Use `mcp-remote` to bridge:
       "args": [
         "mcp-remote@latest",
         "--http",
-        "https://your-domain.com/mcp",
+        "https://your-domain.com/api/v1/mcp",
         "--header",
         "Authorization: Bearer vt_xxxxxxxxxxxx"
       ]
@@ -128,7 +128,7 @@ valence-server
 
 **5. Configure Claude:**
 Claude clients that support OAuth will automatically discover and use these endpoints.
-The server URL is: `https://your-domain.com/mcp`
+The server URL is: `https://your-domain.com/api/v1/mcp`
 
 ### Local Development
 
@@ -140,7 +140,7 @@ VALENCE_TOKEN_FILE=./tokens.json valence-server
 valence-token --token-file ./tokens.json create -c test
 
 # Test with curl
-curl -X POST http://localhost:8420/mcp \
+curl -X POST http://localhost:8420/api/v1/mcp \
   -H "Authorization: Bearer vt_xxxx" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":"1","method":"tools/list","params":{}}'
@@ -285,7 +285,7 @@ source .env.pod
 - **Security**: UFW firewall, SSH key auth, fail2ban, auto-updates
 - **Database**: PostgreSQL 16 + pgvector for embeddings
 - **Matrix**: Synapse homeserver with nginx + SSL
-- **Valence HTTP MCP**: Remote MCP server at /mcp endpoint with token auth
+- **Valence HTTP MCP**: Remote MCP server at /api/v1/mcp endpoint with token auth
 - **VKB**: Legacy stdio MCP server running as systemd service
 
 ### Idempotent Re-deployment
