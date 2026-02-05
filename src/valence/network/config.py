@@ -17,7 +17,10 @@ Issue #120 - Traffic Analysis Mitigations
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional, List, Dict, Any
-import random
+import secrets
+
+# Use cryptographically secure RNG for timing jitter (traffic analysis resistance)
+_secure_random = secrets.SystemRandom()
 
 
 class PrivacyLevel(Enum):
@@ -118,12 +121,14 @@ class TimingJitterConfig:
         
         if self.distribution == "exponential":
             # Exponential distribution with mean at (max-min)/2
+            # Use secrets.SystemRandom for security-sensitive timing jitter
             mean = (self.max_delay_ms - self.min_delay_ms) / 2
-            delay = self.min_delay_ms + random.expovariate(1.0 / mean)
+            delay = self.min_delay_ms + _secure_random.expovariate(1.0 / mean)
             delay = min(delay, self.max_delay_ms)
         else:
             # Uniform distribution
-            delay = random.uniform(self.min_delay_ms, self.max_delay_ms)
+            # Use secrets.SystemRandom for security-sensitive timing jitter
+            delay = _secure_random.uniform(self.min_delay_ms, self.max_delay_ms)
         
         return delay / 1000.0  # Convert to seconds
 

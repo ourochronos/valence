@@ -14,8 +14,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import random
+import secrets
 import time
+
+# Use cryptographically secure RNG for router selection (prevents predictable routing)
+_secure_random = secrets.SystemRandom()
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Set, TYPE_CHECKING
 
@@ -174,8 +177,8 @@ class RouterClient:
             
             weights.append(max(0.01, combined_score))
         
-        # Weighted random selection
-        selected = random.choices(candidates, weights=weights, k=1)[0]
+        # Weighted random selection using cryptographically secure RNG
+        selected = _secure_random.choices(candidates, weights=weights, k=1)[0]
         return selected.router
     
     async def handle_router_failure(

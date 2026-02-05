@@ -29,9 +29,11 @@ import hashlib
 import json
 import logging
 import os
-import random
 import secrets
 import time
+
+# Use cryptographically secure RNG for router sampling (prevents predictable patterns)
+_secure_random = secrets.SystemRandom()
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
@@ -209,7 +211,7 @@ class HealthMonitor:
                 continue
             
             sample_size = min(self.probe_sample_size, len(routers))
-            sample = random.sample(routers, sample_size)
+            sample = _secure_random.sample(routers, sample_size)
             
             logger.debug(f"Probing {len(sample)} routers")
             
@@ -1862,9 +1864,9 @@ class SeedPeerManager:
             
             candidates.append(router)
         
-        # Randomize and limit
+        # Randomize and limit using cryptographically secure RNG
         if len(candidates) > self.batch_size:
-            candidates = random.sample(candidates, self.batch_size)
+            candidates = _secure_random.sample(candidates, self.batch_size)
         
         return [r.to_dict() for r in candidates]
     

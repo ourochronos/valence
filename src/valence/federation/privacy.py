@@ -13,8 +13,11 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import random
+import secrets
 from abc import ABC, abstractmethod
+
+# Use cryptographically secure RNG for privacy-sensitive decisions
+_secure_random = secrets.SystemRandom()
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -1288,7 +1291,8 @@ class TemporalSmoother:
         weight = 1.0 - (hours_since_departure / self.smoothing_hours)
 
         # Probabilistic inclusion for additional privacy
-        if random.random() > weight:
+        # Use cryptographically secure RNG for privacy-sensitive decisions
+        if _secure_random.random() > weight:
             return 0.0
 
         return weight

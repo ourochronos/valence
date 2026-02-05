@@ -22,8 +22,12 @@ from dataclasses import dataclass, field
 from typing import Optional, List, Tuple
 import json
 import os
+import secrets
 import time
 import uuid
+
+# Use cryptographically secure RNG for security-sensitive operations
+_secure_random = secrets.SystemRandom()
 
 
 # =============================================================================
@@ -555,9 +559,9 @@ def generate_cover_content(target_bucket: Optional[int] = None) -> bytes:
     """
     if target_bucket is None:
         # Random bucket selection weighted toward smaller (more common)
-        import random
+        # Use secrets.SystemRandom for security-sensitive cover traffic
         weights = [0.5, 0.3, 0.15, 0.05]  # Favor smaller buckets
-        target_bucket = random.choices(MESSAGE_SIZE_BUCKETS, weights=weights, k=1)[0]
+        target_bucket = _secure_random.choices(MESSAGE_SIZE_BUCKETS, weights=weights, k=1)[0]
     
     # Account for JSON overhead of CoverMessage (~150 bytes typical)
     # and padding overhead (1 byte marker)
