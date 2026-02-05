@@ -678,16 +678,25 @@ class TestCrossFederationConsentService:
             target_federation_id="federation-c",
             target_gateway_id="gateway-c",
         )
+        # Issue #176: C now requires full chain provenance
         chain_c = await consent_service_c.receive_cross_federation_hop(
             hop=hop2,
             source_gateway_verifier=gateway_signer_b,
+            prior_hops=[hop1],  # Must provide hop1 for provenance verification
+            gateway_verifiers={
+                "gateway-a": gateway_signer_a,
+                "gateway-b": gateway_signer_b,
+            },
         )
 
-        # C only knows about the hop it received (hop 2)
-        # This is correct for a distributed system - each federation
-        # only knows its local view
-        assert chain_c.get_hop_count() == 1
-        assert hop2.hop_number == 2  # But the hop number is still 2
+        # Issue #176: C now knows about ALL hops (full provenance required)
+        assert chain_c.get_hop_count() == 2
+        assert hop2.hop_number == 2
+        assert chain_c.get_federation_path() == [
+            "federation-a",
+            "federation-b",
+            "federation-c",
+        ]
 
         # B knows about both hops (it participated in both)
         chain_b = await chain_store_b.get_cross_chain_by_original(original_chain_id)
@@ -1033,9 +1042,15 @@ class TestCrossFederationRevocation:
             target_federation_id="federation-c",
             target_gateway_id="gateway-c",
         )
+        # Issue #176: C now requires full chain provenance
         await consent_service_c.receive_cross_federation_hop(
             hop=hop2,
             source_gateway_verifier=gateway_signer_b,
+            prior_hops=[hop1],
+            gateway_verifiers={
+                "gateway-a": gateway_signer_a,
+                "gateway-b": gateway_signer_b,
+            },
         )
 
         # Revoke from B with downstream scope
@@ -1077,9 +1092,15 @@ class TestCrossFederationRevocation:
             target_federation_id="federation-c",
             target_gateway_id="gateway-c",
         )
+        # Issue #176: C now requires full chain provenance
         await consent_service_c.receive_cross_federation_hop(
             hop=hop2,
             source_gateway_verifier=gateway_signer_b,
+            prior_hops=[hop1],
+            gateway_verifiers={
+                "gateway-a": gateway_signer_a,
+                "gateway-b": gateway_signer_b,
+            },
         )
 
         # Revoke from B with full chain scope
@@ -1198,9 +1219,15 @@ class TestProvenance:
             target_federation_id="federation-c",
             target_gateway_id="gateway-c",
         )
+        # Issue #176: C now requires full chain provenance
         await consent_service_c.receive_cross_federation_hop(
             hop=hop2,
             source_gateway_verifier=gateway_signer_b,
+            prior_hops=[hop1],
+            gateway_verifiers={
+                "gateway-a": gateway_signer_a,
+                "gateway-b": gateway_signer_b,
+            },
         )
 
         # Get provenance from B (B has the full picture as the middle node)
@@ -1214,11 +1241,13 @@ class TestProvenance:
         assert "federation-b" in provenance_b[1]["from"]
         assert "federation-c" in provenance_b[1]["to"]
 
-        # C only sees its local hop (the one it received)
+        # Issue #176: C now also has full provenance (it received both hops)
         provenance_c = await consent_service_c.get_provenance(original_chain_id)
-        assert len(provenance_c) == 1
-        assert "federation-b" in provenance_c[0]["from"]
-        assert "federation-c" in provenance_c[0]["to"]
+        assert len(provenance_c) == 2
+        assert "federation-a" in provenance_c[0]["from"]
+        assert "federation-b" in provenance_c[0]["to"]
+        assert "federation-b" in provenance_c[1]["from"]
+        assert "federation-c" in provenance_c[1]["to"]
 
     @pytest.mark.asyncio
     async def test_provenance_empty_for_unknown_chain(
@@ -1228,6 +1257,649 @@ class TestProvenance:
         """Test provenance returns empty for unknown chain."""
         provenance = await consent_service_a.get_provenance("nonexistent")
         assert provenance == []
+
+
+# =============================================================================
+# CROSS-FEDERATION HOP VALIDATION TESTS (Issue #176)
+# =============================================================================
+
+
+class TestCrossFederationHopValidation:
+    """Tests for strengthened cross-federation hop validation (Issue #176).
+
+    These tests verify that:
+    1. Full chain provenance is required for new chains with hop_number > 1
+    2. All hops are cryptographically validated
+    3. Federation trust threshold is enforced for unknown chains
+    """
+
+    @pytest.mark.asyncio
+    async def test_receive_hop_without_provenance_rejected(
+        self,
+        consent_service_c: CrossFederationConsentService,
+    ) -> None:
+        """Test that receiving hop 2+ without prior hops is rejected."""
+        # Create a hop that claims to be hop 2, but don't provide hop 1
+        hop = CrossFederationHop(
+            hop_id="hop-2",
+            from_federation_id="federation-b",
+            from_gateway_id="gateway-b",
+            to_federation_id="federation-c",
+            to_gateway_id="gateway-c",
+            timestamp=time.time(),
+            signature=b"sig",
+            original_consent_chain_id="chain-1",
+            hop_number=2,
+        )
+
+        # Should be rejected because we don't have hop 1
+        with pytest.raises(ValueError, match="Full chain provenance required"):
+            await consent_service_c.receive_cross_federation_hop(hop=hop)
+
+    @pytest.mark.asyncio
+    async def test_receive_hop_with_full_provenance_accepted(
+        self,
+        consent_service_c: CrossFederationConsentService,
+        gateway_signer_a: MockGatewaySigner,
+        gateway_signer_b: MockGatewaySigner,
+    ) -> None:
+        """Test that receiving hop 2 with full provenance (hop 1) is accepted."""
+        original_chain_id = str(uuid4())
+        timestamp = time.time()
+
+        # Create hop 1: A -> B
+        hop1_data = {
+            "from_federation_id": "federation-a",
+            "from_gateway_id": "gateway-a",
+            "to_federation_id": "federation-b",
+            "to_gateway_id": "gateway-b",
+            "original_chain_id": original_chain_id,
+            "hop_number": 1,
+            "timestamp": timestamp,
+        }
+        hop1 = CrossFederationHop(
+            hop_id="hop-1",
+            from_federation_id="federation-a",
+            from_gateway_id="gateway-a",
+            to_federation_id="federation-b",
+            to_gateway_id="gateway-b",
+            timestamp=timestamp,
+            signature=gateway_signer_a.sign(hop1_data),
+            original_consent_chain_id=original_chain_id,
+            hop_number=1,
+        )
+
+        # Create hop 2: B -> C
+        hop2_data = {
+            "from_federation_id": "federation-b",
+            "from_gateway_id": "gateway-b",
+            "to_federation_id": "federation-c",
+            "to_gateway_id": "gateway-c",
+            "original_chain_id": original_chain_id,
+            "hop_number": 2,
+            "timestamp": timestamp + 1,
+        }
+        hop2 = CrossFederationHop(
+            hop_id="hop-2",
+            from_federation_id="federation-b",
+            from_gateway_id="gateway-b",
+            to_federation_id="federation-c",
+            to_gateway_id="gateway-c",
+            timestamp=timestamp + 1,
+            signature=gateway_signer_b.sign(hop2_data),
+            original_consent_chain_id=original_chain_id,
+            hop_number=2,
+        )
+
+        # Receive hop 2 with hop 1 as prior provenance
+        chain = await consent_service_c.receive_cross_federation_hop(
+            hop=hop2,
+            source_gateway_verifier=gateway_signer_b,
+            prior_hops=[hop1],
+            gateway_verifiers={
+                "gateway-a": gateway_signer_a,
+                "gateway-b": gateway_signer_b,
+            },
+        )
+
+        # Should be accepted and include both hops
+        assert chain.get_hop_count() == 2
+        assert chain.origin_federation_id == "federation-a"
+        assert chain.get_federation_path() == ["federation-a", "federation-b", "federation-c"]
+
+    @pytest.mark.asyncio
+    async def test_receive_hop_incomplete_provenance_rejected(
+        self,
+        consent_service_c: CrossFederationConsentService,
+        gateway_signer_b: MockGatewaySigner,
+    ) -> None:
+        """Test that receiving hop 3 with only hop 2 (missing hop 1) is rejected."""
+        original_chain_id = str(uuid4())
+        timestamp = time.time()
+
+        # Create hop 2: B -> C (but we're missing hop 1: A -> B)
+        hop2 = CrossFederationHop(
+            hop_id="hop-2",
+            from_federation_id="federation-b",
+            from_gateway_id="gateway-b",
+            to_federation_id="federation-c",
+            to_gateway_id="gateway-c",
+            timestamp=timestamp,
+            signature=b"sig2",
+            original_consent_chain_id=original_chain_id,
+            hop_number=2,
+        )
+
+        # Create hop 3: C -> D (we're federation D here, using service C as D for test)
+        hop3 = CrossFederationHop(
+            hop_id="hop-3",
+            from_federation_id="federation-c",
+            from_gateway_id="gateway-c",
+            to_federation_id="federation-c",  # Reusing C as target for simplicity
+            to_gateway_id="gateway-c",
+            timestamp=timestamp + 1,
+            signature=b"sig3",
+            original_consent_chain_id=original_chain_id,
+            hop_number=3,
+        )
+
+        # Should be rejected because hop 1 is missing
+        with pytest.raises(ValueError, match="Incomplete chain provenance"):
+            await consent_service_c.receive_cross_federation_hop(
+                hop=hop3,
+                prior_hops=[hop2],  # Missing hop 1
+            )
+
+    @pytest.mark.asyncio
+    async def test_chain_continuity_validation(
+        self,
+        consent_service_c: CrossFederationConsentService,
+        gateway_signer_a: MockGatewaySigner,
+        gateway_signer_b: MockGatewaySigner,
+    ) -> None:
+        """Test that chain discontinuity (mismatched federation/gateway) is detected."""
+        original_chain_id = str(uuid4())
+        timestamp = time.time()
+
+        # Create hop 1: A -> B
+        hop1 = CrossFederationHop(
+            hop_id="hop-1",
+            from_federation_id="federation-a",
+            from_gateway_id="gateway-a",
+            to_federation_id="federation-b",
+            to_gateway_id="gateway-b",
+            timestamp=timestamp,
+            signature=b"sig1",
+            original_consent_chain_id=original_chain_id,
+            hop_number=1,
+        )
+
+        # Create hop 2 with WRONG from_federation (says from A, but hop 1 ended at B)
+        hop2 = CrossFederationHop(
+            hop_id="hop-2",
+            from_federation_id="federation-a",  # WRONG! Should be federation-b
+            from_gateway_id="gateway-a",
+            to_federation_id="federation-c",
+            to_gateway_id="gateway-c",
+            timestamp=timestamp + 1,
+            signature=b"sig2",
+            original_consent_chain_id=original_chain_id,
+            hop_number=2,
+        )
+
+        with pytest.raises(ValueError, match="Chain discontinuity"):
+            await consent_service_c.receive_cross_federation_hop(
+                hop=hop2,
+                prior_hops=[hop1],
+            )
+
+    @pytest.mark.asyncio
+    async def test_cryptographic_validation_all_hops(
+        self,
+        consent_service_c: CrossFederationConsentService,
+        gateway_signer_a: MockGatewaySigner,
+        gateway_signer_b: MockGatewaySigner,
+    ) -> None:
+        """Test that invalid signatures on prior hops are detected."""
+        original_chain_id = str(uuid4())
+        timestamp = time.time()
+
+        # Create hop 1 with INVALID signature
+        hop1 = CrossFederationHop(
+            hop_id="hop-1",
+            from_federation_id="federation-a",
+            from_gateway_id="gateway-a",
+            to_federation_id="federation-b",
+            to_gateway_id="gateway-b",
+            timestamp=timestamp,
+            signature=b"invalid-signature",  # Wrong signature!
+            original_consent_chain_id=original_chain_id,
+            hop_number=1,
+        )
+
+        # Create hop 2 with valid signature
+        hop2_data = {
+            "from_federation_id": "federation-b",
+            "from_gateway_id": "gateway-b",
+            "to_federation_id": "federation-c",
+            "to_gateway_id": "gateway-c",
+            "original_chain_id": original_chain_id,
+            "hop_number": 2,
+            "timestamp": timestamp + 1,
+        }
+        hop2 = CrossFederationHop(
+            hop_id="hop-2",
+            from_federation_id="federation-b",
+            from_gateway_id="gateway-b",
+            to_federation_id="federation-c",
+            to_gateway_id="gateway-c",
+            timestamp=timestamp + 1,
+            signature=gateway_signer_b.sign(hop2_data),
+            original_consent_chain_id=original_chain_id,
+            hop_number=2,
+        )
+
+        # Should be rejected because hop 1's signature is invalid
+        with pytest.raises(ValueError, match="Invalid signature on hop 1"):
+            await consent_service_c.receive_cross_federation_hop(
+                hop=hop2,
+                source_gateway_verifier=gateway_signer_b,
+                prior_hops=[hop1],
+                gateway_verifiers={
+                    "gateway-a": gateway_signer_a,
+                    "gateway-b": gateway_signer_b,
+                },
+            )
+
+    @pytest.mark.asyncio
+    async def test_chain_id_mismatch_detected(
+        self,
+        consent_service_c: CrossFederationConsentService,
+    ) -> None:
+        """Test that mismatched chain IDs in provenance are detected."""
+        timestamp = time.time()
+
+        # Create hop 1 referencing chain-X
+        hop1 = CrossFederationHop(
+            hop_id="hop-1",
+            from_federation_id="federation-a",
+            from_gateway_id="gateway-a",
+            to_federation_id="federation-b",
+            to_gateway_id="gateway-b",
+            timestamp=timestamp,
+            signature=b"sig1",
+            original_consent_chain_id="chain-X",  # Different chain!
+            hop_number=1,
+        )
+
+        # Create hop 2 referencing chain-Y
+        hop2 = CrossFederationHop(
+            hop_id="hop-2",
+            from_federation_id="federation-b",
+            from_gateway_id="gateway-b",
+            to_federation_id="federation-c",
+            to_gateway_id="gateway-c",
+            timestamp=timestamp + 1,
+            signature=b"sig2",
+            original_consent_chain_id="chain-Y",  # Different from hop 1!
+            hop_number=2,
+        )
+
+        with pytest.raises(ValueError, match="Chain ID mismatch"):
+            await consent_service_c.receive_cross_federation_hop(
+                hop=hop2,
+                prior_hops=[hop1],
+            )
+
+    @pytest.mark.asyncio
+    async def test_hop_number_sequence_validated(
+        self,
+        consent_service_c: CrossFederationConsentService,
+    ) -> None:
+        """Test that non-sequential hop numbers are detected."""
+        original_chain_id = str(uuid4())
+        timestamp = time.time()
+
+        # Create hop 1 (correct)
+        hop1 = CrossFederationHop(
+            hop_id="hop-1",
+            from_federation_id="federation-a",
+            from_gateway_id="gateway-a",
+            to_federation_id="federation-b",
+            to_gateway_id="gateway-b",
+            timestamp=timestamp,
+            signature=b"sig1",
+            original_consent_chain_id=original_chain_id,
+            hop_number=1,
+        )
+
+        # Create "hop 3" (skipping hop 2!)
+        hop3 = CrossFederationHop(
+            hop_id="hop-3",
+            from_federation_id="federation-b",
+            from_gateway_id="gateway-b",
+            to_federation_id="federation-c",
+            to_gateway_id="gateway-c",
+            timestamp=timestamp + 1,
+            signature=b"sig3",
+            original_consent_chain_id=original_chain_id,
+            hop_number=3,  # Claims to be hop 3, but we only have hop 1
+        )
+
+        with pytest.raises(ValueError, match="Incomplete chain provenance"):
+            await consent_service_c.receive_cross_federation_hop(
+                hop=hop3,
+                prior_hops=[hop1],  # Only hop 1, missing hop 2
+            )
+
+    @pytest.mark.asyncio
+    async def test_require_full_provenance_can_be_disabled(
+        self,
+        consent_service_c: CrossFederationConsentService,
+    ) -> None:
+        """Test that require_full_provenance=False allows accepting without prior hops."""
+        hop = CrossFederationHop(
+            hop_id="hop-2",
+            from_federation_id="federation-b",
+            from_gateway_id="gateway-b",
+            to_federation_id="federation-c",
+            to_gateway_id="gateway-c",
+            timestamp=time.time(),
+            signature=b"sig",
+            original_consent_chain_id="chain-1",
+            hop_number=2,
+        )
+
+        # Should be accepted when require_full_provenance=False
+        chain = await consent_service_c.receive_cross_federation_hop(
+            hop=hop,
+            require_full_provenance=False,
+        )
+
+        assert chain is not None
+        assert chain.get_hop_count() == 1  # Only the current hop
+
+    @pytest.mark.asyncio
+    async def test_first_hop_does_not_require_prior_hops(
+        self,
+        consent_service_b: CrossFederationConsentService,
+        gateway_signer_a: MockGatewaySigner,
+    ) -> None:
+        """Test that hop 1 doesn't require prior_hops (it's the first)."""
+        timestamp = time.time()
+        original_chain_id = "chain-1"
+        hop_data = {
+            "from_federation_id": "federation-a",
+            "from_gateway_id": "gateway-a",
+            "to_federation_id": "federation-b",
+            "to_gateway_id": "gateway-b",
+            "original_chain_id": original_chain_id,
+            "hop_number": 1,
+            "timestamp": timestamp,
+        }
+        hop = CrossFederationHop(
+            hop_id="hop-1",
+            from_federation_id="federation-a",
+            from_gateway_id="gateway-a",
+            to_federation_id="federation-b",
+            to_gateway_id="gateway-b",
+            timestamp=timestamp,
+            signature=gateway_signer_a.sign(hop_data),
+            original_consent_chain_id=original_chain_id,
+            hop_number=1,
+        )
+
+        # Should be accepted without prior_hops since it's hop 1
+        chain = await consent_service_b.receive_cross_federation_hop(
+            hop=hop,
+            source_gateway_verifier=gateway_signer_a,
+        )
+
+        assert chain is not None
+        assert chain.get_hop_count() == 1
+        assert chain.origin_federation_id == "federation-a"
+
+    @pytest.mark.asyncio
+    async def test_policy_hash_validated_on_prior_hops(
+        self,
+        consent_service_c: CrossFederationConsentService,
+        gateway_signer_a: MockGatewaySigner,
+        gateway_signer_b: MockGatewaySigner,
+    ) -> None:
+        """Test that tampered policy hashes on prior hops are detected."""
+        original_chain_id = str(uuid4())
+        timestamp = time.time()
+
+        # Create hop 1 with tampered policy (hash doesn't match)
+        policy_snapshot = {"max_hops": 3}
+        wrong_hash = compute_policy_hash({"max_hops": 100})  # Hash of different policy
+
+        hop1 = CrossFederationHop(
+            hop_id="hop-1",
+            from_federation_id="federation-a",
+            from_gateway_id="gateway-a",
+            to_federation_id="federation-b",
+            to_gateway_id="gateway-b",
+            timestamp=timestamp,
+            signature=b"sig1",
+            original_consent_chain_id=original_chain_id,
+            hop_number=1,
+            policy_snapshot=policy_snapshot,
+            policy_hash=wrong_hash,  # Mismatched hash!
+        )
+
+        # Create hop 2
+        hop2 = CrossFederationHop(
+            hop_id="hop-2",
+            from_federation_id="federation-b",
+            from_gateway_id="gateway-b",
+            to_federation_id="federation-c",
+            to_gateway_id="gateway-c",
+            timestamp=timestamp + 1,
+            signature=b"sig2",
+            original_consent_chain_id=original_chain_id,
+            hop_number=2,
+        )
+
+        with pytest.raises(ValueError, match="Policy hash mismatch on hop 1"):
+            await consent_service_c.receive_cross_federation_hop(
+                hop=hop2,
+                prior_hops=[hop1],
+            )
+
+
+class TestUnknownChainTrustThreshold:
+    """Tests for federation trust threshold when accepting unknown chains (Issue #176)."""
+
+    @pytest.fixture
+    def mock_trust_service(self) -> "MockTrustService":
+        """Create a mock trust service."""
+        return MockTrustService()
+
+    @pytest.fixture
+    def consent_service_with_trust(
+        self,
+        gateway_signer_b: MockGatewaySigner,
+        chain_store_b: InMemoryConsentChainStore,
+        policy_store: InMemoryPolicyStore,
+        mock_trust_service: "MockTrustService",
+    ) -> CrossFederationConsentService:
+        """Consent service with trust service enabled."""
+        return CrossFederationConsentService(
+            federation_id="federation-b",
+            gateway_signer=gateway_signer_b,
+            chain_store=chain_store_b,
+            policy_store=policy_store,
+            trust_service=mock_trust_service,
+        )
+
+    @pytest.mark.asyncio
+    async def test_unknown_chain_trust_threshold_enforced(
+        self,
+        consent_service_with_trust: CrossFederationConsentService,
+        policy_store: InMemoryPolicyStore,
+        mock_trust_service: "MockTrustService",
+    ) -> None:
+        """Test that trust threshold is enforced for unknown chains."""
+        # Set up policy with trust threshold
+        policy = FederationConsentPolicy(
+            federation_id="federation-b",
+            min_trust_for_unknown_chains=0.8,
+        )
+        await policy_store.store_policy(policy)
+
+        # Set low trust from federation-a
+        mock_trust_service.set_trust("federation-a", "federation-b", 0.5)
+
+        hop = CrossFederationHop(
+            hop_id="hop-1",
+            from_federation_id="federation-a",
+            from_gateway_id="gateway-a",
+            to_federation_id="federation-b",
+            to_gateway_id="gateway-b",
+            timestamp=time.time(),
+            signature=b"sig",
+            original_consent_chain_id="chain-1",
+            hop_number=1,
+        )
+
+        # Should be rejected due to low trust
+        with pytest.raises(PermissionError, match="Insufficient trust"):
+            await consent_service_with_trust.receive_cross_federation_hop(hop=hop)
+
+    @pytest.mark.asyncio
+    async def test_unknown_chain_accepted_with_sufficient_trust(
+        self,
+        consent_service_with_trust: CrossFederationConsentService,
+        policy_store: InMemoryPolicyStore,
+        mock_trust_service: "MockTrustService",
+    ) -> None:
+        """Test that unknown chains are accepted with sufficient trust."""
+        # Set up policy with trust threshold
+        policy = FederationConsentPolicy(
+            federation_id="federation-b",
+            min_trust_for_unknown_chains=0.7,
+        )
+        await policy_store.store_policy(policy)
+
+        # Set sufficient trust from federation-a
+        mock_trust_service.set_trust("federation-a", "federation-b", 0.9)
+
+        hop = CrossFederationHop(
+            hop_id="hop-1",
+            from_federation_id="federation-a",
+            from_gateway_id="gateway-a",
+            to_federation_id="federation-b",
+            to_gateway_id="gateway-b",
+            timestamp=time.time(),
+            signature=b"sig",
+            original_consent_chain_id="chain-1",
+            hop_number=1,
+        )
+
+        # Should be accepted
+        chain = await consent_service_with_trust.receive_cross_federation_hop(hop=hop)
+        assert chain is not None
+
+    @pytest.mark.asyncio
+    async def test_trust_threshold_uses_default_when_no_policy(
+        self,
+        consent_service_with_trust: CrossFederationConsentService,
+        mock_trust_service: "MockTrustService",
+    ) -> None:
+        """Test that default trust threshold (0.7) is used when no policy exists."""
+        # Set trust below default threshold of 0.7
+        mock_trust_service.set_trust("federation-a", "federation-b", 0.5)
+
+        hop = CrossFederationHop(
+            hop_id="hop-1",
+            from_federation_id="federation-a",
+            from_gateway_id="gateway-a",
+            to_federation_id="federation-b",
+            to_gateway_id="gateway-b",
+            timestamp=time.time(),
+            signature=b"sig",
+            original_consent_chain_id="chain-1",
+            hop_number=1,
+        )
+
+        # Should be rejected (0.5 < 0.7 default)
+        with pytest.raises(PermissionError, match="Insufficient trust"):
+            await consent_service_with_trust.receive_cross_federation_hop(hop=hop)
+
+    @pytest.mark.asyncio
+    async def test_existing_chain_bypasses_trust_check(
+        self,
+        consent_service_with_trust: CrossFederationConsentService,
+        policy_store: InMemoryPolicyStore,
+        mock_trust_service: "MockTrustService",
+        chain_store_b: InMemoryConsentChainStore,
+    ) -> None:
+        """Test that trust check is only for NEW chains, not existing ones."""
+        original_chain_id = str(uuid4())
+
+        # Set up strict trust policy
+        policy = FederationConsentPolicy(
+            federation_id="federation-b",
+            min_trust_for_unknown_chains=0.9,
+        )
+        await policy_store.store_policy(policy)
+
+        # Set high trust initially to create chain
+        mock_trust_service.set_trust("federation-a", "federation-b", 0.95)
+
+        # Receive first hop (creates chain)
+        hop1 = CrossFederationHop(
+            hop_id="hop-1",
+            from_federation_id="federation-a",
+            from_gateway_id="gateway-a",
+            to_federation_id="federation-b",
+            to_gateway_id="gateway-b",
+            timestamp=time.time(),
+            signature=b"sig1",
+            original_consent_chain_id=original_chain_id,
+            hop_number=1,
+        )
+        await consent_service_with_trust.receive_cross_federation_hop(hop=hop1)
+
+        # Now lower trust below threshold
+        mock_trust_service.set_trust("federation-a", "federation-b", 0.3)
+
+        # Simulate B creating a hop to somewhere else, which we then receive back
+        # For this test, we'll manually add hop 1 to chain and receive hop 2
+        # The trust check should NOT apply since we already know this chain
+
+        # This simulates receiving the next hop on an existing chain
+        hop2 = CrossFederationHop(
+            hop_id="hop-2",
+            from_federation_id="federation-b",
+            from_gateway_id="gateway-b",
+            to_federation_id="federation-b",  # Back to B (unusual but valid for test)
+            to_gateway_id="gateway-b",
+            timestamp=time.time(),
+            signature=b"sig2",
+            original_consent_chain_id=original_chain_id,
+            hop_number=2,
+        )
+
+        # Should succeed because chain already exists (trust check bypassed)
+        chain = await consent_service_with_trust.receive_cross_federation_hop(hop=hop2)
+        assert chain.get_hop_count() == 2
+
+
+class MockTrustService:
+    """Mock implementation of FederationTrustProtocol for testing."""
+
+    def __init__(self) -> None:
+        self._trust: dict[tuple[str, str], float] = {}
+
+    def set_trust(self, from_fed: str, to_fed: str, score: float) -> None:
+        """Set trust score between federations."""
+        self._trust[(from_fed, to_fed)] = score
+
+    async def get_federation_trust(self, from_federation: str, to_federation: str) -> float:
+        """Get trust score between two federations."""
+        return self._trust.get((from_federation, to_federation), 0.5)
 
 
 # =============================================================================

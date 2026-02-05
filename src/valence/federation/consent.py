@@ -189,6 +189,7 @@ class FederationConsentPolicy:
     # Trust requirements
     min_trust_for_outgoing: float = 0.5
     min_trust_for_incoming: float = 0.5
+    min_trust_for_unknown_chains: float = 0.7  # Higher threshold for accepting chains without full provenance
 
     # Propagation limits
     max_outgoing_hops: Optional[int] = 3
@@ -213,6 +214,7 @@ class FederationConsentPolicy:
             "blocked_incoming_federations": self.blocked_incoming_federations,
             "min_trust_for_outgoing": self.min_trust_for_outgoing,
             "min_trust_for_incoming": self.min_trust_for_incoming,
+            "min_trust_for_unknown_chains": self.min_trust_for_unknown_chains,
             "max_outgoing_hops": self.max_outgoing_hops,
             "max_incoming_hops": self.max_incoming_hops,
             "strip_fields_on_outgoing": self.strip_fields_on_outgoing,
@@ -233,6 +235,7 @@ class FederationConsentPolicy:
             blocked_incoming_federations=data.get("blocked_incoming_federations", []),
             min_trust_for_outgoing=data.get("min_trust_for_outgoing", 0.5),
             min_trust_for_incoming=data.get("min_trust_for_incoming", 0.5),
+            min_trust_for_unknown_chains=data.get("min_trust_for_unknown_chains", 0.7),
             max_outgoing_hops=data.get("max_outgoing_hops", 3),
             max_incoming_hops=data.get("max_incoming_hops", 3),
             strip_fields_on_outgoing=data.get("strip_fields_on_outgoing", []),
@@ -634,19 +637,33 @@ class CrossFederationConsentService:
         self,
         hop: CrossFederationHop,
         source_gateway_verifier: Optional[GatewaySigningProtocol] = None,
+        *,
+        prior_hops: Optional[list[CrossFederationHop]] = None,
+        gateway_verifiers: Optional[dict[str, GatewaySigningProtocol]] = None,
+        require_full_provenance: bool = True,
     ) -> CrossFederationConsentChain:
         """Receive and validate a cross-federation hop from another federation.
+
+        Issue #176: Strengthened validation to require full chain provenance
+        and cryptographic verification of all hops.
 
         Args:
             hop: The hop being received
             source_gateway_verifier: Optional verifier for the source gateway's signature
+            prior_hops: All previous hops in the chain (required for new chains with
+                hop_number > 1 when require_full_provenance=True)
+            gateway_verifiers: Dictionary mapping gateway_id to verifier for
+                cryptographic validation of all hops
+            require_full_provenance: If True (default), require full chain history
+                for new chains. Set to False only for trusted direct connections.
 
         Returns:
             The updated cross-federation consent chain
 
         Raises:
-            ValueError: If validation fails (including policy hash mismatch)
-            PermissionError: If policy blocks incoming
+            ValueError: If validation fails (including policy hash mismatch,
+                missing provenance, or cryptographic verification failure)
+            PermissionError: If policy blocks incoming or trust threshold not met
         """
         # Validate this hop is directed to us
         if hop.to_federation_id != self.federation_id:
@@ -666,7 +683,7 @@ class CrossFederationConsentService:
         # Validate against incoming policy
         await self._validate_incoming(hop.from_federation_id)
 
-        # Verify signature if verifier provided
+        # Verify signature of the current hop if verifier provided
         if source_gateway_verifier:
             hop_data = {
                 "from_federation_id": hop.from_federation_id,
@@ -686,27 +703,65 @@ class CrossFederationConsentService:
         )
 
         is_new_chain = cross_chain is None
+
+        # Issue #176: Strengthen validation for new chains
         if is_new_chain:
-            # Create local representation - we may be receiving a hop further
-            # down the chain (e.g., hop 2 when we don't know about hop 1)
+            # For new chains with hop_number > 1, require full provenance
+            if hop.hop_number > 1 and require_full_provenance:
+                if prior_hops is None:
+                    raise ValueError(
+                        f"Full chain provenance required: receiving hop {hop.hop_number} "
+                        f"but no prior hops provided. Cannot accept chain without "
+                        f"verifying full provenance."
+                    )
+
+                # Validate we have all prior hops
+                if len(prior_hops) != hop.hop_number - 1:
+                    raise ValueError(
+                        f"Incomplete chain provenance: expected {hop.hop_number - 1} "
+                        f"prior hops, got {len(prior_hops)}"
+                    )
+
+                # Validate chain continuity and cryptographic signatures of all prior hops
+                await self._validate_chain_provenance(
+                    prior_hops, hop, gateway_verifiers
+                )
+
+            # Check federation trust threshold for unknown chains (Issue #176)
+            await self._validate_unknown_chain_trust(hop.from_federation_id)
+
+            # Create local representation with correct origin
+            if prior_hops:
+                # Use the first hop's origin as the true chain origin
+                first_hop = sorted(prior_hops, key=lambda h: h.hop_number)[0]
+                origin_federation = first_hop.from_federation_id
+                origin_gateway = first_hop.from_gateway_id
+            else:
+                # First hop - the sender is the origin
+                origin_federation = hop.from_federation_id
+                origin_gateway = hop.from_gateway_id
+
             cross_chain = CrossFederationConsentChain(
                 id=str(uuid.uuid4()),
                 original_chain_id=hop.original_consent_chain_id,
-                origin_federation_id=hop.from_federation_id,
-                origin_gateway_id=hop.from_gateway_id,
+                origin_federation_id=origin_federation,
+                origin_gateway_id=origin_gateway,
             )
-        
+
+            # Add all prior hops to preserve full provenance
+            if prior_hops:
+                for prior_hop in sorted(prior_hops, key=lambda h: h.hop_number):
+                    cross_chain.add_hop(prior_hop)
+
         # At this point cross_chain is guaranteed to be non-None
         assert cross_chain is not None
 
-        # Verify hop chain integrity:
-        # - For new chains, accept the hop (we're joining the chain midway)
-        # - For existing chains, verify it's the next expected hop
+        # Verify hop chain integrity for existing chains
         if not is_new_chain:
             expected_hop = cross_chain.get_hop_count() + 1
             if expected_hop != hop.hop_number:
                 raise ValueError(
-                    f"Hop number mismatch: expected {expected_hop}, " f"got {hop.hop_number}"
+                    f"Hop number mismatch: expected {expected_hop}, got {hop.hop_number}"
                 )
 
         # Add hop
@@ -721,6 +776,131 @@ class CrossFederationConsentService:
         )
 
         return cross_chain
+
+    async def _validate_chain_provenance(
+        self,
+        prior_hops: list[CrossFederationHop],
+        current_hop: CrossFederationHop,
+        gateway_verifiers: Optional[dict[str, GatewaySigningProtocol]] = None,
+    ) -> None:
+        """Validate full chain provenance including cryptographic verification.
+
+        Issue #176: Ensures all hops in the chain are cryptographically valid
+        and form a continuous chain.
+
+        Args:
+            prior_hops: All previous hops in the chain
+            current_hop: The current hop being received
+            gateway_verifiers: Dictionary mapping gateway_id to verifier
+
+        Raises:
+            ValueError: If chain validation fails
+        """
+        # Sort hops by hop number
+        sorted_hops = sorted(prior_hops, key=lambda h: h.hop_number)
+
+        # Validate hop numbers are sequential starting from 1
+        for i, hop in enumerate(sorted_hops):
+            expected_number = i + 1
+            if hop.hop_number != expected_number:
+                raise ValueError(
+                    f"Non-sequential hop numbers in chain: expected hop {expected_number}, "
+                    f"got hop {hop.hop_number}"
+                )
+
+        # Validate chain continuity (each hop's to_federation matches next hop's from_federation)
+        all_hops = sorted_hops + [current_hop]
+        for i in range(len(all_hops) - 1):
+            if all_hops[i].to_federation_id != all_hops[i + 1].from_federation_id:
+                raise ValueError(
+                    f"Chain discontinuity at hop {i + 1}: "
+                    f"hop {i + 1} ends at {all_hops[i].to_federation_id} but "
+                    f"hop {i + 2} starts from {all_hops[i + 1].from_federation_id}"
+                )
+            if all_hops[i].to_gateway_id != all_hops[i + 1].from_gateway_id:
+                raise ValueError(
+                    f"Gateway discontinuity at hop {i + 1}: "
+                    f"hop {i + 1} ends at gateway {all_hops[i].to_gateway_id} but "
+                    f"hop {i + 2} starts from gateway {all_hops[i + 1].from_gateway_id}"
+                )
+
+        # Validate all hops reference the same original chain
+        for hop in all_hops:
+            if hop.original_consent_chain_id != current_hop.original_consent_chain_id:
+                raise ValueError(
+                    f"Chain ID mismatch: hop {hop.hop_number} references chain "
+                    f"{hop.original_consent_chain_id}, expected {current_hop.original_consent_chain_id}"
+                )
+
+        # Cryptographically verify all hops if verifiers provided
+        if gateway_verifiers:
+            for hop in sorted_hops:
+                verifier = gateway_verifiers.get(hop.from_gateway_id)
+                if verifier:
+                    hop_data = {
+                        "from_federation_id": hop.from_federation_id,
+                        "from_gateway_id": hop.from_gateway_id,
+                        "to_federation_id": hop.to_federation_id,
+                        "to_gateway_id": hop.to_gateway_id,
+                        "original_chain_id": hop.original_consent_chain_id,
+                        "hop_number": hop.hop_number,
+                        "timestamp": hop.timestamp,
+                    }
+                    if not verifier.verify(hop_data, hop.signature, hop.from_gateway_id):
+                        raise ValueError(
+                            f"Invalid signature on hop {hop.hop_number} "
+                            f"from gateway {hop.from_gateway_id}"
+                        )
+                else:
+                    logger.warning(
+                        f"No verifier available for gateway {hop.from_gateway_id} "
+                        f"(hop {hop.hop_number}), skipping signature verification"
+                    )
+
+        # Verify policy hashes on all prior hops
+        for hop in sorted_hops:
+            if hop.policy_hash:
+                if not verify_policy_hash(hop.policy_snapshot, hop.policy_hash):
+                    raise ValueError(
+                        f"Policy hash mismatch on hop {hop.hop_number} "
+                        f"from federation {hop.from_federation_id}"
+                    )
+
+        logger.debug(
+            f"Chain provenance validated: {len(all_hops)} hops, "
+            f"path: {' -> '.join(h.from_federation_id for h in all_hops)} -> {current_hop.to_federation_id}"
+        )
+
+    async def _validate_unknown_chain_trust(self, source_federation_id: str) -> None:
+        """Validate trust threshold for accepting chains from unknown federations.
+
+        Issue #176: Federations must meet a higher trust threshold when
+        introducing chains we haven't seen before.
+
+        Args:
+            source_federation_id: The federation sending the chain
+
+        Raises:
+            PermissionError: If trust threshold not met
+        """
+        policy = await self.policy_store.get_policy(self.federation_id)
+
+        if policy is None:
+            # No policy = use default threshold (0.7)
+            threshold = 0.7
+        else:
+            threshold = policy.min_trust_for_unknown_chains
+
+        # Check trust if service available
+        if self.trust_service:
+            trust = await self.trust_service.get_federation_trust(
+                source_federation_id, self.federation_id
+            )
+            if trust < threshold:
+                raise PermissionError(
+                    f"Insufficient trust to accept unknown chain from {source_federation_id}: "
+                    f"{trust:.2f} < {threshold:.2f} (min_trust_for_unknown_chains)"
+                )
 
     async def validate_consent_chain(
         self,
