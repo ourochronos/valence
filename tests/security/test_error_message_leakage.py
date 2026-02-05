@@ -52,9 +52,9 @@ def assert_no_sensitive_info(response_body: dict | str, context: str = "") -> No
     body_lower = body_str.lower()
 
     for pattern in SENSITIVE_PATTERNS:
-        assert (
-            pattern.lower() not in body_lower
-        ), f"Sensitive pattern '{pattern}' found in error response{' (' + context + ')' if context else ''}: {body_str[:200]}"
+        assert pattern.lower() not in body_lower, (
+            f"Sensitive pattern '{pattern}' found in error response{' (' + context + ')' if context else ''}: {body_str[:200]}"
+        )
 
 
 # =============================================================================
@@ -213,7 +213,7 @@ class TestMCPEndpointsSecurity:
     def test_mcp_parse_error_no_leakage(self, client):
         """JSON parse errors should not leak parsing details."""
         response = client.post(
-            "/mcp",
+            "/api/v1/mcp",
             content=b"{ invalid json here }}}",
             headers={"Content-Type": "application/json"},
         )
@@ -238,7 +238,7 @@ class TestMCPEndpointsSecurity:
             mock_dispatch.side_effect = Exception("KeyError: 'embedding_model' not found in config at /etc/valence/secrets.yaml")
 
             response = client.post(
-                "/mcp",
+                "/api/v1/mcp",
                 json={
                     "jsonrpc": "2.0",
                     "method": "tools/list",
@@ -312,7 +312,7 @@ class TestFederationEndpointsSecurity:
             mock_parse.side_effect = Exception("cryptography.hazmat.primitives: InvalidSignature at verification step 3")
 
             response = client.post(
-                "/federation/protocol/belief_share",
+                "/federation/protocol",
                 json={"test": "data"},
             )
 
