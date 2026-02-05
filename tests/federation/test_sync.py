@@ -18,7 +18,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
 import pytest
-
 from valence.federation.models import SyncStatus
 from valence.federation.sync import (
     SyncManager,
@@ -701,11 +700,13 @@ class TestVectorClockIntegration:
             # Peer clock: p1=1, p2=2 (concurrent!)
             mock_response = MagicMock()
             mock_response.status = 200
-            mock_response.json = AsyncMock(return_value={
-                "changes": [],
-                "cursor": None,
-                "vector_clock": {"p1": 1, "p2": 2},
-            })
+            mock_response.json = AsyncMock(
+                return_value={
+                    "changes": [],
+                    "cursor": None,
+                    "vector_clock": {"p1": 1, "p2": 2},
+                }
+            )
 
             mock_session = MagicMock()
             mock_session.post.return_value.__aenter__ = AsyncMock(return_value=mock_response)
@@ -757,11 +758,13 @@ class TestVectorClockIntegration:
             # Peer clock: p1=2, p2=2 (peer is ahead, no conflict)
             mock_response = MagicMock()
             mock_response.status = 200
-            mock_response.json = AsyncMock(return_value={
-                "changes": [],
-                "cursor": None,
-                "vector_clock": {"p1": 2, "p2": 2},
-            })
+            mock_response.json = AsyncMock(
+                return_value={
+                    "changes": [],
+                    "cursor": None,
+                    "vector_clock": {"p1": 2, "p2": 2},
+                }
+            )
 
             mock_session = MagicMock()
             mock_session.post.return_value.__aenter__ = AsyncMock(return_value=mock_response)
