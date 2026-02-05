@@ -404,12 +404,15 @@ class TrustVelocityAnalyzer:
         self,
         node_id: UUID,
         trust_changes: list[tuple[datetime, float]] | None = None,
+        reference_time: datetime | None = None,
     ) -> TrustVelocityResult:
         """Analyze trust velocity for a node.
 
         Args:
             node_id: Node to analyze
             trust_changes: Optional explicit history (uses tracked if None)
+            reference_time: Reference time for cutoff calculations (defaults to now).
+                           Useful for deterministic testing.
 
         Returns:
             TrustVelocityResult with velocity analysis
@@ -427,13 +430,16 @@ class TrustVelocityAnalyzer:
                 anomaly_score=0.0,
             )
 
+        # Use reference_time for deterministic testing, otherwise now
+        now = reference_time or datetime.now()
+
         # Calculate current velocity (last window_days)
-        cutoff = datetime.now() - timedelta(days=self.window_days)
+        cutoff = now - timedelta(days=self.window_days)
         recent_changes = [(ts, delta) for ts, delta in trust_changes if ts > cutoff]
 
         if recent_changes:
             total_change = sum(delta for _, delta in recent_changes)
-            days_span = max(1, (datetime.now() - min(ts for ts, _ in recent_changes)).days)
+            days_span = max(1, (now - min(ts for ts, _ in recent_changes)).days)
             current_velocity = total_change / days_span
         else:
             current_velocity = 0.0
@@ -484,11 +490,19 @@ class TrustVelocityAnalyzer:
 
         return list(daily.values())
 
-    def get_all_anomalies(self) -> list[TrustVelocityResult]:
-        """Get all nodes with anomalous trust velocity."""
+    def get_all_anomalies(
+        self,
+        reference_time: datetime | None = None,
+    ) -> list[TrustVelocityResult]:
+        """Get all nodes with anomalous trust velocity.
+
+        Args:
+            reference_time: Reference time for velocity calculations (defaults to now).
+                           Useful for deterministic testing.
+        """
         anomalies = []
         for node_id in self._trust_history:
-            result = self.analyze_velocity(node_id)
+            result = self.analyze_velocity(node_id, reference_time=reference_time)
             if result.is_anomalous:
                 anomalies.append(result)
         return anomalies

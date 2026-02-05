@@ -221,7 +221,6 @@ class TestRingDetector:
 class TestTrustVelocityAnalyzer:
     """Tests for TrustVelocityAnalyzer class."""
 
-    @pytest.mark.skip(reason="Flaky in CI - passes locally but timing-sensitive. See #228")
     def test_record_and_analyze_normal_velocity(self, node_ids):
         """Test normal trust velocity is not flagged."""
         analyzer = TrustVelocityAnalyzer()
@@ -235,7 +234,8 @@ class TestTrustVelocityAnalyzer:
                 now - timedelta(days=i),
             )
 
-        result = analyzer.analyze_velocity(node_ids["alice"])
+        # Use reference_time for deterministic calculation (fixes #228)
+        result = analyzer.analyze_velocity(node_ids["alice"], reference_time=now)
 
         assert not result.is_anomalous
         assert result.current_velocity <= MAX_NORMAL_VELOCITY
@@ -295,7 +295,6 @@ class TestTrustVelocityAnalyzer:
         # Current velocity should be based only on recent change
         assert result.current_velocity < 0.1
 
-    @pytest.mark.skip(reason="Flaky in CI - timing-sensitive velocity calculation. See #228")
     def test_get_all_anomalies(self, node_ids):
         """Test getting all anomalous nodes."""
         analyzer = TrustVelocityAnalyzer(max_normal_velocity=0.05)
@@ -317,7 +316,8 @@ class TestTrustVelocityAnalyzer:
                 now - timedelta(days=i),
             )
 
-        anomalies = analyzer.get_all_anomalies()
+        # Use reference_time for deterministic calculation (fixes #228)
+        anomalies = analyzer.get_all_anomalies(reference_time=now)
 
         # Only alice should be anomalous
         assert len(anomalies) == 1
