@@ -52,9 +52,9 @@ def assert_no_sensitive_info(response_body: dict | str, context: str = "") -> No
     body_lower = body_str.lower()
 
     for pattern in SENSITIVE_PATTERNS:
-        assert (
-            pattern.lower() not in body_lower
-        ), f"Sensitive pattern '{pattern}' found in error response{' (' + context + ')' if context else ''}: {body_str[:200]}"
+        assert pattern.lower() not in body_lower, (
+            f"Sensitive pattern '{pattern}' found in error response{' (' + context + ')' if context else ''}: {body_str[:200]}"
+        )
 
 
 # =============================================================================
