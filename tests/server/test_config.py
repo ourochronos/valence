@@ -8,6 +8,8 @@ from unittest.mock import patch
 
 import pytest
 
+from valence.server.config import get_package_version
+
 
 @pytest.fixture(autouse=True)
 def reset_settings():
@@ -30,7 +32,9 @@ class TestServerSettings:
         assert settings.host == "127.0.0.1"
         assert settings.port == 8420
         assert settings.server_name == "valence"
-        assert settings.server_version == "1.0.0"
+        # server_version now dynamically reads from package metadata
+        assert isinstance(settings.server_version, str)
+        assert len(settings.server_version) > 0
         assert settings.rate_limit_rpm == 60
         assert settings.oauth_enabled is True
         assert settings.oauth_username == "admin"
@@ -160,6 +164,35 @@ class TestServerSettings:
         assert settings.federation_sync_interval_seconds == 300
         assert settings.federation_max_hop_count == 3
         assert settings.federation_default_visibility == "private"
+
+
+class TestGetPackageVersion:
+    """Tests for get_package_version function."""
+
+    def test_returns_string(self):
+        """Test that get_package_version returns a string."""
+        version = get_package_version()
+        assert isinstance(version, str)
+        assert len(version) > 0
+
+    def test_returns_dev_version_when_not_installed(self):
+        """Test fallback when package is not installed."""
+        from importlib.metadata import PackageNotFoundError
+
+        with patch("valence.server.config.version") as mock_version:
+            mock_version.side_effect = PackageNotFoundError("valence")
+            # Need to re-import to pick up the mock
+            from valence.server import config
+            result = config.get_package_version()
+            assert result == "0.0.0-dev"
+
+    def test_returns_installed_version(self):
+        """Test returns actual version when package is installed."""
+        with patch("valence.server.config.version") as mock_version:
+            mock_version.return_value = "0.2.1"
+            from valence.server import config
+            result = config.get_package_version()
+            assert result == "0.2.1"
 
 
 class TestGetSettings:

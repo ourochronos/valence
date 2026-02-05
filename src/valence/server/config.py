@@ -3,11 +3,24 @@
 from __future__ import annotations
 
 import secrets
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def get_package_version() -> str:
+    """Get the package version from installed metadata.
+
+    Returns the version from pyproject.toml when installed,
+    or a dev fallback when running from source without install.
+    """
+    try:
+        return version("valence")
+    except PackageNotFoundError:
+        return "0.0.0-dev"
 
 
 class ServerSettings(BaseSettings):
@@ -95,7 +108,7 @@ class ServerSettings(BaseSettings):
 
     # Server name for MCP
     server_name: str = Field(default="valence", description="MCP server name")
-    server_version: str = Field(default="1.0.0", description="Server version")
+    server_version: str = Field(default_factory=get_package_version, description="Server version")
 
     # Production mode flag (explicit override)
     production: bool = Field(
