@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import math
+import threading
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -776,20 +777,31 @@ class CorroborationDetector:
 
 # Module-level singleton for convenience
 _default_detector: Optional[CorroborationDetector] = None
+_default_detector_lock = threading.Lock()
 
 
 def get_corroboration_detector() -> CorroborationDetector:
-    """Get or create the default corroboration detector."""
+    """Get or create the default corroboration detector.
+    
+    Thread-safe initialization using double-checked locking pattern.
+    """
     global _default_detector
     if _default_detector is None:
-        _default_detector = CorroborationDetector()
+        with _default_detector_lock:
+            # Double-check after acquiring lock
+            if _default_detector is None:
+                _default_detector = CorroborationDetector()
     return _default_detector
 
 
 def set_corroboration_detector(detector: Optional[CorroborationDetector]) -> None:
-    """Set the default corroboration detector."""
+    """Set the default corroboration detector.
+    
+    Thread-safe setter using lock.
+    """
     global _default_detector
-    _default_detector = detector
+    with _default_detector_lock:
+        _default_detector = detector
 
 
 def add_corroboration(

@@ -218,6 +218,77 @@ Detects:
 
 ---
 
+## Python API Tutorial
+
+Want to use Valence programmatically? Here's a quick overview. See `examples/` for complete, runnable tutorials.
+
+### Creating and Querying Beliefs
+
+```python
+from valence.substrate.tools import belief_create, belief_query
+
+# Create a belief with dimensional confidence
+result = belief_create(
+    content="Python is excellent for rapid prototyping.",
+    confidence={
+        "source_reliability": 0.9,
+        "method_quality": 0.85,
+        "internal_consistency": 0.95,
+        "temporal_freshness": 1.0,
+        "corroboration": 0.7,
+        "domain_applicability": 0.8,
+    },
+    domain_path=["tech", "programming", "python"],
+    source_type="observation",
+    entities=[
+        {"name": "Python", "type": "tool", "role": "subject"},
+    ],
+)
+belief_id = result["belief"]["id"]
+
+# Query beliefs
+results = belief_query(
+    query="Python programming",
+    domain_filter=["tech"],
+    limit=10,
+)
+for belief in results["beliefs"]:
+    print(f"[{belief['confidence']['overall']:.0%}] {belief['content']}")
+```
+
+### Trust and Federation
+
+```python
+from valence.federation import (
+    TrustSignal,
+    SIGNAL_WEIGHTS,
+    compute_transitive_trust,
+)
+
+# Trust is built through positive signals
+print(f"Belief corroborated: +{SIGNAL_WEIGHTS[TrustSignal.BELIEF_CORROBORATED]:.2f}")
+print(f"Valid challenge: +{SIGNAL_WEIGHTS[TrustSignal.CHALLENGE_VALID]:.2f}")
+print(f"Spam detected: {SIGNAL_WEIGHTS[TrustSignal.SPAM_DETECTED]:.2f}")
+
+# Transitive trust decays with each hop
+# Your trust in Bob = your_trust_in_alice * alice_trust_in_bob * decay_factor
+```
+
+### Running the Examples
+
+```bash
+# Hello Belief - create and query beliefs
+python examples/01_hello_belief.py
+
+# Trust Graph - understand trust mechanics
+python examples/02_trust_graph.py
+
+# Federation - connect to peers (no database required)
+python examples/03_federation.py
+```
+
+---
+
 ## Scripts
 
 ### Re-Embedding Script

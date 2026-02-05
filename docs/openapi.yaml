@@ -3,28 +3,28 @@ info:
   title: Valence API
   description: |
     The trust layer for AI agents. Valence provides infrastructure for how beliefs travel between minds.
-    
+
     ## Overview
-    
+
     Valence is a personal knowledge substrate that stores beliefs with confidence scores,
     tracks conversations, and enables federation between nodes.
-    
+
     ## Authentication
-    
+
     The API supports two authentication methods:
-    
+
     ### Bearer Token (Legacy)
     ```
     Authorization: Bearer <token>
     ```
-    
+
     ### OAuth 2.1 with PKCE
     1. Register client via `/api/v1/oauth/register`
     2. Start authorization flow at `/api/v1/oauth/authorize`
     3. Exchange code for token at `/api/v1/oauth/token`
-    
+
     ## Error Handling
-    
+
     All endpoints return errors in a consistent format:
     ```json
     {
@@ -32,9 +32,9 @@ info:
       "error_description": "Human-readable description"
     }
     ```
-    
+
     MCP endpoints use JSON-RPC 2.0 error codes.
-    
+
   version: 1.0.0
   contact:
     name: Valence
@@ -145,9 +145,9 @@ paths:
       description: |
         Main endpoint for Model Context Protocol (MCP) operations.
         Accepts JSON-RPC 2.0 requests for tool calls, resource reads, and prompts.
-        
+
         ## Supported Methods
-        
+
         - `initialize` - Initialize the MCP session
         - `initialized` - Acknowledge initialization
         - `ping` - Health check
@@ -157,7 +157,7 @@ paths:
         - `resources/read` - Read a resource
         - `prompts/list` - List available prompts
         - `prompts/get` - Get a prompt
-        
+
       operationId: mcpEndpoint
       security:
         - bearerAuth: []
@@ -787,6 +787,374 @@ paths:
               schema:
                 type: string
 
+  # Sharing Endpoints
+  /api/v1/share:
+    post:
+      tags:
+        - Sharing
+      summary: Share a belief
+      description: |
+        Share a belief with a specific recipient. Creates a share record
+        with optional policy settings for access control.
+      operationId: shareBelief
+      security:
+        - bearerAuth: []
+        - oauth2: [mcp:tools]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShareBeliefRequest'
+            example:
+              belief_id: "550e8400-e29b-41d4-a716-446655440000"
+              recipient_did: "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK"
+              policy:
+                level: direct
+                enforcement: cryptographic
+                recipients:
+                  - "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK"
+      responses:
+        '200':
+          description: Belief shared successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShareBeliefResponse'
+              example:
+                success: true
+                share_id: "123e4567-e89b-12d3-a456-426614174000"
+                consent_chain_id: "789e0123-e45b-67d8-a901-234567890abc"
+                encrypted_for: "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK"
+                created_at: "2025-02-03T12:00:00Z"
+        '400':
+          description: Invalid request (validation error)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Sharing service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/shares:
+    get:
+      tags:
+        - Sharing
+      summary: List shares
+      description: |
+        List shares with optional filters. Returns shares matching the
+        specified criteria.
+      operationId: listShares
+      security:
+        - bearerAuth: []
+        - oauth2: [mcp:tools]
+      parameters:
+        - name: sharer_did
+          in: query
+          schema:
+            type: string
+          description: Filter by sharer DID
+        - name: recipient_did
+          in: query
+          schema:
+            type: string
+          description: Filter by recipient DID
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+            minimum: 1
+            maximum: 1000
+          description: Maximum number of results
+        - name: revoked
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Include revoked shares
+      responses:
+        '200':
+          description: List of shares
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListSharesResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Sharing service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/shares/{id}:
+    get:
+      tags:
+        - Sharing
+      summary: Get share details
+      description: Returns detailed information about a specific share.
+      operationId: getShare
+      security:
+        - bearerAuth: []
+        - oauth2: [mcp:tools]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Share UUID
+      responses:
+        '200':
+          description: Share details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetShareResponse'
+        '404':
+          description: Share not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Sharing service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/shares/{id}/revoke:
+    post:
+      tags:
+        - Sharing
+      summary: Revoke a share
+      description: |
+        Revoke an existing share. Only the original sharer can revoke.
+        Creates a revocation record and notifies affected recipients.
+      operationId: revokeShare
+      security:
+        - bearerAuth: []
+        - oauth2: [mcp:tools]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Share UUID
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeShareRequest'
+            example:
+              reason: "Access no longer needed"
+      responses:
+        '200':
+          description: Share revoked successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokeShareResponse'
+              example:
+                success: true
+                share_id: "123e4567-e89b-12d3-a456-426614174000"
+                consent_chain_id: "789e0123-e45b-67d8-a901-234567890abc"
+                revoked_at: "2025-02-03T14:00:00Z"
+                affected_recipients:
+                  - "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK"
+        '400':
+          description: Invalid request or already revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Permission denied (not the original sharer)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Share not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Conflict (share already revoked)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Sharing service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # Notification Endpoints
+  /api/v1/notifications:
+    get:
+      tags:
+        - Notifications
+      summary: List pending notifications
+      description: |
+        Returns pending notifications for a specific recipient.
+        Notifications include share events, revocations, and other
+        system events.
+      operationId: listNotifications
+      security:
+        - bearerAuth: []
+        - oauth2: [mcp:tools]
+      parameters:
+        - name: recipient_did
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The DID of the recipient
+      responses:
+        '200':
+          description: List of pending notifications
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListNotificationsResponse'
+              example:
+                success: true
+                notifications:
+                  - id: "456e7890-e12b-34d5-a678-901234567890"
+                    recipient_did: "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK"
+                    notification_type: "share_received"
+                    payload:
+                      share_id: "123e4567-e89b-12d3-a456-426614174000"
+                      sharer_did: "did:key:z6MkiTBz1ymuepAQ4HEHYSF1H8quG5GLVVQR3djdX3mDooWp"
+                    created_at: "2025-02-03T12:00:00Z"
+                    acknowledged_at: null
+                count: 1
+        '400':
+          description: Missing recipient_did parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Sharing service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/notifications/{id}/acknowledge:
+    post:
+      tags:
+        - Notifications
+      summary: Acknowledge a notification
+      description: |
+        Mark a notification as acknowledged. The recipient_did in the
+        request body must match the notification's recipient.
+      operationId: acknowledgeNotification
+      security:
+        - bearerAuth: []
+        - oauth2: [mcp:tools]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Notification UUID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AcknowledgeNotificationRequest'
+            example:
+              recipient_did: "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK"
+      responses:
+        '200':
+          description: Notification acknowledged successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcknowledgeNotificationResponse'
+              example:
+                success: true
+                notification_id: "456e7890-e12b-34d5-a678-901234567890"
+                acknowledged: true
+        '400':
+          description: Invalid request (missing recipient_did)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Permission denied (not the notification recipient)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Notification not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Sharing service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1383,4 +1751,186 @@ components:
         items_deleted:
           type: object
         federation_propagated:
+          type: boolean
+
+    # Sharing Schemas
+    SharePolicy:
+      type: object
+      description: Policy settings for a share
+      properties:
+        level:
+          type: string
+          enum:
+            - direct
+            - transitive
+          description: Share level (direct = recipient only, transitive = can reshare)
+        enforcement:
+          type: string
+          enum:
+            - cryptographic
+            - policy
+          description: How the policy is enforced
+        recipients:
+          type: array
+          items:
+            type: string
+          description: List of allowed recipient DIDs
+
+    ShareBeliefRequest:
+      type: object
+      required:
+        - belief_id
+        - recipient_did
+      properties:
+        belief_id:
+          type: string
+          format: uuid
+          description: UUID of the belief to share
+        recipient_did:
+          type: string
+          description: DID of the recipient
+        policy:
+          $ref: '#/components/schemas/SharePolicy'
+
+    ShareBeliefResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        share_id:
+          type: string
+          format: uuid
+          description: UUID of the created share
+        consent_chain_id:
+          type: string
+          format: uuid
+          description: UUID of the consent chain
+        encrypted_for:
+          type: string
+          description: DID the share is encrypted for
+        created_at:
+          type: string
+          format: date-time
+
+    Share:
+      type: object
+      description: A share record
+      properties:
+        id:
+          type: string
+          format: uuid
+        consent_chain_id:
+          type: string
+          format: uuid
+        recipient_did:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        accessed_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    ListSharesResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        shares:
+          type: array
+          items:
+            $ref: '#/components/schemas/Share'
+        count:
+          type: integer
+
+    GetShareResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        share:
+          $ref: '#/components/schemas/Share'
+
+    RevokeShareRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          description: Optional reason for revocation
+
+    RevokeShareResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        share_id:
+          type: string
+          format: uuid
+        consent_chain_id:
+          type: string
+          format: uuid
+        revoked_at:
+          type: string
+          format: date-time
+        affected_recipients:
+          type: array
+          items:
+            type: string
+          description: List of DIDs affected by the revocation
+
+    # Notification Schemas
+    Notification:
+      type: object
+      description: A notification record
+      properties:
+        id:
+          type: string
+          format: uuid
+        recipient_did:
+          type: string
+        notification_type:
+          type: string
+          description: Type of notification (e.g., share_received, share_revoked)
+        payload:
+          type: object
+          description: Notification-specific payload data
+        created_at:
+          type: string
+          format: date-time
+        acknowledged_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    ListNotificationsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        notifications:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+        count:
+          type: integer
+
+    AcknowledgeNotificationRequest:
+      type: object
+      required:
+        - recipient_did
+      properties:
+        recipient_did:
+          type: string
+          description: DID of the notification recipient (for authorization)
+
+    AcknowledgeNotificationResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        notification_id:
+          type: string
+          format: uuid
+        acknowledged:
           type: boolean
