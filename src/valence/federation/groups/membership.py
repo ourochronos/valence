@@ -1,24 +1,13 @@
-"""MLS-style Group Encryption for Valence Federation.
+"""Group Membership Management for Valence Federation.
 
-Implements a simplified MLS (Messaging Layer Security) protocol for
-group key management in federated knowledge sharing.
-
-Key concepts:
-- KeyPackage: Pre-key bundle for adding members without online interaction
-- Welcome: Message allowing new members to join with group secrets
-- Epoch: Group state version, incremented on membership changes
-- Tree-based key derivation: Scalable group secret management
-
-Security properties:
-- Forward secrecy: Past messages protected when members leave
-- Post-compromise security: Group recovers from key compromise
-- Epoch isolation: Each epoch has independent encryption keys
+Handles group member management, state tracking, and membership operations
+including member addition, removal, and group state transitions.
 """
 
 from __future__ import annotations
 
 import base64
-import hashlib
+import hmac
 import json
 import os
 import secrets
@@ -29,80 +18,19 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import hashes, serialization
 
-
-# =============================================================================
-# CONSTANTS
-# =============================================================================
-
-# Protocol version
-MLS_PROTOCOL_VERSION = "1.0"
-DEFAULT_CIPHER_SUITE = "X25519-AES256GCM-SHA256"
-MAX_GROUP_SIZE = 1000
-EPOCH_SECRET_SIZE = 32
-ENCRYPTION_KEY_SIZE = 32
-
-# Key derivation contexts
-KDF_INFO_EPOCH_SECRET = b"valence-mls-epoch-secret"
-KDF_INFO_ENCRYPTION_KEY = b"valence-mls-encryption-key"
-KDF_INFO_WELCOME_KEY = b"valence-mls-welcome-key"
-KDF_INFO_MEMBER_SECRET = b"valence-mls-member-secret"
-
-# Key sizes
-AES_KEY_SIZE = 32  # 256 bits
-NONCE_SIZE = 12    # 96 bits for GCM
-
-
-# =============================================================================
-# EXCEPTIONS
-# =============================================================================
-
-
-class MLSError(Exception):
-    """Base exception for MLS-related errors."""
-    pass
-
-
-class GroupNotFoundError(MLSError):
-    """Group does not exist."""
-    pass
-
-
-class MemberExistsError(MLSError):
-    """Member is already in the group."""
-    pass
-
-
-class MemberNotFoundError(MLSError):
-    """Member is not in the group."""
-    pass
-
-
-class InvalidKeyPackageError(MLSError):
-    """KeyPackage is invalid or expired."""
-    pass
-
-
-class GroupFullError(MLSError):
-    """Group has reached maximum capacity."""
-    pass
-
-
-class PermissionDeniedError(MLSError):
-    """Member does not have required permission."""
-    pass
-
-
-class EpochMismatchError(MLSError):
-    """Epoch does not match expected value."""
-    pass
-
-# Epoch history limits
-MAX_EPOCH_HISTORY = 100  # Maximum number of epochs to retain for recovery
+from .mls import (
+    KeyPackage,
+    EpochSecrets,
+    WelcomeMessage,
+    CommitMessage,
+    AES_KEY_SIZE,
+    NONCE_SIZE,
+)
 
 
 # =============================================================================
@@ -142,157 +70,6 @@ class GroupStatus(str, Enum):
     ACTIVE = "active"
     ARCHIVED = "archived"
     DISSOLVED = "dissolved"
-
-
-# =============================================================================
-# KEY PACKAGE
-# =============================================================================
-
-
-@dataclass
-class KeyPackage:
-    """Pre-key bundle for adding a member to a group.
-    
-    Contains public keys needed to establish shared secrets with
-    the new member. Must be uploaded by the member beforehand.
-    
-    In MLS terms, this is a LeafNode with init keys.
-    """
-    
-    id: UUID
-    member_did: str
-    
-    # HPKE keys for encryption to this member
-    init_public_key: bytes      # X25519 public key for key exchange
-    
-    # Signing key for authenticating the member
-    signature_public_key: bytes  # Ed25519 public key
-    
-    # Credentials
-    credential_type: str = "basic"
-    
-    # Validity
-    created_at: datetime = field(default_factory=datetime.now)
-    expires_at: datetime | None = None
-    
-    # Signature over the package
-    signature: bytes = b""
-    
-    def is_valid(self) -> bool:
-        """Check if the KeyPackage is still valid."""
-        if self.expires_at and datetime.now() > self.expires_at:
-            return False
-        return True
-    
-    @classmethod
-    def generate(
-        cls,
-        member_did: str,
-        signing_private_key: bytes,
-        expires_in: timedelta | None = None,
-    ) -> tuple["KeyPackage", bytes]:
-        """Generate a new KeyPackage for a member.
-        
-        Args:
-            member_did: The member's DID
-            signing_private_key: Ed25519 private key for signing
-            expires_in: How long the package is valid
-            
-        Returns:
-            Tuple of (KeyPackage, init_private_key)
-        """
-        # Generate X25519 keypair for init key
-        init_private = X25519PrivateKey.generate()
-        init_public = init_private.public_key()
-        
-        init_private_bytes = init_private.private_bytes(
-            encoding=serialization.Encoding.Raw,
-            format=serialization.PrivateFormat.Raw,
-            encryption_algorithm=serialization.NoEncryption(),
-        )
-        init_public_bytes = init_public.public_bytes(
-            encoding=serialization.Encoding.Raw,
-            format=serialization.PublicFormat.Raw,
-        )
-        
-        # Get signing public key
-        signing_private = Ed25519PrivateKey.from_private_bytes(signing_private_key)
-        signature_public_bytes = signing_private.public_key().public_bytes(
-            encoding=serialization.Encoding.Raw,
-            format=serialization.PublicFormat.Raw,
-        )
-        
-        now = datetime.now()
-        expires_at = now + expires_in if expires_in else None
-        
-        package = cls(
-            id=uuid4(),
-            member_did=member_did,
-            init_public_key=init_public_bytes,
-            signature_public_key=signature_public_bytes,
-            created_at=now,
-            expires_at=expires_at,
-        )
-        
-        # Sign the package
-        package.signature = package._sign(signing_private_key)
-        
-        return package, init_private_bytes
-    
-    def _sign(self, private_key: bytes) -> bytes:
-        """Sign the KeyPackage content."""
-        content = self._signable_content()
-        signing_key = Ed25519PrivateKey.from_private_bytes(private_key)
-        return signing_key.sign(content)
-    
-    def verify_signature(self) -> bool:
-        """Verify the KeyPackage signature."""
-        try:
-            content = self._signable_content()
-            public_key = Ed25519PublicKey.from_public_bytes(self.signature_public_key)
-            public_key.verify(self.signature, content)
-            return True
-        except Exception:
-            return False
-    
-    def _signable_content(self) -> bytes:
-        """Get the content to be signed."""
-        return json.dumps({
-            "id": str(self.id),
-            "member_did": self.member_did,
-            "init_public_key": base64.b64encode(self.init_public_key).decode(),
-            "signature_public_key": base64.b64encode(self.signature_public_key).decode(),
-            "credential_type": self.credential_type,
-            "created_at": self.created_at.isoformat(),
-            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
-        }, sort_keys=True).encode()
-    
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary for serialization."""
-        return {
-            "id": str(self.id),
-            "member_did": self.member_did,
-            "init_public_key": base64.b64encode(self.init_public_key).decode(),
-            "signature_public_key": base64.b64encode(self.signature_public_key).decode(),
-            "credential_type": self.credential_type,
-            "created_at": self.created_at.isoformat(),
-            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
-            "signature": base64.b64encode(self.signature).decode(),
-        }
-    
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "KeyPackage":
-        """Create from dictionary."""
-        return cls(
-            id=UUID(data["id"]),
-            member_did=data["member_did"],
-            init_public_key=base64.b64decode(data["init_public_key"]),
-            signature_public_key=base64.b64decode(data["signature_public_key"]),
-            credential_type=data.get("credential_type", "basic"),
-            created_at=datetime.fromisoformat(data["created_at"]),
-            expires_at=datetime.fromisoformat(data["expires_at"]) if data.get("expires_at") else None,
-            signature=base64.b64decode(data["signature"]),
-        )
 
 
 # =============================================================================
@@ -350,361 +127,6 @@ class GroupMember:
             removed_at=datetime.fromisoformat(data["removed_at"]) if data.get("removed_at") else None,
             leaf_index=data.get("leaf_index", 0),
         )
-
-
-# =============================================================================
-# EPOCH SECRETS
-# =============================================================================
-
-
-@dataclass
-class EpochSecrets:
-    """Cryptographic secrets for a specific epoch.
-    
-    Each epoch has its own set of derived keys to provide
-    forward secrecy and post-compromise security.
-    """
-    
-    epoch: int
-    
-    # Core secret for this epoch
-    epoch_secret: bytes = b""
-    
-    # Derived keys
-    encryption_key: bytes = b""   # For encrypting group content
-    
-    # Tree secret for deriving member-specific secrets
-    tree_secret: bytes = b""
-    
-    # Confirmation key for verifying commits
-    confirmation_key: bytes = b""
-    
-    @classmethod
-    def derive(cls, epoch: int, init_secret: bytes, commit_secret: bytes | None = None) -> "EpochSecrets":
-        """Derive epoch secrets from init secret and optional commit secret.
-        
-        Args:
-            epoch: The epoch number
-            init_secret: Random secret (for first epoch) or previous epoch's tree secret
-            commit_secret: Fresh randomness from the commit (if any)
-        """
-        # Combine secrets if commit_secret provided
-        if commit_secret:
-            combined = init_secret + commit_secret
-        else:
-            combined = init_secret
-        
-        # Derive epoch secret
-        epoch_secret = HKDF(
-            algorithm=hashes.SHA256(),
-            length=32,
-            salt=epoch.to_bytes(8, 'big'),
-            info=KDF_INFO_EPOCH_SECRET,
-        ).derive(combined)
-        
-        # Derive encryption key
-        encryption_key = HKDF(
-            algorithm=hashes.SHA256(),
-            length=AES_KEY_SIZE,
-            salt=None,
-            info=KDF_INFO_ENCRYPTION_KEY,
-        ).derive(epoch_secret)
-        
-        # Derive tree secret (for member secrets and next epoch)
-        tree_secret = HKDF(
-            algorithm=hashes.SHA256(),
-            length=32,
-            salt=None,
-            info=b"valence-mls-tree-secret",
-        ).derive(epoch_secret)
-        
-        # Derive confirmation key
-        confirmation_key = HKDF(
-            algorithm=hashes.SHA256(),
-            length=32,
-            salt=None,
-            info=b"valence-mls-confirmation-key",
-        ).derive(epoch_secret)
-        
-        return cls(
-            epoch=epoch,
-            epoch_secret=epoch_secret,
-            encryption_key=encryption_key,
-            tree_secret=tree_secret,
-            confirmation_key=confirmation_key,
-        )
-    
-    def derive_member_secret(self, leaf_index: int) -> bytes:
-        """Derive a member-specific secret from the tree secret."""
-        return HKDF(
-            algorithm=hashes.SHA256(),
-            length=32,
-            salt=leaf_index.to_bytes(4, 'big'),
-            info=KDF_INFO_MEMBER_SECRET,
-        ).derive(self.tree_secret)
-
-
-# =============================================================================
-# WELCOME MESSAGE
-# =============================================================================
-
-
-@dataclass
-class WelcomeMessage:
-    """Welcome message for a new group member.
-    
-    Contains encrypted group secrets and state, allowing the
-    new member to decrypt group content from their join point.
-    """
-    
-    id: UUID
-    group_id: UUID
-    
-    # Who is being welcomed
-    new_member_did: str
-    
-    # Encrypted group secrets (encrypted to new member's init key)
-    encrypted_group_secrets: bytes = b""
-    encrypted_group_secrets_nonce: bytes = b""
-    
-    # Ephemeral public key used for encryption
-    ephemeral_public_key: bytes = b""
-    
-    # Current epoch info
-    epoch: int = 0
-    
-    # Group info (encrypted)
-    encrypted_group_info: bytes = b""
-    encrypted_group_info_nonce: bytes = b""
-    
-    # Member roster at join time (encrypted)
-    encrypted_roster: bytes = b""
-    encrypted_roster_nonce: bytes = b""
-    
-    # Signature from adder
-    adder_did: str = ""
-    signature: bytes = b""
-    
-    # Timestamps
-    created_at: datetime = field(default_factory=datetime.now)
-    expires_at: datetime | None = None
-    
-    def encrypt_secrets(
-        self,
-        group_secrets: bytes,
-        group_info: dict,
-        roster: list[dict],
-        recipient_init_key: bytes,
-    ) -> None:
-        """Encrypt group secrets for the new member.
-        
-        Uses X25519 key exchange + AES-GCM.
-        """
-        # Generate ephemeral keypair
-        ephemeral_private = X25519PrivateKey.generate()
-        ephemeral_public = ephemeral_private.public_key()
-        
-        self.ephemeral_public_key = ephemeral_public.public_bytes(
-            encoding=serialization.Encoding.Raw,
-            format=serialization.PublicFormat.Raw,
-        )
-        
-        # Derive shared secret
-        recipient_key = X25519PublicKey.from_public_bytes(recipient_init_key)
-        shared_secret = ephemeral_private.exchange(recipient_key)
-        
-        # Derive welcome key
-        welcome_key = HKDF(
-            algorithm=hashes.SHA256(),
-            length=AES_KEY_SIZE,
-            salt=None,
-            info=KDF_INFO_WELCOME_KEY,
-        ).derive(shared_secret)
-        
-        aesgcm = AESGCM(welcome_key)
-        
-        # Encrypt group secrets
-        nonce1 = os.urandom(NONCE_SIZE)
-        self.encrypted_group_secrets = aesgcm.encrypt(nonce1, group_secrets, None)
-        self.encrypted_group_secrets_nonce = nonce1
-        
-        # Encrypt group info
-        nonce2 = os.urandom(NONCE_SIZE)
-        group_info_bytes = json.dumps(group_info, sort_keys=True).encode()
-        self.encrypted_group_info = aesgcm.encrypt(nonce2, group_info_bytes, None)
-        self.encrypted_group_info_nonce = nonce2
-        
-        # Encrypt roster
-        nonce3 = os.urandom(NONCE_SIZE)
-        roster_bytes = json.dumps(roster, sort_keys=True).encode()
-        self.encrypted_roster = aesgcm.encrypt(nonce3, roster_bytes, None)
-        self.encrypted_roster_nonce = nonce3
-    
-    def decrypt_secrets(self, init_private_key: bytes) -> tuple[bytes, dict, list]:
-        """Decrypt the welcome message using the member's init private key.
-        
-        Returns:
-            Tuple of (group_secrets, group_info, roster)
-        """
-        # Load keys
-        private_key = X25519PrivateKey.from_private_bytes(init_private_key)
-        ephemeral_public = X25519PublicKey.from_public_bytes(self.ephemeral_public_key)
-        
-        # Derive shared secret
-        shared_secret = private_key.exchange(ephemeral_public)
-        
-        # Derive welcome key
-        welcome_key = HKDF(
-            algorithm=hashes.SHA256(),
-            length=AES_KEY_SIZE,
-            salt=None,
-            info=KDF_INFO_WELCOME_KEY,
-        ).derive(shared_secret)
-        
-        aesgcm = AESGCM(welcome_key)
-        
-        # Decrypt secrets
-        group_secrets = aesgcm.decrypt(
-            self.encrypted_group_secrets_nonce,
-            self.encrypted_group_secrets,
-            None,
-        )
-        
-        group_info_bytes = aesgcm.decrypt(
-            self.encrypted_group_info_nonce,
-            self.encrypted_group_info,
-            None,
-        )
-        group_info = json.loads(group_info_bytes.decode())
-        
-        roster_bytes = aesgcm.decrypt(
-            self.encrypted_roster_nonce,
-            self.encrypted_roster,
-            None,
-        )
-        roster = json.loads(roster_bytes.decode())
-        
-        return group_secrets, group_info, roster
-    
-    def sign(self, adder_private_key: bytes) -> None:
-        """Sign the welcome message."""
-        content = self._signable_content()
-        signing_key = Ed25519PrivateKey.from_private_bytes(adder_private_key)
-        self.signature = signing_key.sign(content)
-    
-    def verify_signature(self, adder_public_key: bytes) -> bool:
-        """Verify the adder's signature."""
-        try:
-            content = self._signable_content()
-            public_key = Ed25519PublicKey.from_public_bytes(adder_public_key)
-            public_key.verify(self.signature, content)
-            return True
-        except Exception:
-            return False
-    
-    def _signable_content(self) -> bytes:
-        """Get content to sign."""
-        return json.dumps({
-            "id": str(self.id),
-            "group_id": str(self.group_id),
-            "new_member_did": self.new_member_did,
-            "epoch": self.epoch,
-            "adder_did": self.adder_did,
-            "created_at": self.created_at.isoformat(),
-        }, sort_keys=True).encode()
-    
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary for serialization."""
-        return {
-            "id": str(self.id),
-            "group_id": str(self.group_id),
-            "new_member_did": self.new_member_did,
-            "encrypted_group_secrets": base64.b64encode(self.encrypted_group_secrets).decode(),
-            "encrypted_group_secrets_nonce": base64.b64encode(self.encrypted_group_secrets_nonce).decode(),
-            "ephemeral_public_key": base64.b64encode(self.ephemeral_public_key).decode(),
-            "epoch": self.epoch,
-            "encrypted_group_info": base64.b64encode(self.encrypted_group_info).decode(),
-            "encrypted_group_info_nonce": base64.b64encode(self.encrypted_group_info_nonce).decode(),
-            "encrypted_roster": base64.b64encode(self.encrypted_roster).decode(),
-            "encrypted_roster_nonce": base64.b64encode(self.encrypted_roster_nonce).decode(),
-            "adder_did": self.adder_did,
-            "signature": base64.b64encode(self.signature).decode(),
-            "created_at": self.created_at.isoformat(),
-            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
-        }
-    
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "WelcomeMessage":
-        """Create from dictionary."""
-        return cls(
-            id=UUID(data["id"]),
-            group_id=UUID(data["group_id"]),
-            new_member_did=data["new_member_did"],
-            encrypted_group_secrets=base64.b64decode(data["encrypted_group_secrets"]),
-            encrypted_group_secrets_nonce=base64.b64decode(data["encrypted_group_secrets_nonce"]),
-            ephemeral_public_key=base64.b64decode(data["ephemeral_public_key"]),
-            epoch=data["epoch"],
-            encrypted_group_info=base64.b64decode(data["encrypted_group_info"]),
-            encrypted_group_info_nonce=base64.b64decode(data["encrypted_group_info_nonce"]),
-            encrypted_roster=base64.b64decode(data["encrypted_roster"]),
-            encrypted_roster_nonce=base64.b64decode(data["encrypted_roster_nonce"]),
-            adder_did=data["adder_did"],
-            signature=base64.b64decode(data["signature"]),
-            created_at=datetime.fromisoformat(data["created_at"]),
-            expires_at=datetime.fromisoformat(data["expires_at"]) if data.get("expires_at") else None,
-        )
-
-
-# =============================================================================
-# COMMIT MESSAGE
-# =============================================================================
-
-
-@dataclass
-class CommitMessage:
-    """A commit that changes group state (epoch transition).
-    
-    Commits are sent to existing members to notify them of
-    membership changes and provide new epoch secrets.
-    """
-    
-    id: UUID
-    group_id: UUID
-    
-    # Epoch transition
-    from_epoch: int
-    to_epoch: int
-    
-    # What changed
-    proposals: list[dict] = field(default_factory=list)
-    
-    # Commit secret (encrypted per member)
-    # Maps member DID -> encrypted commit secret
-    encrypted_commit_secrets: dict[str, dict] = field(default_factory=dict)
-    
-    # Committer info
-    committer_did: str = ""
-    signature: bytes = b""
-    
-    # Confirmation MAC
-    confirmation_tag: bytes = b""
-    
-    created_at: datetime = field(default_factory=datetime.now)
-    
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            "id": str(self.id),
-            "group_id": str(self.group_id),
-            "from_epoch": self.from_epoch,
-            "to_epoch": self.to_epoch,
-            "proposals": self.proposals,
-            "encrypted_commit_secrets": self.encrypted_commit_secrets,
-            "committer_did": self.committer_did,
-            "signature": base64.b64encode(self.signature).decode(),
-            "confirmation_tag": base64.b64encode(self.confirmation_tag).decode(),
-            "created_at": self.created_at.isoformat(),
-        }
 
 
 # =============================================================================
@@ -781,7 +203,6 @@ class GroupState:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "GroupState":
         """Restore from dictionary."""
-        from datetime import datetime
         return cls(
             id=UUID(data["id"]),
             name=data["name"],
@@ -807,6 +228,57 @@ class GroupState:
     def get_roster(self) -> list[dict]:
         """Get current roster for welcome messages."""
         return [m.to_dict() for m in self.get_active_members()]
+
+
+# =============================================================================
+# REMOVAL AUDIT ENTRY
+# =============================================================================
+
+
+@dataclass
+class RemovalAuditEntry:
+    """Audit log entry for member removal.
+    
+    Provides accountability for offboarding decisions.
+    """
+    id: UUID
+    group_id: UUID
+    removed_did: str
+    remover_did: str
+    reason: str | None
+    epoch_before: int
+    epoch_after: int
+    timestamp: datetime = field(default_factory=datetime.now)
+    signature: bytes = b""
+    
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "id": str(self.id),
+            "group_id": str(self.group_id),
+            "removed_did": self.removed_did,
+            "remover_did": self.remover_did,
+            "reason": self.reason,
+            "epoch_before": self.epoch_before,
+            "epoch_after": self.epoch_after,
+            "timestamp": self.timestamp.isoformat(),
+            "signature": base64.b64encode(self.signature).decode() if self.signature else "",
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "RemovalAuditEntry":
+        """Create from dictionary."""
+        return cls(
+            id=UUID(data["id"]),
+            group_id=UUID(data["group_id"]),
+            removed_did=data["removed_did"],
+            remover_did=data["remover_did"],
+            reason=data.get("reason"),
+            epoch_before=data["epoch_before"],
+            epoch_after=data["epoch_after"],
+            timestamp=datetime.fromisoformat(data["timestamp"]) if data.get("timestamp") else datetime.now(),
+            signature=base64.b64decode(data["signature"]) if data.get("signature") else b"",
+        )
 
 
 # =============================================================================
@@ -1034,7 +506,6 @@ def add_member(
             }
     
     # Compute confirmation tag
-    import hmac
     confirmation_content = json.dumps({
         "from_epoch": commit.from_epoch,
         "to_epoch": commit.to_epoch,
@@ -1163,7 +634,6 @@ def process_commit(
     )
     
     # Verify confirmation tag
-    import hmac
     confirmation_content = json.dumps({
         "from_epoch": commit.from_epoch,
         "to_epoch": commit.to_epoch,
@@ -1180,104 +650,6 @@ def process_commit(
         raise ValueError("Commit confirmation tag verification failed")
     
     return new_secrets
-
-
-# =============================================================================
-# GROUP ENCRYPTION
-# =============================================================================
-
-
-def encrypt_group_content(
-    content: bytes,
-    epoch_secrets: EpochSecrets,
-    associated_data: bytes | None = None,
-) -> tuple[bytes, bytes]:
-    """Encrypt content for the group using current epoch key.
-    
-    Args:
-        content: Plaintext to encrypt
-        epoch_secrets: Current epoch's secrets
-        associated_data: Optional AAD for authentication
-        
-    Returns:
-        Tuple of (ciphertext, nonce)
-    """
-    nonce = os.urandom(NONCE_SIZE)
-    aesgcm = AESGCM(epoch_secrets.encryption_key)
-    ciphertext = aesgcm.encrypt(nonce, content, associated_data)
-    return ciphertext, nonce
-
-
-def decrypt_group_content(
-    ciphertext: bytes,
-    nonce: bytes,
-    epoch_secrets: EpochSecrets,
-    associated_data: bytes | None = None,
-) -> bytes:
-    """Decrypt group content using epoch key.
-    
-    Args:
-        ciphertext: Encrypted content
-        nonce: Nonce used for encryption
-        epoch_secrets: Epoch secrets (must match encryption epoch)
-        associated_data: Optional AAD for authentication
-        
-    Returns:
-        Decrypted plaintext
-    """
-    aesgcm = AESGCM(epoch_secrets.encryption_key)
-    return aesgcm.decrypt(nonce, ciphertext, associated_data)
-
-
-# =============================================================================
-# MEMBER REMOVAL (OFFBOARDING) - Issue #75
-# =============================================================================
-
-
-@dataclass
-class RemovalAuditEntry:
-    """Audit log entry for member removal.
-    
-    Provides accountability for offboarding decisions.
-    """
-    id: UUID
-    group_id: UUID
-    removed_did: str
-    remover_did: str
-    reason: str | None
-    epoch_before: int
-    epoch_after: int
-    timestamp: datetime = field(default_factory=datetime.now)
-    signature: bytes = b""
-    
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            "id": str(self.id),
-            "group_id": str(self.group_id),
-            "removed_did": self.removed_did,
-            "remover_did": self.remover_did,
-            "reason": self.reason,
-            "epoch_before": self.epoch_before,
-            "epoch_after": self.epoch_after,
-            "timestamp": self.timestamp.isoformat(),
-            "signature": base64.b64encode(self.signature).decode() if self.signature else "",
-        }
-    
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "RemovalAuditEntry":
-        """Create from dictionary."""
-        return cls(
-            id=UUID(data["id"]),
-            group_id=UUID(data["group_id"]),
-            removed_did=data["removed_did"],
-            remover_did=data["remover_did"],
-            reason=data.get("reason"),
-            epoch_before=data["epoch_before"],
-            epoch_after=data["epoch_after"],
-            timestamp=datetime.fromisoformat(data["timestamp"]) if data.get("timestamp") else datetime.now(),
-            signature=base64.b64decode(data["signature"]) if data.get("signature") else b"",
-        )
 
 
 def remove_member(
@@ -1316,8 +688,6 @@ def remove_member(
         PermissionError: If remover cannot remove members
         ValueError: If member not found or is last admin
     """
-    import hmac
-    
     # Validate remover has permission
     remover = group.get_member(remover_did)
     if remover is None:
@@ -1607,8 +977,6 @@ def rotate_keys(
     Raises:
         PermissionError: If rotator is not an admin
     """
-    import hmac
-    
     # Validate rotator has permission
     rotator = group.get_member(rotator_did)
     if rotator is None:
@@ -1727,292 +1095,3 @@ def rotate_keys(
     )
     
     return updated_group, commit
-
-
-# =============================================================================
-# FEDERATION GROUP (Issue #73)
-# =============================================================================
-
-
-@dataclass
-class FederationGroup:
-    """Links a federation to its MLS group for end-to-end encryption.
-    
-    This is the main entry point for Issue #73, connecting the MLS group
-    primitives (Issue #72) to federation-level concepts.
-    
-    Attributes:
-        id: Unique identifier for this federation group
-        federation_id: ID of the federation this group belongs to
-        group_state: The underlying MLS GroupState
-        allowed_domains: Optional list of belief domains permitted in this group
-        metadata: Additional configuration and metadata
-    """
-    
-    id: UUID
-    federation_id: UUID
-    group_state: GroupState
-    
-    # Optional domain restrictions
-    allowed_domains: list[str] = field(default_factory=list)
-    
-    # Metadata
-    metadata: dict[str, Any] = field(default_factory=dict)
-    
-    # Timestamps
-    created_at: datetime = field(default_factory=datetime.now)
-    modified_at: datetime = field(default_factory=datetime.now)
-    
-    @property
-    def epoch(self) -> int:
-        """Get current epoch from underlying group state."""
-        return self.group_state.epoch
-    
-    @property
-    def name(self) -> str:
-        """Get group name."""
-        return self.group_state.name
-    
-    @property
-    def creator_did(self) -> str:
-        """Get creator DID."""
-        return self.group_state.created_by
-    
-    @property
-    def status(self) -> GroupStatus:
-        """Get group status."""
-        return self.group_state.status
-    
-    @property
-    def member_count(self) -> int:
-        """Get count of active members."""
-        return len(self.group_state.get_active_members())
-    
-    @property
-    def members(self) -> list[GroupMember]:
-        """Get active members."""
-        return self.group_state.get_active_members()
-    
-    def get_member(self, member_did: str) -> GroupMember | None:
-        """Get member by DID."""
-        return self.group_state.get_member(member_did)
-    
-    def has_member(self, member_did: str) -> bool:
-        """Check if DID is an active member."""
-        member = self.get_member(member_did)
-        return member is not None and member.status == MemberStatus.ACTIVE
-    
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary for storage/serialization."""
-        return {
-            "id": str(self.id),
-            "federation_id": str(self.federation_id),
-            "group_state": self.group_state.to_dict(),
-            "allowed_domains": self.allowed_domains,
-            "metadata": self.metadata,
-            "created_at": self.created_at.isoformat(),
-            "modified_at": self.modified_at.isoformat(),
-        }
-    
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> FederationGroup:
-        """Create from dictionary."""
-        return cls(
-            id=UUID(data["id"]) if isinstance(data["id"], str) else data["id"],
-            federation_id=UUID(data["federation_id"]) if isinstance(data["federation_id"], str) else data["federation_id"],
-            group_state=GroupState.from_dict(data["group_state"]),
-            allowed_domains=data.get("allowed_domains", []),
-            metadata=data.get("metadata", {}),
-            created_at=datetime.fromisoformat(data["created_at"]) if isinstance(data.get("created_at"), str) else data.get("created_at", datetime.now()),
-            modified_at=datetime.fromisoformat(data["modified_at"]) if isinstance(data.get("modified_at"), str) else data.get("modified_at", datetime.now()),
-        )
-
-
-def create_federation_group(
-    federation_id: UUID,
-    creator_did: str,
-    creator_signing_key: bytes | None = None,
-    name: str = "",
-    description: str = "",
-    allowed_domains: list[str] | None = None,
-    metadata: dict[str, Any] | None = None,
-) -> tuple[FederationGroup, KeyPackage]:
-    """Create a new MLS group for a federation.
-    
-    This is the main function for Issue #73, linking federation_id to an MLS group.
-    The creator becomes the first member with admin role.
-    
-    Args:
-        federation_id: ID of the federation this group belongs to
-        creator_did: DID of the group creator (becomes admin)
-        creator_signing_key: Optional Ed25519 signing key (generated if not provided)
-        name: Optional human-readable name for the group
-        description: Optional description
-        allowed_domains: Optional list of allowed belief domains
-        metadata: Optional additional metadata
-    
-    Returns:
-        Tuple of (FederationGroup, creator's KeyPackage)
-    
-    Example:
-        >>> from uuid import uuid4
-        >>> fed_group, creator_kp = create_federation_group(
-        ...     federation_id=uuid4(),
-        ...     creator_did="did:vkb:web:example.com",
-        ...     name="Example Federation Group",
-        ... )
-        >>> fed_group.member_count
-        1
-        >>> fed_group.members[0].role
-        <GroupRole.ADMIN: 'admin'>
-    """
-    # Generate signing key if not provided
-    if creator_signing_key is None:
-        signing_key = Ed25519PrivateKey.generate()
-        creator_signing_key = signing_key.private_bytes(
-            encoding=serialization.Encoding.Raw,
-            format=serialization.PrivateFormat.Raw,
-            encryption_algorithm=serialization.NoEncryption(),
-        )
-    
-    # Generate KeyPackage for creator from signing key
-    creator_key_package, _ = KeyPackage.generate(
-        member_did=creator_did,
-        signing_private_key=creator_signing_key,
-    )
-    
-    # Use existing create_group from #72
-    group_name = name or f"Federation {federation_id} Group"
-    group_state = create_group(
-        name=group_name,
-        creator_did=creator_did,
-        creator_key_package=creator_key_package,
-        config=metadata,
-    )
-    
-    # Wrap in FederationGroup
-    federation_group = FederationGroup(
-        id=uuid4(),
-        federation_id=federation_id,
-        group_state=group_state,
-        allowed_domains=allowed_domains or [],
-        metadata={
-            "description": description,
-            **(metadata or {}),
-        },
-        created_at=datetime.now(),
-        modified_at=datetime.now(),
-    )
-    
-    return federation_group, creator_key_package
-
-
-def get_federation_group_info(group: FederationGroup) -> dict[str, Any]:
-    """Get summary information about a federation group.
-    
-    Returns a dictionary with:
-    - Basic group info (id, federation_id, name, status)
-    - Current epoch
-    - Member count
-    - Admin list
-    """
-    admins = [
-        m.did for m in group.members 
-        if m.role == GroupRole.ADMIN and m.status == MemberStatus.ACTIVE
-    ]
-    
-    return {
-        "id": str(group.id),
-        "federation_id": str(group.federation_id),
-        "name": group.name,
-        "description": group.metadata.get("description", ""),
-        "creator_did": group.creator_did,
-        "status": group.status.value,
-        "epoch": group.epoch,
-        "member_count": group.member_count,
-        "admins": admins,
-        "allowed_domains": group.allowed_domains,
-        "created_at": group.created_at.isoformat(),
-        "modified_at": group.modified_at.isoformat(),
-    }
-
-
-def list_federation_group_members(group: FederationGroup) -> list[dict[str, Any]]:
-    """List all active members with their roles.
-    
-    Returns list of member info dicts (excludes sensitive key material).
-    """
-    return [
-        {
-            "member_did": m.did,
-            "role": m.role.value,
-            "status": m.status.value,
-            "joined_at": m.joined_at.isoformat(),
-            "joined_at_epoch": m.joined_at_epoch,
-        }
-        for m in group.members
-        if m.status == MemberStatus.ACTIVE
-    ]
-
-
-def verify_federation_membership(group: FederationGroup, member_did: str) -> bool:
-    """Verify if a DID is an active member of the federation group."""
-    return group.has_member(member_did)
-
-
-def get_federation_member_role(group: FederationGroup, member_did: str) -> GroupRole | None:
-    """Get a member's role, or None if not an active member."""
-    member = group.get_member(member_did)
-    if member and member.status == MemberStatus.ACTIVE:
-        return member.role
-    return None
-
-
-# =============================================================================
-# IN-MEMORY STORAGE FOR FEDERATION GROUPS (MVP)
-# =============================================================================
-
-# Simple in-memory storage for federation groups
-_federation_group_store: dict[UUID, FederationGroup] = {}
-_federation_to_group: dict[UUID, UUID] = {}  # federation_id -> group_id
-
-
-def store_federation_group(group: FederationGroup) -> None:
-    """Store a federation group in the in-memory store."""
-    _federation_group_store[group.id] = group
-    _federation_to_group[group.federation_id] = group.id
-
-
-def get_federation_group(group_id: UUID) -> FederationGroup | None:
-    """Get a federation group by ID."""
-    return _federation_group_store.get(group_id)
-
-
-def get_group_by_federation_id(federation_id: UUID) -> FederationGroup | None:
-    """Get the group for a federation."""
-    group_id = _federation_to_group.get(federation_id)
-    if group_id:
-        return _federation_group_store.get(group_id)
-    return None
-
-
-def delete_federation_group(group_id: UUID) -> bool:
-    """Delete a federation group."""
-    group = _federation_group_store.get(group_id)
-    if group:
-        del _federation_group_store[group_id]
-        if group.federation_id in _federation_to_group:
-            del _federation_to_group[group.federation_id]
-        return True
-    return False
-
-
-def list_federation_groups() -> list[FederationGroup]:
-    """List all federation groups."""
-    return list(_federation_group_store.values())
-
-
-def clear_federation_store() -> None:
-    """Clear the in-memory store (for testing)."""
-    _federation_group_store.clear()
-    _federation_to_group.clear()
