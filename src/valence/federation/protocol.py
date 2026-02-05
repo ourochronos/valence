@@ -584,7 +584,7 @@ def _process_incoming_belief(
         return "Belief visibility is private"
 
     # Validate federation embedding if provided
-    from ..embeddings.federation import validate_incoming_belief_embedding
+    from ..core.federation_embedding import validate_incoming_belief_embedding
     is_valid, embed_error = validate_incoming_belief_embedding(belief_data)
     if not is_valid:
         return f"Invalid federation embedding: {embed_error}"
@@ -787,8 +787,8 @@ def _belief_row_to_federated(
     Returns:
         Federated belief dict, or None if not shareable
     """
-    from ..server.config import get_settings
-    settings = get_settings()
+    from ..core.config import get_federation_config
+    settings = get_federation_config()
 
     share_level = row.get("share_level", "belief_only")
 

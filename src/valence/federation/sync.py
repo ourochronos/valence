@@ -20,7 +20,7 @@ from uuid import UUID, uuid4
 import aiohttp
 
 from ..core.db import get_cursor
-from ..server.config import get_settings
+from ..core.config import get_federation_config
 from .discovery import get_node_by_id, get_node_trust, mark_node_active, mark_node_unreachable
 from .models import (
     FederationNode,
@@ -274,7 +274,7 @@ class SyncManager:
     """Manages synchronization with federation peers."""
 
     def __init__(self):
-        self.settings = get_settings()
+        self.settings = get_federation_config()
         self._running = False
         self._sync_task: asyncio.Task | None = None
 
@@ -441,7 +441,7 @@ class SyncManager:
     def _belief_to_federated(self, row: dict[str, Any]) -> dict[str, Any] | None:
         """Convert a belief row to federated format with federation-standard embedding."""
         from .identity import sign_belief_content
-        from ..embeddings.federation import (
+        from ..core.federation_embedding import (
             FEDERATION_EMBEDDING_MODEL,
             FEDERATION_EMBEDDING_DIMS,
             FEDERATION_EMBEDDING_TYPE,
