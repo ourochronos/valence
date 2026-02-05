@@ -411,6 +411,61 @@ class TestAuthorization:
         assert response.status_code == 200
         assert "Invalid" in response.text or "error" in response.text.lower()
 
+    def test_authorize_uses_timing_safe_comparison(self, client):
+        """Test that credential validation uses constant-time comparison.
+        
+        This prevents timing attacks where an attacker could determine valid
+        credentials by measuring response times. See GitHub issue #169.
+        """
+        import secrets
+        
+        reg_response = client.post(
+            f"{API_V1}/oauth/register",
+            json={"redirect_uris": ["http://localhost/callback"]},
+        )
+        client_id = reg_response.json()["client_id"]
+        
+        _, challenge = generate_pkce_pair()
+        
+        # Track calls to secrets.compare_digest
+        original_compare_digest = secrets.compare_digest
+        compare_digest_calls = []
+        
+        def tracking_compare_digest(a, b):
+            compare_digest_calls.append((a, b))
+            return original_compare_digest(a, b)
+        
+        with patch("valence.server.oauth.secrets.compare_digest", side_effect=tracking_compare_digest):
+            response = client.post(
+                f"{API_V1}/oauth/authorize",
+                params={
+                    "response_type": "code",
+                    "client_id": client_id,
+                    "redirect_uri": "http://localhost/callback",
+                    "code_challenge": challenge,
+                    "code_challenge_method": "S256",
+                },
+                data={
+                    "username": "admin",
+                    "password": "testpass",
+                },
+                follow_redirects=False,
+            )
+        
+        # Should have called compare_digest for both username and password
+        assert len(compare_digest_calls) >= 2, (
+            f"Expected at least 2 calls to secrets.compare_digest for timing-safe "
+            f"credential comparison, but got {len(compare_digest_calls)} calls"
+        )
+        
+        # Verify the comparison included the credentials
+        compared_values = [call[0] for call in compare_digest_calls]
+        assert "admin" in compared_values, "Username should be compared with compare_digest"
+        assert "testpass" in compared_values, "Password should be compared with compare_digest"
+        
+        # Should still succeed with valid credentials
+        assert response.status_code == 302
+
 
 # ============================================================================
 # Token Endpoint Tests

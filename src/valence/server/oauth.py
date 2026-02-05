@@ -235,8 +235,9 @@ async def _handle_authorize_post(
     username = form.get("username", "")
     password = form.get("password", "")
 
-    # Validate credentials
-    if username != settings.oauth_username or password != settings.oauth_password:
+    # Validate credentials using constant-time comparison to prevent timing attacks
+    if not (secrets.compare_digest(username, settings.oauth_username or "") and
+            secrets.compare_digest(password, settings.oauth_password or "")):
         # Re-show login with error
         params = dict(request.query_params)
         return HTMLResponse(_login_page(params, "Valence", error="Invalid username or password"))
