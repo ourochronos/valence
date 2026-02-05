@@ -24,12 +24,18 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import Any, Optional
 from uuid import UUID
 
 logger = logging.getLogger(__name__)
+
+# Clock skew tolerance for temporal comparisons across federation nodes.
+# This accounts for clock drift between nodes that may cause false expiration
+# or premature rejection of otherwise valid trust edges.
+# Default: 5 minutes (300 seconds). Configurable via environment or settings.
+CLOCK_SKEW_TOLERANCE = timedelta(minutes=5)
 
 
 class DecayModel(str, Enum):
@@ -160,7 +166,12 @@ class TrustEdge:
         return product ** (1.0 / len(values))
 
     def is_expired(self) -> bool:
-        """Check if this trust edge has expired."""
+        """Check if this trust edge has expired.
+
+        Includes clock skew tolerance to handle clock drift between federation nodes.
+        A trust edge is only considered expired if the current time exceeds
+        expires_at + CLOCK_SKEW_TOLERANCE.
+        """
         if self.expires_at is None:
             return False
         now = datetime.now(UTC)
@@ -168,7 +179,8 @@ class TrustEdge:
         expires = self.expires_at
         if expires.tzinfo is None:
             expires = expires.replace(tzinfo=UTC)
-        return now > expires
+        # Add clock skew tolerance to handle drift between federation nodes
+        return now > expires + CLOCK_SKEW_TOLERANCE
 
     @property
     def days_since_refresh(self) -> float:
@@ -1917,14 +1929,20 @@ class FederationTrustEdge:
         return f"{FEDERATION_PREFIX}{self.target_federation}"
 
     def is_expired(self) -> bool:
-        """Check if this trust edge has expired."""
+        """Check if this trust edge has expired.
+
+        Includes clock skew tolerance to handle clock drift between federation nodes.
+        A trust edge is only considered expired if the current time exceeds
+        expires_at + CLOCK_SKEW_TOLERANCE.
+        """
         if self.expires_at is None:
             return False
         now = datetime.now(UTC)
         expires = self.expires_at
         if expires.tzinfo is None:
             expires = expires.replace(tzinfo=UTC)
-        return now > expires
+        # Add clock skew tolerance to handle drift between federation nodes
+        return now > expires + CLOCK_SKEW_TOLERANCE
 
     def to_trust_edge(self) -> TrustEdge:
         """Convert to a TrustEdge for storage.
