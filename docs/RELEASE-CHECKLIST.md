@@ -83,23 +83,31 @@ Required test categories:
    - All issues/PRs to be included
    - Audit checklist status
    - Blockers (MEDIUM+ issues)
-2. **Resolve MEDIUM+ issues**: All must be closed before proceeding
-3. **Run all audits**: Document findings in `docs/audits/`
+2. **Resolve existing MEDIUM+ issues**: All must be closed before audits
 
-### Phase 2: Release PR
-4. **Create release branch**: `git checkout -b release/vX.Y.Z`
-5. **Update CHANGELOG.md**: Document all changes for this version
-6. **Update version**: In `pyproject.toml` and `src/valence/__init__.py`
-7. **Create release PR**: Reference the release issue
-   - Title: `Release vX.Y.Z`
-   - Body: Changelog excerpt, link to release issue
-8. **Review and merge**: Squash merge to main
+### Phase 2: Audits (Gate)
+3. **Run all 4 audits**: Security, Privacy, Federation, Code Quality
+4. **For each MEDIUM+ finding**:
+   - Create a new issue with severity label
+   - Link issue as blocker on the release issue
+   - Document in `docs/audits/CATEGORY-AUDIT-YYYY-MM-DD.md`
+5. **If any MEDIUM+ findings**: Return to Phase 1, fix issues, re-audit
+6. **All audits pass with no MEDIUM+ findings**: Proceed to Phase 3
 
-### Phase 3: Tag and Deploy
-9. **Tag release**: `git tag vX.Y.Z && git push --tags`
-10. **Deploy to nodes**: Follow deployment runbook
-11. **Run deployment validation**: All checks must pass
-12. **Create GitHub release**: With changelog notes, close release issue
+### Phase 3: Release PR
+7. **Create release branch**: `git checkout -b release/vX.Y.Z`
+8. **Update CHANGELOG.md**: Document all changes for this version
+9. **Update version**: In `pyproject.toml` and `src/valence/__init__.py`
+10. **Create release PR**: Reference the release issue
+    - Title: `Release vX.Y.Z`
+    - Body: Changelog excerpt, link to release issue
+11. **Review and merge**: Squash merge to main
+
+### Phase 4: Tag and Deploy
+12. **Tag release**: `git tag vX.Y.Z && git push --tags`
+13. **Deploy to nodes**: Follow deployment runbook
+14. **Run deployment validation**: All checks must pass
+15. **Create GitHub release**: With changelog notes, close release issue
 
 ## Audit Report Template
 
