@@ -17,7 +17,6 @@ from uuid import uuid4
 
 import numpy as np
 import pytest
-
 from valence.federation.privacy import (
     DEFAULT_DELTA,
     DEFAULT_EPSILON,
@@ -761,13 +760,17 @@ class TestPrivacyIntegration:
         """Test membership changes don't immediately affect aggregates."""
         smoother = TemporalSmoother(smoothing_hours=24)
 
+        # Use fixed reference time for deterministic test
+        now = datetime.now(UTC)
+
         # Member just departed
-        just_departed = datetime.now(UTC) - timedelta(minutes=5)
+        just_departed = now - timedelta(minutes=5)
 
         weight = smoother.get_contribution_weight(
             member_id="recent_departure",
-            joined_at=datetime.now(UTC) - timedelta(days=30),
+            joined_at=now - timedelta(days=30),
             departed_at=just_departed,
+            query_time=now,  # Use same reference time
         )
 
         # Should still have significant weight
