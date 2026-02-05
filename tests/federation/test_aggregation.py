@@ -11,7 +11,7 @@ Tests cover:
 from __future__ import annotations
 
 import math
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -75,7 +75,7 @@ def sample_belief(sample_confidence: DimensionalConfidence) -> FederatedBelief:
         domain_path=["science", "physics"],
         visibility=Visibility.FEDERATED,
         share_level=ShareLevel.BELIEF_ONLY,
-        signed_at=datetime.utcnow(),
+        signed_at=datetime.now(UTC),
     )
 
 
@@ -114,7 +114,7 @@ def make_belief(
         domain_path=domain_path or ["test"],
         visibility=Visibility.FEDERATED,
         share_level=ShareLevel.BELIEF_ONLY,
-        signed_at=datetime.utcnow(),
+        signed_at=datetime.now(UTC),
     )
 
 
@@ -464,7 +464,7 @@ class TestTrustWeightedAggregator:
             federation_did="did:vkb:fed:new",
             trust_score=0.8,
             beliefs=[make_belief("New")],
-            joined_at=datetime.utcnow() - timedelta(hours=6),  # 6 hours ago
+            joined_at=datetime.now(UTC) - timedelta(hours=6),  # 6 hours ago
         )
         
         # Established federation
@@ -474,7 +474,7 @@ class TestTrustWeightedAggregator:
             federation_did="did:vkb:fed:old",
             trust_score=0.8,  # Same trust
             beliefs=[make_belief("Old")],
-            joined_at=datetime.utcnow() - timedelta(days=30),  # 30 days ago
+            joined_at=datetime.now(UTC) - timedelta(days=30),  # 30 days ago
         )
         
         weights = aggregator.compute_contribution_weights(
@@ -728,10 +728,10 @@ class TestFederationAggregator:
         aggregator = FederationAggregator(config=config)
         
         old_belief = make_belief("Old info", confidence=0.7)
-        old_belief.signed_at = datetime.utcnow() - timedelta(days=30)
+        old_belief.signed_at = datetime.now(UTC) - timedelta(days=30)
         
         new_belief = make_belief("New info", confidence=0.9)
-        new_belief.signed_at = datetime.utcnow()
+        new_belief.signed_at = datetime.now(UTC)
         
         contrib_old = make_contribution([old_belief], trust_score=0.8)
         contrib_new = make_contribution([new_belief], trust_score=0.8)
@@ -1185,12 +1185,12 @@ class TestConflictDetectorInternals:
         detector = ConflictDetector()
         
         belief_a = make_belief("Current fact", confidence=0.8)
-        belief_a.valid_from = datetime.utcnow() - timedelta(days=10)
-        belief_a.valid_until = datetime.utcnow() + timedelta(days=10)
+        belief_a.valid_from = datetime.now(UTC) - timedelta(days=10)
+        belief_a.valid_until = datetime.now(UTC) + timedelta(days=10)
         
         belief_b = make_belief("Current fact", confidence=0.7)
-        belief_b.valid_from = datetime.utcnow() - timedelta(days=5)
-        belief_b.valid_until = datetime.utcnow() + timedelta(days=5)
+        belief_b.valid_from = datetime.now(UTC) - timedelta(days=5)
+        belief_b.valid_until = datetime.now(UTC) + timedelta(days=5)
         
         # Both have temporal constraints - method should return False (simplified impl)
         result = detector._has_temporal_conflict(belief_a, belief_b)
@@ -1201,7 +1201,7 @@ class TestConflictDetectorInternals:
         detector = ConflictDetector()
         
         belief_a = make_belief("Current fact", confidence=0.8)
-        belief_a.valid_from = datetime.utcnow()
+        belief_a.valid_from = datetime.now(UTC)
         
         belief_b = make_belief("Current fact", confidence=0.7)
         # No temporal constraints

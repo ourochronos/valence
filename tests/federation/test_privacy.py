@@ -13,7 +13,7 @@ Tests cover:
 from __future__ import annotations
 
 import math
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import numpy as np
@@ -245,7 +245,7 @@ class TestPrivacyBudget:
         budget.queries_today = 50
         
         # Set period start to yesterday
-        budget.period_start = datetime.utcnow() - timedelta(hours=25)
+        budget.period_start = datetime.now(UTC) - timedelta(hours=25)
         
         # Check should trigger reset
         remaining = budget.remaining_epsilon()
@@ -392,7 +392,7 @@ class TestTemporalSmoother:
     
     def test_active_member_full_weight(self, smoother: TemporalSmoother) -> None:
         """Test long-standing active members have full weight."""
-        old_join = datetime.utcnow() - timedelta(days=30)
+        old_join = datetime.now(UTC) - timedelta(days=30)
         
         weight = smoother.get_contribution_weight(
             member_id="veteran",
@@ -404,7 +404,7 @@ class TestTemporalSmoother:
     def test_new_member_ramping_weight(self, smoother: TemporalSmoother) -> None:
         """Test new members have ramping weight."""
         # Joined 12 hours ago (half of 24h window)
-        recent_join = datetime.utcnow() - timedelta(hours=12)
+        recent_join = datetime.now(UTC) - timedelta(hours=12)
         
         weight = smoother.get_contribution_weight(
             member_id="newbie",
@@ -417,7 +417,7 @@ class TestTemporalSmoother:
     
     def test_very_new_member_low_weight(self, smoother: TemporalSmoother) -> None:
         """Test very new members have low weight."""
-        just_joined = datetime.utcnow() - timedelta(hours=1)
+        just_joined = datetime.now(UTC) - timedelta(hours=1)
         
         weight = smoother.get_contribution_weight(
             member_id="newest",
@@ -433,14 +433,14 @@ class TestTemporalSmoother:
         # Set seed for deterministic test
         np.random.seed(42)
         
-        departed_6h_ago = datetime.utcnow() - timedelta(hours=6)
+        departed_6h_ago = datetime.now(UTC) - timedelta(hours=6)
         
         # Check multiple times - should sometimes include
         included_count = 0
         for _ in range(100):
             if smoother.should_include_member(
                 member_id="departed",
-                joined_at=datetime.utcnow() - timedelta(days=30),
+                joined_at=datetime.now(UTC) - timedelta(days=30),
                 departed_at=departed_6h_ago,
             ):
                 included_count += 1
@@ -450,11 +450,11 @@ class TestTemporalSmoother:
     
     def test_long_departed_excluded(self, smoother: TemporalSmoother) -> None:
         """Test members departed beyond window are excluded."""
-        departed_long_ago = datetime.utcnow() - timedelta(hours=25)
+        departed_long_ago = datetime.now(UTC) - timedelta(hours=25)
         
         included = smoother.should_include_member(
             member_id="long_gone",
-            joined_at=datetime.utcnow() - timedelta(days=30),
+            joined_at=datetime.now(UTC) - timedelta(days=30),
             departed_at=departed_long_ago,
         )
         
@@ -783,11 +783,11 @@ class TestPrivacyIntegration:
         smoother = TemporalSmoother(smoothing_hours=24)
         
         # Member just departed
-        just_departed = datetime.utcnow() - timedelta(minutes=5)
+        just_departed = datetime.now(UTC) - timedelta(minutes=5)
         
         weight = smoother.get_contribution_weight(
             member_id="recent_departure",
-            joined_at=datetime.utcnow() - timedelta(days=30),
+            joined_at=datetime.now(UTC) - timedelta(days=30),
             departed_at=just_departed,
         )
         
