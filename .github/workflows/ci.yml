@@ -3,8 +3,22 @@ name: CI
 on:
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "*.md"
+      - "!pyproject.toml"
+      - ".github/ISSUE_TEMPLATE/**"
   push:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "*.md"
+      - "!pyproject.toml"
+      - ".github/ISSUE_TEMPLATE/**"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint:
@@ -16,10 +30,12 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-          cache: "pip"
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
 
       - name: Install dev dependencies
-        run: pip install ruff mypy types-PyYAML
+        run: ~/.local/bin/uv pip install ruff mypy types-PyYAML --system
 
       - name: Lint (ruff)
         run: ruff check src/valence
@@ -32,7 +48,7 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
-    needs: lint
+    # Run in parallel with lint - both are required checks
 
     services:
       postgres:
@@ -56,10 +72,12 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-          cache: "pip"
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: ~/.local/bin/uv pip install -e ".[dev]" --system
 
       - name: Initialize test database
         env:
@@ -121,10 +139,12 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-          cache: "pip"
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: ~/.local/bin/uv pip install -e ".[dev]" --system
 
       - name: Initialize test database
         env:

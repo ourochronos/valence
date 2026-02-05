@@ -3,6 +3,11 @@ name: Integration Tests
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "*.md"
+      - "!pyproject.toml"
+      - ".github/ISSUE_TEMPLATE/**"
   schedule:
     # Run nightly at 2 AM UTC
     - cron: '0 2 * * *'
@@ -12,6 +17,10 @@ on:
         description: 'Run with tmate debugging'
         required: false
         default: 'false'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   PYTHON_VERSION: "3.11"
@@ -44,10 +53,12 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: ~/.local/bin/uv pip install -e ".[dev]" --system
 
       - name: Initialize test database
         env:
@@ -109,13 +120,13 @@ jobs:
       - name: Start test environment
         run: |
           docker compose -f docker-compose.test.yml up -d postgres postgres-peer
-          
+
           # Wait for databases
           echo "Waiting for databases..."
           sleep 10
-          
+
           docker compose -f docker-compose.test.yml up -d valence-primary valence-peer
-          
+
           # Wait for servers
           echo "Waiting for servers..."
           sleep 15
@@ -124,9 +135,12 @@ jobs:
         run: |
           echo "Checking primary server..."
           curl -f http://localhost:8080/api/v1/health || exit 1
-          
+
           echo "Checking peer server..."
           curl -f http://localhost:8081/api/v1/health || exit 1
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
 
       - name: Run federation tests
         env:
@@ -139,7 +153,7 @@ jobs:
           VKB_DB_PASSWORD: testpass
           VKB_PEER_DB_PORT: 5434
         run: |
-          pip install -e ".[dev]"
+          ~/.local/bin/uv pip install -e ".[dev]" --system
           pytest tests/integration/test_federation_sync.py \
                  -v --timeout=120 \
                  --cov=src/valence \
@@ -157,7 +171,7 @@ jobs:
       - name: Collect logs on failure
         if: failure()
         run: |
-          echo "=== Primary Server Logs ===" 
+          echo "=== Primary Server Logs ==="
           docker compose -f docker-compose.test.yml logs valence-primary --tail=100
           echo "=== Peer Server Logs ==="
           docker compose -f docker-compose.test.yml logs valence-peer --tail=100
@@ -203,10 +217,12 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: ~/.local/bin/uv pip install -e ".[dev]" --system
 
       - name: Initialize test database
         env:
