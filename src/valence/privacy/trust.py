@@ -1267,6 +1267,7 @@ class TrustService:
             self._memory_store[key] = edge
             return edge
         else:
+            assert self._store is not None
             return self._store.add_edge(edge)
 
     def revoke_trust(
@@ -1294,6 +1295,7 @@ class TrustService:
                 return True
             return False
         else:
+            assert self._store is not None
             return self._store.delete_edge(source_did, target_did, domain)
 
     def get_trust(
@@ -1345,6 +1347,7 @@ class TrustService:
                     del self._memory_store[key]
                 return None
         else:
+            assert self._store is not None
             # Try domain-specific edge first (if domain specified)
             if domain is not None:
                 edge = self._store.get_edge(source_did, target_did, domain)
@@ -1439,16 +1442,17 @@ class TrustService:
 
             return result
         else:
+            assert self._store is not None
             if domain is not None:
                 # Get both domain-specific and global edges
-                domain_edges = self._store.get_edges_from(source_did, domain, include_expired=False)
-                global_edges = self._store.get_edges_from(source_did, None, include_expired=False)
+                domain_edge_list = self._store.get_edges_from(source_did, domain, include_expired=False)
+                global_edge_list = self._store.get_edges_from(source_did, None, include_expired=False)
 
                 # Build result: domain-specific overrides global for each target
-                domain_by_target = {e.target_did: e for e in domain_edges}
-                global_by_target = {e.target_did: e for e in global_edges}
+                domain_by_target: dict[str, TrustEdge4D] = {e.target_did: e for e in domain_edge_list}
+                global_by_target: dict[str, TrustEdge4D] = {e.target_did: e for e in global_edge_list}
 
-                result = []
+                result: list[TrustEdge4D] = []
                 all_targets = set(domain_by_target.keys()) | set(global_by_target.keys())
                 for target in all_targets:
                     if target in domain_by_target:
@@ -1500,6 +1504,7 @@ class TrustService:
 
             return result
         else:
+            assert self._store is not None
             return self._store.get_edges_to(target_did, domain, include_expired=False)
 
     def compute_delegated_trust(
@@ -1654,13 +1659,16 @@ class TrustService:
         path_trusts: list[TrustEdge4D] = []
         for path in found_paths:
             # Start with the first edge
-            result = path[0]
+            result: TrustEdge | None = path[0]
 
             # Chain through each subsequent edge, applying decay
             for next_edge in path[1:]:
+                if result is None:
+                    break
                 result = compute_delegated_trust(result, next_edge)
 
-            path_trusts.append(result)
+            if result is not None:
+                path_trusts.append(result)
 
         # Combine paths: take max of each dimension (optimistic combination)
         # This represents "trust via the best available path"
@@ -2400,7 +2408,7 @@ def _extend_trust_service() -> None:
         # If both DIDs are in federations, check for federation trust
         federation_trust: FederationTrustEdge | None = None
         if source_fed and target_fed and source_fed != target_fed:
-            federation_trust = self.get_federation_trust(source_fed, target_fed, domain)
+            federation_trust = self.get_federation_trust(source_fed, target_fed, domain)  # type: ignore[attr-defined]
 
         # If no federation trust, return direct trust (may be None)
         if federation_trust is None:
@@ -2439,13 +2447,13 @@ def _extend_trust_service() -> None:
             expires_at=direct_trust.expires_at,
         )
 
-    # Attach methods to TrustService class
-    TrustService.set_federation_trust = set_federation_trust
-    TrustService.get_federation_trust = get_federation_trust
-    TrustService.revoke_federation_trust = revoke_federation_trust
-    TrustService.list_federation_trusts_from = list_federation_trusts_from
-    TrustService.list_federation_trusts_to = list_federation_trusts_to
-    TrustService.get_effective_trust_with_federation = get_effective_trust_with_federation
+    # Attach methods to TrustService class (dynamically extended)
+    TrustService.set_federation_trust = set_federation_trust  # type: ignore[attr-defined]
+    TrustService.get_federation_trust = get_federation_trust  # type: ignore[attr-defined]
+    TrustService.revoke_federation_trust = revoke_federation_trust  # type: ignore[attr-defined]
+    TrustService.list_federation_trusts_from = list_federation_trusts_from  # type: ignore[attr-defined]
+    TrustService.list_federation_trusts_to = list_federation_trusts_to  # type: ignore[attr-defined]
+    TrustService.get_effective_trust_with_federation = get_effective_trust_with_federation  # type: ignore[attr-defined]
 
 
 # Extend TrustService at module load
@@ -2469,7 +2477,7 @@ def set_federation_trust(
     expires_at: datetime | None = None,
 ) -> FederationTrustEdge:
     """Set federation trust (convenience function using default service)."""
-    return get_trust_service().set_federation_trust(
+    return get_trust_service().set_federation_trust(  # type: ignore[attr-defined]
         source_federation=source_federation,
         target_federation=target_federation,
         competence=competence,
@@ -2488,7 +2496,7 @@ def get_federation_trust(
     domain: str | None = None,
 ) -> FederationTrustEdge | None:
     """Get federation trust (convenience function using default service)."""
-    return get_trust_service().get_federation_trust(
+    return get_trust_service().get_federation_trust(  # type: ignore[attr-defined]
         source_federation=source_federation,
         target_federation=target_federation,
         domain=domain,
@@ -2501,7 +2509,7 @@ def revoke_federation_trust(
     domain: str | None = None,
 ) -> bool:
     """Revoke federation trust (convenience function using default service)."""
-    return get_trust_service().revoke_federation_trust(
+    return get_trust_service().revoke_federation_trust(  # type: ignore[attr-defined]
         source_federation=source_federation,
         target_federation=target_federation,
         domain=domain,
@@ -2516,7 +2524,7 @@ def get_effective_trust_with_federation(
     inheritance_factor: float = 0.5,
 ) -> TrustEdge | None:
     """Get effective trust considering federation (convenience function)."""
-    return get_trust_service().get_effective_trust_with_federation(
+    return get_trust_service().get_effective_trust_with_federation(  # type: ignore[attr-defined]
         source_did=source_did,
         target_did=target_did,
         domain=domain,

@@ -196,7 +196,7 @@ class Belief:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
-        result = {
+        result: dict[str, Any] = {
             "id": str(self.id),
             "content": self.content,
             "confidence": self.confidence.to_dict(),
@@ -285,7 +285,7 @@ class Tension:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
-        result = {
+        result: dict[str, Any] = {
             "id": str(self.id),
             "belief_a_id": str(self.belief_a_id),
             "belief_b_id": str(self.belief_b_id),

@@ -321,40 +321,41 @@ class TrafficAnalysisMitigationConfig:
         Returns:
             Dict with estimated delays for different scenarios
         """
-        estimates = {
-            "privacy_level": self.privacy_level.value,
-            "min_delay_ms": 0,
-            "max_delay_ms": 0,
-            "avg_delay_ms": 0,
-        }
+        min_delay_ms = 0
+        max_delay_ms = 0
+        avg_delay_ms = 0
         
         # Batching delay
         if self.batching.enabled:
-            estimates["min_delay_ms"] += 0  # Could be sent immediately
-            estimates["max_delay_ms"] += self.batching.batch_interval_ms
-            estimates["avg_delay_ms"] += self.batching.batch_interval_ms // 2
+            max_delay_ms += self.batching.batch_interval_ms
+            avg_delay_ms += self.batching.batch_interval_ms // 2
         
         # Jitter delay
         if self.jitter.enabled:
-            estimates["min_delay_ms"] += self.jitter.min_delay_ms
-            estimates["max_delay_ms"] += self.jitter.max_delay_ms
+            min_delay_ms += self.jitter.min_delay_ms
+            max_delay_ms += self.jitter.max_delay_ms
             if self.jitter.distribution == "exponential":
                 # Exponential mean is roughly (max-min)/2
-                estimates["avg_delay_ms"] += (
+                avg_delay_ms += (
                     self.jitter.max_delay_ms - self.jitter.min_delay_ms
                 ) // 2
             else:
-                estimates["avg_delay_ms"] += (
+                avg_delay_ms += (
                     self.jitter.min_delay_ms + self.jitter.max_delay_ms
                 ) // 2
         
         # Constant rate delay (worst case: waiting for next slot)
         if self.constant_rate.enabled:
             interval_ms = int(self.constant_rate.get_send_interval() * 1000)
-            estimates["max_delay_ms"] += interval_ms
-            estimates["avg_delay_ms"] += interval_ms // 2
+            max_delay_ms += interval_ms
+            avg_delay_ms += interval_ms // 2
         
-        return estimates
+        return {
+            "privacy_level": self.privacy_level.value,
+            "min_delay_ms": min_delay_ms,
+            "max_delay_ms": max_delay_ms,
+            "avg_delay_ms": avg_delay_ms,
+        }
     
     def to_dict(self) -> Dict[str, Any]:
         """Serialize configuration to dictionary."""

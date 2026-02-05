@@ -43,7 +43,6 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.exceptions import InvalidSignature
 
 if TYPE_CHECKING:
-    from valence.network.seed import SeedNode
     from valence.network.messages import SeedRevocation, SeedRevocationList
 
 logger = logging.getLogger(__name__)
@@ -783,9 +782,9 @@ class CorrelationDetector:
                 
                 # Parse endpoints
                 try:
-                    host1, port1 = ep1.rsplit(":", 1) if ":" in ep1 else (ep1, "8471")
-                    host2, port2 = ep2.rsplit(":", 1) if ":" in ep2 else (ep2, "8471")
-                    port1, port2 = int(port1), int(port2)
+                    host1, port1_str = ep1.rsplit(":", 1) if ":" in ep1 else (ep1, "8471")
+                    host2, port2_str = ep2.rsplit(":", 1) if ":" in ep2 else (ep2, "8471")
+                    port1_int, port2_int = int(port1_str), int(port2_str)
                 except (ValueError, AttributeError):
                     continue
                 
@@ -803,7 +802,7 @@ class CorrelationDetector:
                             score += 0.3
                 
                 # Sequential ports on similar IPs
-                if abs(port1 - port2) <= 10:
+                if abs(port1_int - port2_int) <= 10:
                     score += 0.2
         
         return score / comparisons if comparisons > 0 else 0.0
@@ -2221,6 +2220,9 @@ class SeedNode:
     # Seed revocation management (Issue #121)
     _revocation_manager: Optional[SeedRevocationManager] = field(default=None, repr=False)
     
+    # Sybil resistance (Issue #117)
+    _sybil_resistance: Optional[SybilResistance] = field(default=None, repr=False)
+    
     # Misbehavior reports (Issue #119): {router_id: {reporter_id: report_data}}
     _misbehavior_reports: Dict[str, Dict[str, Dict[str, Any]]] = field(default_factory=dict, repr=False)
     
@@ -2236,6 +2238,8 @@ class SeedNode:
     @property
     def seed_id(self) -> str:
         """Get the seed node's ID."""
+        # seed_id is set in SeedConfig.__post_init__ if None
+        assert self.config.seed_id is not None
         return self.config.seed_id
     
     @property
@@ -2681,9 +2685,10 @@ class SeedNode:
         
         try:
             # Parse endpoint
+            port: int
             if ":" in endpoint:
-                host, port = endpoint.rsplit(":", 1)
-                port = int(port)
+                host, port_str = endpoint.rsplit(":", 1)
+                port = int(port_str)
             else:
                 host = endpoint
                 port = 8471  # Default router port

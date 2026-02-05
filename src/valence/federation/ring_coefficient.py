@@ -323,15 +323,17 @@ class RingDetector:
             return 1.0
         
         coefficient = 1.0
-        visited = set()
+        visited: set[UUID] = set()
+        visited_list: list[UUID] = []
         
         for node in path:
             if node in visited:
                 # Ring detected
-                ring_start = list(visited).index(node) if node in list(visited) else 0
+                ring_start = visited_list.index(node) if node in visited_list else 0
                 ring_size = len(visited) - ring_start + 1
                 coefficient *= self._calculate_coefficient(ring_size)
             visited.add(node)
+            visited_list.append(node)
         
         return coefficient
 

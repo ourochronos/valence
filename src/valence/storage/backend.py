@@ -220,7 +220,7 @@ class StorageBackend(ABC):
         Returns:
             ShardSet with retrieved shards
         """
-        shards = [None] * shard_set_template.total_shards_n
+        shards: list[StorageShard | None] = [None] * shard_set_template.total_shards_n
         
         for index, location in locations.items():
             try:
@@ -606,7 +606,7 @@ class BackendRegistry:
         Returns:
             ShardSet with retrieved shards
         """
-        shards = [None] * shard_set_template.total_shards_n
+        shards: list[StorageShard | None] = [None] * shard_set_template.total_shards_n
         
         for index, (backend_id, location) in locations.items():
             backend = self._backends.get(backend_id)

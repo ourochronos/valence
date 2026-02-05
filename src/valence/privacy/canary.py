@@ -168,8 +168,8 @@ def _decode_from_zero_width(encoded: str) -> Optional[str]:
     """Decode zero-width unicode characters back to original string."""
     try:
         # Split by byte delimiter
-        bytes_data = []
-        current_bits = []
+        bytes_data: list[int] = []
+        current_bits: list[str] = []
         
         for char in encoded:
             if char == ZERO_WIDTH_JOINER:
@@ -534,12 +534,15 @@ class CanaryRegistry:
             registry._tokens[token.token_id] = token
         
         for leak_data in state.get("leaks", []):
-            token = registry._tokens.get(leak_data["token_id"])
-            if not token:
+            token_or_none = registry._tokens.get(leak_data["token_id"])
+            token: CanaryToken
+            if token_or_none is None:
                 token = CanaryToken(
                     token_id=leak_data["token_id"],
                     signature="",
                 )
+            else:
+                token = token_or_none
             report = LeakReport(
                 token=token,
                 detected_at=datetime.fromisoformat(leak_data["detected_at"]),

@@ -215,7 +215,7 @@ class ErasureCodec:
         ]
         
         # Create all shards (data + parity)
-        shards: list[StorageShard] = []
+        shards: list[StorageShard | None] = []
         
         for shard_idx in range(self.total_shards):
             if shard_idx < self.data_shards:

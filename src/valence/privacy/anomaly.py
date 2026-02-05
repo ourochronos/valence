@@ -454,7 +454,7 @@ class AnomalyDetector:
             ):
                 return None
             
-            details = {"hour": now.hour}
+            details: dict[str, Any] = {"hour": now.hour}
             if action:
                 details["action"] = action
             details["normal_hours"] = f"{self._normal_hours_start}:00-{self._normal_hours_end}:00"

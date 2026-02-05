@@ -14,7 +14,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any
+from typing import Any, Sequence
 from uuid import UUID
 
 from .models import (
@@ -154,7 +154,7 @@ def compute_diversity_score(validator_set: ValidatorSet) -> dict[str, Any]:
         }
     
     # Federation distribution (using Gini coefficient)
-    federation_counts = Counter()
+    federation_counts: Counter[str] = Counter()
     for v in validators:
         for fed in v.federation_membership:
             federation_counts[fed] += 1
@@ -236,8 +236,8 @@ def _compute_entropy(counts: list[int]) -> float:
     return entropy
 
 
-def _compute_variance(values: list[int | float]) -> float:
-    """Compute variance of a list of values."""
+def _compute_variance(values: Sequence[int | float]) -> float:
+    """Compute variance of a sequence of values."""
     if not values:
         return 0.0
     
@@ -348,7 +348,7 @@ def _analyze_voting_correlation(
     """Analyze voting records for suspicious correlation."""
     from uuid import uuid4
     
-    alerts = []
+    alerts: list[CollusionAlert] = []
     
     # Group votes by proposal
     proposals: dict[UUID, dict[str, str]] = {}  # proposal_id -> {validator_id -> vote}
@@ -362,7 +362,7 @@ def _analyze_voting_correlation(
         return alerts
     
     # Get all validators
-    all_validators = set()
+    all_validators: set[str] = set()
     for votes in proposals.values():
         all_validators.update(votes.keys())
     
@@ -474,14 +474,14 @@ def _analyze_federation_clustering(validator_set: ValidatorSet) -> list[Collusio
     """Analyze federation membership for suspicious clustering."""
     from uuid import uuid4
     
-    alerts = []
+    alerts: list[CollusionAlert] = []
     n = len(validator_set.validators)
     
     if n == 0:
         return alerts
     
     # Count federation memberships
-    federation_counts = Counter()
+    federation_counts: Counter[str] = Counter()
     for validator in validator_set.validators:
         for fed in validator.federation_membership:
             federation_counts[fed] += 1

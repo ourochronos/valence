@@ -323,7 +323,7 @@ class Evidence:
         return hashlib.sha256(content.encode()).hexdigest()
     
     def to_dict(self) -> dict[str, Any]:
-        result = {
+        result: dict[str, Any] = {
             "id": str(self.id),
             "type": self.type.value,
             "relevance": self.relevance,

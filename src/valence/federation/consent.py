@@ -695,6 +695,9 @@ class CrossFederationConsentService:
                 origin_federation_id=hop.from_federation_id,
                 origin_gateway_id=hop.from_gateway_id,
             )
+        
+        # At this point cross_chain is guaranteed to be non-None
+        assert cross_chain is not None
 
         # Verify hop chain integrity:
         # - For new chains, accept the hop (we're joining the chain midway)

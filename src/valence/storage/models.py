@@ -166,7 +166,7 @@ class ShardSet:
     """
     
     set_id: UUID = field(default_factory=uuid4)
-    shards: list[StorageShard] = field(default_factory=list)
+    shards: list[StorageShard | None] = field(default_factory=list)
     
     # Encoding parameters
     data_shards_k: int = 3            # Number of data shards
