@@ -197,7 +197,7 @@ class TestShareBeliefEndpoint:
 
         assert response.status_code == 400
         data = response.json()
-        assert "policy" in data.get("message", data.get("error", "")).lower()
+        assert "policy" in data.get("error", {}).get("message", data.get("message", "")).lower()
 
     def test_share_service_unavailable(self, client):
         """Service unavailable returns 503."""
@@ -468,7 +468,7 @@ class TestRevokeShareEndpoint:
 
         assert response.status_code == 409
         data = response.json()
-        assert "already revoked" in data.get("message", data.get("error", "")).lower()
+        assert "already revoked" in data.get("error", {}).get("message", data.get("message", "")).lower()
 
     def test_revoke_permission_denied(self, client, mock_sharing_service):
         """Not owner returns 403."""

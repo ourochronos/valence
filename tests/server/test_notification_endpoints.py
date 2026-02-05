@@ -145,7 +145,7 @@ class TestListNotificationsEndpoint:
         assert response.status_code == 400
         data = response.json()
         # Handle both old and new error response formats
-        error_msg = data.get("message", data.get("error", ""))
+        error_msg = data.get("error", {}).get("message", data.get("message", ""))
         assert "recipient_did" in error_msg
 
     def test_list_notifications_service_unavailable(self, client):
