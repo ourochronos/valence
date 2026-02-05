@@ -220,17 +220,17 @@ def seed_entities(db_conn_committed) -> list[dict]:
     entities_data = [
         {
             "name": "Python",
-            "type": "programming_language",
+            "type": "tool",
             "aliases": ["python3", "py"],
         },
         {
             "name": "PostgreSQL",
-            "type": "database",
+            "type": "tool",
             "aliases": ["postgres", "pg"],
         },
         {
             "name": "Claude",
-            "type": "ai_assistant",
+            "type": "tool",
             "aliases": ["claude-3", "anthropic-claude"],
         },
     ]

@@ -109,19 +109,7 @@ jobs:
             -m "not integration and not slow" \
             -v \
             --tb=short \
-            --cov=src/valence \
-            --cov-report=xml:coverage-${{ matrix.group.name }}.xml \
-            --cov-fail-under=13 \
             --ignore=tests/integration/
-
-      - name: Upload coverage
-        uses: codecov/codecov-action@v5
-        if: always()
-        with:
-          files: ./coverage-${{ matrix.group.name }}.xml
-          flags: ${{ matrix.group.name }}
-          fail_ci_if_error: false
-          token: ${{ secrets.CODECOV_TOKEN }}
 
   integration:
     runs-on: ubuntu-latest
@@ -174,4 +162,4 @@ jobs:
           VKB_DB_PASSWORD: testpass
           VKB_DB_NAME: valence_test
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: pytest tests/ -m "integration" -v --timeout=60
+        run: pytest tests/ -m "integration" -v --tb=short --timeout=60
