@@ -81,7 +81,8 @@ markers = [
     "integration: Integration tests (may need database/mocks)",
     "slow: Tests that take a long time to run",
 ]
-addopts = "-v --tb=short"
+addopts = "-q --tb=line --no-header"
+# For verbose local debugging: pytest -v --tb=short
 
 [tool.coverage.run]
 source = ["src/valence"]
