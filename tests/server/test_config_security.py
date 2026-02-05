@@ -150,3 +150,24 @@ class TestJWTSecretRequirement:
                 )
                 # Secret should be generated
                 assert settings.oauth_jwt_secret is not None
+
+    def test_auto_generate_jwt_secret_logs_warning(self, caplog):
+        """Auto-generating JWT secret should log a warning about non-persistence."""
+        import logging
+
+        with patch.dict(os.environ, {}, clear=True):
+            with caplog.at_level(logging.WARNING, logger="valence.server.config"):
+                settings = ServerSettings(
+                    host="127.0.0.1",
+                    oauth_enabled=True,
+                    oauth_jwt_secret=None,
+                )
+
+                # Secret should be generated
+                assert settings.oauth_jwt_secret is not None
+                # Warning should be logged
+                assert any(
+                    "Auto-generating JWT secret" in record.message
+                    and "tokens will not persist" in record.message
+                    for record in caplog.records
+                )

@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import secrets
 from pathlib import Path
 from typing import Any
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 
 class ServerSettings(BaseSettings):
@@ -213,6 +216,7 @@ class ServerSettings(BaseSettings):
 
         # For development, generate a random secret if not provided
         if not self.oauth_jwt_secret:
+            logger.warning("Auto-generating JWT secret - tokens will not persist across restarts")
             object.__setattr__(self, "oauth_jwt_secret", secrets.token_hex(32))
 
         return self
