@@ -6,7 +6,7 @@ Supports multiple extraction levels with human review before sharing.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 import hashlib
@@ -506,23 +506,58 @@ def modify_extraction(
     )
 
 
+class RateLimitExceededError(ExtractionError):
+    """Raised when extraction rate limit is exceeded for a DID."""
+    
+    def __init__(self, did: str, limit: int, window_seconds: int):
+        self.did = did
+        self.limit = limit
+        self.window_seconds = window_seconds
+        super().__init__(
+            f"Rate limit exceeded for {did}: {limit} extractions per {window_seconds}s"
+        )
+
+
+@dataclass
+class RateLimitConfig:
+    """Configuration for extraction rate limiting.
+    
+    Issue #177: Rate limiting prevents abuse of extraction service by
+    limiting how many extractions a single DID can request.
+    """
+    
+    max_extractions_per_window: int = 10  # Max extractions per DID per window
+    window_seconds: int = 3600  # 1 hour window
+    enabled: bool = True
+
+
 class ExtractionService:
     """Service for managing the extraction workflow.
     
     Provides storage and retrieval of extractions with support for
     the human review process.
+    
+    Issue #177: Includes per-DID rate limiting to prevent abuse.
     """
     
-    def __init__(self, extractor: Optional[InsightExtractor] = None):
+    def __init__(
+        self,
+        extractor: Optional[InsightExtractor] = None,
+        rate_limit_config: Optional[RateLimitConfig] = None,
+    ):
         """Initialize the extraction service.
         
         Args:
             extractor: The AI extractor to use (defaults to MockInsightExtractor)
+            rate_limit_config: Rate limiting configuration (defaults to 10/hour per DID)
         """
         self._extractor = extractor or MockInsightExtractor()
+        self._rate_limit = rate_limit_config or RateLimitConfig()
         self._extractions: Dict[str, ExtractedInsight] = {}
         self._by_source: Dict[str, List[str]] = {}  # source_id -> [extraction_ids]
         self._by_reviewer: Dict[str, List[str]] = {}  # reviewer -> [extraction_ids]
+        # Rate limit tracking: DID -> list of extraction timestamps
+        self._extraction_times: Dict[str, List[datetime]] = {}
     
     @property
     def extractor(self) -> InsightExtractor:
@@ -533,18 +568,72 @@ class ExtractionService:
         """Set a new extractor."""
         self._extractor = extractor
     
+    def _check_rate_limit(self, requester_did: str) -> None:
+        """Check if a DID has exceeded the rate limit.
+        
+        Args:
+            requester_did: The DID requesting extraction
+            
+        Raises:
+            RateLimitExceededError: If rate limit is exceeded
+        """
+        if not self._rate_limit.enabled:
+            return
+        
+        now = datetime.now(timezone.utc)
+        window_start = now - timedelta(seconds=self._rate_limit.window_seconds)
+        
+        # Get or create extraction times for this DID
+        if requester_did not in self._extraction_times:
+            self._extraction_times[requester_did] = []
+        
+        # Clean up old entries outside the window
+        self._extraction_times[requester_did] = [
+            t for t in self._extraction_times[requester_did]
+            if t > window_start
+        ]
+        
+        # Check if limit exceeded
+        if len(self._extraction_times[requester_did]) >= self._rate_limit.max_extractions_per_window:
+            raise RateLimitExceededError(
+                requester_did,
+                self._rate_limit.max_extractions_per_window,
+                self._rate_limit.window_seconds,
+            )
+    
+    def _record_extraction(self, requester_did: str) -> None:
+        """Record an extraction for rate limiting."""
+        if requester_did not in self._extraction_times:
+            self._extraction_times[requester_did] = []
+        self._extraction_times[requester_did].append(datetime.now(timezone.utc))
+
     def extract(
         self,
         content: str,
         level: ExtractionLevel,
         source_id: str,
+        requester_did: Optional[str] = None,
         context: Optional[Dict[str, Any]] = None,
     ) -> ExtractedInsight:
         """Extract insights and store for review.
         
+        Args:
+            content: The source content to extract from
+            level: The desired abstraction level
+            source_id: ID of the source belief/content for provenance
+            requester_did: Optional DID of requester (for rate limiting)
+            context: Optional context for the extraction
+        
         Returns:
             ExtractedInsight in PENDING_REVIEW status
+            
+        Raises:
+            RateLimitExceededError: If requester has exceeded rate limit
         """
+        # Check rate limit if requester provided
+        if requester_did:
+            self._check_rate_limit(requester_did)
+        
         insight = extract_insights(
             content=content,
             level=level,
@@ -554,7 +643,43 @@ class ExtractionService:
         )
         
         self._store_extraction(insight)
+        
+        # Record for rate limiting
+        if requester_did:
+            self._record_extraction(requester_did)
+        
         return insight
+    
+    def get_rate_limit_status(self, requester_did: str) -> Dict[str, Any]:
+        """Get rate limit status for a DID.
+        
+        Args:
+            requester_did: The DID to check
+            
+        Returns:
+            Dict with remaining extractions and window reset time
+        """
+        now = datetime.now(timezone.utc)
+        window_start = now - timedelta(seconds=self._rate_limit.window_seconds)
+        
+        times = self._extraction_times.get(requester_did, [])
+        recent = [t for t in times if t > window_start]
+        
+        remaining = max(0, self._rate_limit.max_extractions_per_window - len(recent))
+        
+        # Calculate when the oldest extraction in window will expire
+        reset_at = None
+        if recent:
+            oldest = min(recent)
+            reset_at = oldest + timedelta(seconds=self._rate_limit.window_seconds)
+        
+        return {
+            "remaining": remaining,
+            "limit": self._rate_limit.max_extractions_per_window,
+            "window_seconds": self._rate_limit.window_seconds,
+            "reset_at": reset_at.isoformat() if reset_at else None,
+            "used": len(recent),
+        }
     
     def approve(
         self,

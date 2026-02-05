@@ -38,8 +38,13 @@ logger = logging.getLogger(__name__)
 # CONFIGURATION
 # =============================================================================
 
-# Default TTL: 1 hour
-DEFAULT_TTL_SECONDS = 3600
+# Default TTL: 15 minutes (Issue #177: reduced from 1 hour for tighter security)
+# Shorter TTL reduces the window of exposure if a capability is compromised.
+# Applications requiring longer-lived capabilities should explicitly specify TTL.
+DEFAULT_TTL_SECONDS = 900  # 15 * 60
+
+# Legacy TTL constant for backward compatibility (deprecated)
+LEGACY_DEFAULT_TTL_SECONDS = 3600  # 1 hour - use for migration period if needed
 
 # Maximum TTL: 24 hours (to limit exposure of compromised capabilities)
 MAX_TTL_SECONDS = 86400  # 24 * 60 * 60

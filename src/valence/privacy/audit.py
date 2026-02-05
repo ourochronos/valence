@@ -8,10 +8,13 @@ of the previous event, creating a tamper-evident append-only log.
 
 Encrypted audit storage (Issue #83): EncryptedAuditBackend provides
 AES-256-GCM encryption with envelope encryption and key rotation support.
+
+PII sanitization (Issue #177): MetadataSanitizer provides automatic
+scrubbing of sensitive data from audit event metadata before logging.
 """
 
 from enum import Enum
-from typing import Optional, Dict, Any, List, Protocol, Tuple, runtime_checkable
+from typing import Optional, Dict, Any, List, Protocol, Tuple, runtime_checkable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from abc import ABC, abstractmethod
@@ -23,6 +26,238 @@ import threading
 import os
 import base64
 import secrets
+import re
+
+
+# =============================================================================
+# PII SANITIZATION (Issue #177)
+# =============================================================================
+
+
+# Default patterns for PII detection (can be extended via MetadataSanitizer)
+DEFAULT_PII_PATTERNS: Dict[str, re.Pattern] = {
+    "email": re.compile(r'\b[\w.-]+@[\w.-]+\.\w+\b'),
+    "phone_us": re.compile(r'\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b'),
+    "phone_intl": re.compile(r'\+\d{1,3}[-.\s]?\d{1,14}\b'),
+    "ssn": re.compile(r'\b\d{3}-\d{2}-\d{4}\b'),
+    "credit_card": re.compile(r'\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b'),
+    "ip_address": re.compile(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'),
+    # DID values should generally be preserved (they're pseudonymous identifiers)
+    # but we allow blocking specific patterns if needed
+}
+
+# Keys that should always be sanitized (case-insensitive matching)
+DEFAULT_SENSITIVE_KEYS: frozenset[str] = frozenset([
+    "password", "secret", "token", "api_key", "apikey", "private_key",
+    "privatekey", "auth", "authorization", "bearer", "credential",
+    "ssn", "social_security", "credit_card", "creditcard", "cvv",
+    "pin", "bank_account", "routing_number", "tax_id",
+])
+
+# Placeholder for redacted values
+REDACTED_PLACEHOLDER = "[REDACTED]"
+REDACTED_PII_PLACEHOLDER = "[PII_REDACTED]"
+
+
+@dataclass
+class SanitizationResult:
+    """Result of metadata sanitization with audit trail."""
+    
+    sanitized_metadata: Dict[str, Any]
+    fields_redacted: List[str]  # Keys that were fully redacted
+    pii_scrubbed: List[str]  # Keys where PII patterns were replaced
+    original_hash: str  # SHA-256 of original for forensic correlation
+    
+    @property
+    def was_modified(self) -> bool:
+        """Check if any sanitization occurred."""
+        return bool(self.fields_redacted or self.pii_scrubbed)
+
+
+class MetadataSanitizer:
+    """Sanitizes potentially sensitive data from audit event metadata.
+    
+    Provides multiple sanitization strategies:
+    - Key-based blocking: Redact entire values for sensitive key names
+    - Pattern-based scrubbing: Replace PII patterns within values
+    - Custom rules: User-defined sanitization functions
+    
+    Usage:
+        sanitizer = MetadataSanitizer()
+        result = sanitizer.sanitize({"email": "user@example.com", "action": "login"})
+        # result.sanitized_metadata = {"email": "[PII_REDACTED]", "action": "login"}
+    
+    Warning: Sanitization is best-effort. For maximum security, avoid logging
+    PII in metadata in the first place. This layer provides defense-in-depth.
+    """
+    
+    def __init__(
+        self,
+        sensitive_keys: Optional[frozenset[str]] = None,
+        pii_patterns: Optional[Dict[str, re.Pattern]] = None,
+        preserve_keys: Optional[frozenset[str]] = None,
+        custom_sanitizers: Optional[Dict[str, Callable[[Any], Any]]] = None,
+        enabled: bool = True,
+    ):
+        """Initialize the sanitizer.
+        
+        Args:
+            sensitive_keys: Keys whose values should be fully redacted
+            pii_patterns: Regex patterns for PII detection
+            preserve_keys: Keys that should never be sanitized (whitelisted)
+            custom_sanitizers: Custom sanitization functions per key
+            enabled: Whether sanitization is active (for testing/debugging)
+        """
+        self.sensitive_keys = sensitive_keys or DEFAULT_SENSITIVE_KEYS
+        self.pii_patterns = pii_patterns or DEFAULT_PII_PATTERNS
+        self.preserve_keys = preserve_keys or frozenset()
+        self.custom_sanitizers = custom_sanitizers or {}
+        self.enabled = enabled
+    
+    def sanitize(
+        self,
+        metadata: Dict[str, Any],
+        preserve_original_hash: bool = True,
+    ) -> SanitizationResult:
+        """Sanitize metadata dictionary.
+        
+        Args:
+            metadata: Original metadata to sanitize
+            preserve_original_hash: Include hash of original for forensic use
+            
+        Returns:
+            SanitizationResult with sanitized data and audit info
+        """
+        if not self.enabled or not metadata:
+            return SanitizationResult(
+                sanitized_metadata=metadata.copy() if metadata else {},
+                fields_redacted=[],
+                pii_scrubbed=[],
+                original_hash=self._compute_hash(metadata) if preserve_original_hash else "",
+            )
+        
+        original_hash = self._compute_hash(metadata) if preserve_original_hash else ""
+        sanitized: Dict[str, Any] = {}
+        fields_redacted: List[str] = []
+        pii_scrubbed: List[str] = []
+        
+        for key, value in metadata.items():
+            # Check preserve list first
+            if key.lower() in self.preserve_keys:
+                sanitized[key] = value
+                continue
+            
+            # Apply custom sanitizer if available
+            if key in self.custom_sanitizers:
+                sanitized[key] = self.custom_sanitizers[key](value)
+                continue
+            
+            # Check if key is in sensitive list
+            if self._is_sensitive_key(key):
+                sanitized[key] = REDACTED_PLACEHOLDER
+                fields_redacted.append(key)
+                continue
+            
+            # Scrub PII from string values
+            if isinstance(value, str):
+                scrubbed_value, had_pii = self._scrub_pii(value)
+                sanitized[key] = scrubbed_value
+                if had_pii:
+                    pii_scrubbed.append(key)
+            elif isinstance(value, dict):
+                # Recursively sanitize nested dicts
+                nested_result = self.sanitize(value, preserve_original_hash=False)
+                sanitized[key] = nested_result.sanitized_metadata
+                fields_redacted.extend(f"{key}.{f}" for f in nested_result.fields_redacted)
+                pii_scrubbed.extend(f"{key}.{f}" for f in nested_result.pii_scrubbed)
+            elif isinstance(value, list):
+                # Sanitize list elements if they're strings
+                sanitized[key] = [
+                    self._scrub_pii(v)[0] if isinstance(v, str) else v
+                    for v in value
+                ]
+            else:
+                sanitized[key] = value
+        
+        return SanitizationResult(
+            sanitized_metadata=sanitized,
+            fields_redacted=fields_redacted,
+            pii_scrubbed=pii_scrubbed,
+            original_hash=original_hash,
+        )
+    
+    def _is_sensitive_key(self, key: str) -> bool:
+        """Check if a key name indicates sensitive content."""
+        key_lower = key.lower().replace("-", "_")
+        return any(sensitive in key_lower for sensitive in self.sensitive_keys)
+    
+    def _scrub_pii(self, value: str) -> Tuple[str, bool]:
+        """Scrub PII patterns from a string value.
+        
+        Returns:
+            Tuple of (scrubbed_value, had_pii)
+        """
+        had_pii = False
+        result = value
+        
+        for pattern_name, pattern in self.pii_patterns.items():
+            if pattern.search(result):
+                result = pattern.sub(REDACTED_PII_PLACEHOLDER, result)
+                had_pii = True
+        
+        return result, had_pii
+    
+    def _compute_hash(self, data: Dict[str, Any]) -> str:
+        """Compute SHA-256 hash of metadata for forensic correlation."""
+        try:
+            json_str = json.dumps(data, sort_keys=True, default=str)
+            return hashlib.sha256(json_str.encode()).hexdigest()[:16]
+        except (TypeError, ValueError):
+            return ""
+    
+    def add_sensitive_key(self, key: str) -> None:
+        """Add a key to the sensitive keys list."""
+        self.sensitive_keys = self.sensitive_keys | {key.lower()}
+    
+    def add_pii_pattern(self, name: str, pattern: re.Pattern) -> None:
+        """Add a custom PII pattern."""
+        self.pii_patterns[name] = pattern
+
+
+# Global sanitizer instance (can be configured at startup)
+_default_sanitizer: Optional[MetadataSanitizer] = None
+_sanitizer_lock = threading.Lock()
+
+
+def get_metadata_sanitizer() -> MetadataSanitizer:
+    """Get the default metadata sanitizer singleton."""
+    global _default_sanitizer
+    if _default_sanitizer is None:
+        with _sanitizer_lock:
+            if _default_sanitizer is None:
+                _default_sanitizer = MetadataSanitizer()
+    return _default_sanitizer
+
+
+def set_metadata_sanitizer(sanitizer: MetadataSanitizer) -> None:
+    """Set the default metadata sanitizer."""
+    global _default_sanitizer
+    with _sanitizer_lock:
+        _default_sanitizer = sanitizer
+
+
+def sanitize_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
+    """Convenience function to sanitize metadata using the default sanitizer.
+    
+    This is the primary entry point for sanitizing audit metadata.
+    
+    Args:
+        metadata: Metadata dict to sanitize
+        
+    Returns:
+        Sanitized metadata dict
+    """
+    return get_metadata_sanitizer().sanitize(metadata).sanitized_metadata
 
 
 class AuditEventType(Enum):
@@ -91,7 +326,11 @@ class AuditEvent:
     event_hash: str = field(default="")
     
     def __post_init__(self):
-        """Compute event_hash if not provided."""
+        """Compute event_hash if not provided and sanitize metadata."""
+        # Sanitize metadata to prevent PII leakage (Issue #177)
+        if self.metadata:
+            self.metadata = sanitize_metadata(self.metadata)
+        
         if not self.event_hash:
             self.event_hash = self._compute_hash()
     

@@ -6,6 +6,10 @@ Manages synchronization of beliefs between federation nodes:
 - Cursor-based incremental sync
 - Vector clocks for conflict detection
 - Sync scheduling and retry logic
+
+Privacy Note (Issue #177):
+    Sync logging uses bucketed/noisy counts to prevent traffic analysis attacks.
+    Exact counts could reveal federation membership patterns over time.
 """
 
 from __future__ import annotations
@@ -13,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
@@ -41,6 +46,59 @@ from .protocol import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# PRIVACY-PRESERVING LOG HELPERS (Issue #177)
+# =============================================================================
+
+
+def _bucket_count(count: int) -> str:
+    """Convert exact count to privacy-preserving bucket for logging.
+    
+    Prevents traffic analysis by not revealing exact sync volumes.
+    
+    Args:
+        count: Exact count value
+        
+    Returns:
+        Bucketed string representation (e.g., "1-5", "10-20", "50+")
+    """
+    if count == 0:
+        return "0"
+    elif count <= 5:
+        return "1-5"
+    elif count <= 10:
+        return "6-10"
+    elif count <= 20:
+        return "11-20"
+    elif count <= 50:
+        return "21-50"
+    elif count <= 100:
+        return "51-100"
+    else:
+        return "100+"
+
+
+def _noisy_count(count: int, noise_scale: float = 0.1) -> int:
+    """Add noise to a count for privacy-preserving logging.
+    
+    Uses Laplace-like noise to obscure exact values while preserving
+    approximate magnitude for operational monitoring.
+    
+    Args:
+        count: Exact count value
+        noise_scale: Scale of noise relative to count (default 10%)
+        
+    Returns:
+        Count with random noise added
+    """
+    if count == 0:
+        return 0
+    # Add noise proportional to count, minimum ±1
+    noise_magnitude = max(1, int(count * noise_scale))
+    noise = random.randint(-noise_magnitude, noise_magnitude)
+    return max(0, count + noise)
 
 
 # =============================================================================
@@ -411,9 +469,12 @@ class SyncManager:
                 ) as response:
                     if response.status == 200:
                         result = await response.json()
+                        # Use bucketed counts in logs to prevent traffic analysis (Issue #177)
+                        accepted = result.get('accepted', 0)
+                        rejected = result.get('rejected', 0)
                         logger.info(
-                            f"Sent {len(beliefs_data)} beliefs to node {node_id}: "
-                            f"accepted={result.get('accepted', 0)}, rejected={result.get('rejected', 0)}"
+                            f"Sent ~{_bucket_count(len(beliefs_data))} beliefs to node {node_id}: "
+                            f"accepted=~{_bucket_count(accepted)}, rejected=~{_bucket_count(rejected)}"
                         )
                         for item in items:
                             mark_sync_item_sent(item["id"])

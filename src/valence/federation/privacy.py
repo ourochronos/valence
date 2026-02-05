@@ -53,47 +53,61 @@ MAX_QUERIES_PER_REQUESTER_PER_HOUR = 20
 DEFAULT_DAILY_EPSILON_BUDGET = 10.0
 DEFAULT_DAILY_DELTA_BUDGET = 1e-4
 
-# Sensitive domains (auto-detect elevated privacy needs)
-SENSITIVE_DOMAINS = frozenset(
-    [
-        "health",
-        "medical",
-        "mental_health",
-        "diagnosis",
-        "treatment",
-        "finance",
-        "banking",
-        "investments",
-        "salary",
-        "debt",
-        "legal",
-        "law",
-        "criminal",
-        "lawsuit",
-        "arrest",
-        "politics",
-        "political",
-        "voting",
-        "election",
-        "religion",
-        "religious",
-        "faith",
-        "spiritual",
-        "sexuality",
-        "sexual",
-        "gender",
-        "lgbtq",
-        "employment",
-        "hr",
-        "hiring",
-        "termination",
-        "addiction",
-        "substance",
-        "abuse",
-        "immigration",
-        "visa",
-        "asylum",
-    ]
+# Budget consumption for failed k-anonymity queries (Issue #177 - prevent probing)
+# Even failed queries consume budget to prevent adversaries from learning
+# about population size through repeated queries
+FAILED_QUERY_EPSILON_COST = 0.1  # Small but non-zero cost
+
+# =============================================================================
+# SENSITIVE DOMAIN CLASSIFICATION (Issue #177 - Structured classification)
+# =============================================================================
+
+# Sensitive domain categories with their exact matches and normalized forms
+# Using structured classification instead of substring matching for precision
+SENSITIVE_DOMAIN_CATEGORIES: dict[str, frozenset[str]] = {
+    "health": frozenset([
+        "health", "medical", "mental_health", "diagnosis", "treatment",
+        "healthcare", "clinical", "therapy", "counseling", "psychiatric",
+    ]),
+    "finance": frozenset([
+        "finance", "banking", "investments", "salary", "debt",
+        "financial", "credit", "taxes", "income", "wealth",
+    ]),
+    "legal": frozenset([
+        "legal", "law", "criminal", "lawsuit", "arrest",
+        "court", "litigation", "prosecution", "conviction",
+    ]),
+    "political": frozenset([
+        "politics", "political", "voting", "election",
+        "government", "partisan", "campaign", "ballot",
+    ]),
+    "religious": frozenset([
+        "religion", "religious", "faith", "spiritual",
+        "worship", "church", "mosque", "temple", "synagogue",
+    ]),
+    "identity": frozenset([
+        "sexuality", "sexual", "gender", "lgbtq",
+        "orientation", "identity", "transgender", "nonbinary",
+    ]),
+    "employment": frozenset([
+        "employment", "hr", "hiring", "termination",
+        "workplace", "employee", "employer", "human_resources",
+    ]),
+    "substance": frozenset([
+        "addiction", "substance", "abuse",
+        "recovery", "rehab", "dependency", "sobriety",
+    ]),
+    "immigration": frozenset([
+        "immigration", "visa", "asylum",
+        "refugee", "citizenship", "deportation", "naturalization",
+    ]),
+}
+
+# Flattened set for quick membership testing (exact match only)
+SENSITIVE_DOMAINS: frozenset[str] = frozenset(
+    domain
+    for category_domains in SENSITIVE_DOMAIN_CATEGORIES.values()
+    for domain in category_domains
 )
 
 
@@ -1376,21 +1390,56 @@ def build_noisy_histogram(
 
 
 def is_sensitive_domain(domains: list[str]) -> bool:
-    """Check if any domain is considered sensitive.
+    """Check if any domain is considered sensitive using structured classification.
+
+    Uses exact token matching against a categorized sensitive domain registry
+    rather than substring matching, which prevents false positives like
+    "therapist" matching "the" or "healer" matching "heal".
 
     Args:
-        domains: List of domain names
+        domains: List of domain names (can be paths like "health/mental_health")
 
     Returns:
-        True if any domain is sensitive
+        True if any domain token matches a sensitive category
     """
     for domain in domains:
+        # Normalize: lowercase and split on common separators
         domain_lower = domain.lower()
-        # Check for exact match or substring
-        for sensitive in SENSITIVE_DOMAINS:
-            if sensitive in domain_lower:
-                return True
+        # Split on path separators, underscores, hyphens to get tokens
+        tokens = set()
+        for sep in ["/", "_", "-", ".", ":"]:
+            domain_lower = domain_lower.replace(sep, " ")
+        tokens.update(domain_lower.split())
+        # Also check the full domain as-is (normalized)
+        tokens.add(domain.lower().replace("/", "_").replace("-", "_"))
+
+        # Check for exact token match against sensitive domains
+        if tokens & SENSITIVE_DOMAINS:
+            return True
     return False
+
+
+def get_sensitive_category(domain: str) -> str | None:
+    """Get the sensitive category for a domain if it matches.
+
+    Useful for determining what type of sensitivity applies.
+
+    Args:
+        domain: Domain name to check
+
+    Returns:
+        Category name if sensitive, None otherwise
+    """
+    domain_lower = domain.lower()
+    tokens = set()
+    for sep in ["/", "_", "-", ".", ":"]:
+        domain_lower = domain_lower.replace(sep, " ")
+    tokens.update(domain_lower.split())
+
+    for category, category_domains in SENSITIVE_DOMAIN_CATEGORIES.items():
+        if tokens & category_domains:
+            return category
+    return None
 
 
 def compute_topic_hash(
@@ -1533,4 +1582,96 @@ def compute_private_aggregate(
         noise_mechanism=config.noise_mechanism.value,
         k_anonymity_satisfied=True,
         histogram_suppressed=histogram_suppressed,
+    )
+
+
+@dataclass
+class QueryResult:
+    """Result of a privacy-preserving query with budget tracking.
+
+    Wraps PrivateAggregateResult with additional query metadata.
+    """
+
+    success: bool
+    result: PrivateAggregateResult | None
+    budget_consumed: bool
+    epsilon_consumed: float
+    failure_reason: str | None = None
+
+
+def execute_private_query(
+    confidences: list[float],
+    config: PrivacyConfig,
+    budget: PrivacyBudget,
+    topic_hash: str,
+    requester_id: str | None = None,
+    include_histogram: bool = True,
+) -> QueryResult:
+    """Execute a privacy-preserving query with budget tracking.
+
+    Unlike compute_private_aggregate, this function:
+    1. Checks budget before execution
+    2. Consumes budget even for failed k-anonymity queries (prevents probing)
+    3. Returns detailed result with budget consumption info
+
+    Issue #177: Consuming budget for failed queries prevents adversaries from
+    learning about population size through repeated queries. Without this,
+    an attacker could probe "does group X have at least k members?" for free.
+
+    Args:
+        confidences: List of confidence values from contributors
+        config: Privacy configuration
+        budget: Privacy budget to check and consume
+        topic_hash: Hash of the query topic for rate limiting
+        requester_id: ID of the requester for rate limiting
+        include_histogram: Whether to include histogram if possible
+
+    Returns:
+        QueryResult with success status and optional aggregate result
+    """
+    # Check budget first
+    can_query, check_result = budget.check_budget(
+        config.epsilon, config.delta, topic_hash, requester_id
+    )
+
+    if not can_query:
+        return QueryResult(
+            success=False,
+            result=None,
+            budget_consumed=False,
+            epsilon_consumed=0.0,
+            failure_reason=f"Budget check failed: {check_result.value}",
+        )
+
+    # Check k-anonymity
+    true_count = len(confidences)
+    if true_count < config.effective_min_contributors:
+        # IMPORTANT: Consume budget even for failed k-anonymity queries
+        # This prevents probing attacks where adversaries learn population
+        # size by observing which queries succeed vs fail
+        budget.consume(
+            FAILED_QUERY_EPSILON_COST,
+            0.0,  # No delta for failed queries
+            topic_hash,
+            requester_id,
+        )
+        return QueryResult(
+            success=False,
+            result=None,
+            budget_consumed=True,
+            epsilon_consumed=FAILED_QUERY_EPSILON_COST,
+            failure_reason=f"Insufficient contributors: {true_count} < {config.effective_min_contributors}",
+        )
+
+    # Execute the aggregate computation
+    result = compute_private_aggregate(confidences, config, include_histogram)
+
+    # Consume full budget for successful queries
+    budget.consume(config.epsilon, config.delta, topic_hash, requester_id)
+
+    return QueryResult(
+        success=True,
+        result=result,
+        budget_consumed=True,
+        epsilon_consumed=config.epsilon,
     )

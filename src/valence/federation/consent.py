@@ -1070,37 +1070,136 @@ class CrossFederationConsentService:
 
 
 class InMemoryConsentChainStore:
-    """In-memory implementation of ConsentChainStoreProtocol."""
+    """In-memory implementation of ConsentChainStoreProtocol.
+    
+    Issue #177: Includes size limits and LRU eviction to prevent unbounded
+    memory growth in long-running processes.
+    
+    Attributes:
+        max_chains: Maximum number of consent chains to store (default 10000)
+        max_revocations: Maximum number of revocations to store (default 5000)
+    """
 
-    def __init__(self) -> None:
+    # Default size limits
+    DEFAULT_MAX_CHAINS = 10000
+    DEFAULT_MAX_REVOCATIONS = 5000
+
+    def __init__(
+        self,
+        max_chains: int = DEFAULT_MAX_CHAINS,
+        max_revocations: int = DEFAULT_MAX_REVOCATIONS,
+    ) -> None:
+        """Initialize the store with size limits.
+        
+        Args:
+            max_chains: Maximum chains before LRU eviction
+            max_revocations: Maximum revocations before LRU eviction
+        """
+        self.max_chains = max_chains
+        self.max_revocations = max_revocations
+        # Use dict for insertion-order tracking (Python 3.7+)
         self._chains: dict[str, CrossFederationConsentChain] = {}
         self._chains_by_original: dict[str, CrossFederationConsentChain] = {}
         self._revocations: dict[str, CrossFederationRevocation] = {}
+        # Track access order for LRU (most recent at end)
+        self._chain_access_order: list[str] = []
+        self._revocation_access_order: list[str] = []
+
+    def _touch_chain(self, chain_id: str) -> None:
+        """Update LRU access order for a chain."""
+        if chain_id in self._chain_access_order:
+            self._chain_access_order.remove(chain_id)
+        self._chain_access_order.append(chain_id)
+
+    def _touch_revocation(self, revocation_id: str) -> None:
+        """Update LRU access order for a revocation."""
+        if revocation_id in self._revocation_access_order:
+            self._revocation_access_order.remove(revocation_id)
+        self._revocation_access_order.append(revocation_id)
+
+    def _evict_chains_if_needed(self) -> None:
+        """Evict oldest chains if over limit."""
+        while len(self._chains) >= self.max_chains and self._chain_access_order:
+            oldest_id = self._chain_access_order.pop(0)
+            if oldest_id in self._chains:
+                chain = self._chains.pop(oldest_id)
+                # Also remove from original mapping
+                if chain.original_chain_id in self._chains_by_original:
+                    if self._chains_by_original[chain.original_chain_id].id == oldest_id:
+                        del self._chains_by_original[chain.original_chain_id]
+                logger.debug(f"LRU evicted consent chain {oldest_id}")
+
+    def _evict_revocations_if_needed(self) -> None:
+        """Evict oldest revocations if over limit."""
+        while len(self._revocations) >= self.max_revocations and self._revocation_access_order:
+            oldest_id = self._revocation_access_order.pop(0)
+            if oldest_id in self._revocations:
+                del self._revocations[oldest_id]
+                logger.debug(f"LRU evicted revocation {oldest_id}")
 
     async def store_cross_chain(self, chain: CrossFederationConsentChain) -> None:
+        """Store a chain, evicting oldest if at capacity."""
+        self._evict_chains_if_needed()
         self._chains[chain.id] = chain
         self._chains_by_original[chain.original_chain_id] = chain
+        self._touch_chain(chain.id)
 
     async def get_cross_chain(self, chain_id: str) -> Optional[CrossFederationConsentChain]:
-        return self._chains.get(chain_id)
+        """Get a chain by ID, updating LRU order."""
+        chain = self._chains.get(chain_id)
+        if chain:
+            self._touch_chain(chain_id)
+        return chain
 
     async def get_cross_chain_by_original(
         self, original_chain_id: str
     ) -> Optional[CrossFederationConsentChain]:
-        return self._chains_by_original.get(original_chain_id)
+        """Get a chain by original ID, updating LRU order."""
+        chain = self._chains_by_original.get(original_chain_id)
+        if chain:
+            self._touch_chain(chain.id)
+        return chain
 
     async def update_cross_chain(self, chain: CrossFederationConsentChain) -> None:
+        """Update a chain, refreshing LRU order."""
         self._chains[chain.id] = chain
         self._chains_by_original[chain.original_chain_id] = chain
+        self._touch_chain(chain.id)
 
     async def store_revocation(self, revocation: CrossFederationRevocation) -> None:
+        """Store a revocation, evicting oldest if at capacity."""
+        self._evict_revocations_if_needed()
         self._revocations[revocation.id] = revocation
+        self._touch_revocation(revocation.id)
 
     async def get_revocation(self, revocation_id: str) -> Optional[CrossFederationRevocation]:
-        return self._revocations.get(revocation_id)
+        """Get a revocation by ID, updating LRU order."""
+        revocation = self._revocations.get(revocation_id)
+        if revocation:
+            self._touch_revocation(revocation_id)
+        return revocation
 
     async def list_pending_revocations(self, federation_id: str) -> list[CrossFederationRevocation]:
+        """List pending revocations (does not affect LRU order)."""
         return [r for r in self._revocations.values() if federation_id in r.pending_propagation]
+    
+    def clear(self) -> None:
+        """Clear all stored data (for testing)."""
+        self._chains.clear()
+        self._chains_by_original.clear()
+        self._revocations.clear()
+        self._chain_access_order.clear()
+        self._revocation_access_order.clear()
+    
+    @property
+    def chain_count(self) -> int:
+        """Get current number of stored chains."""
+        return len(self._chains)
+    
+    @property
+    def revocation_count(self) -> int:
+        """Get current number of stored revocations."""
+        return len(self._revocations)
 
 
 class InMemoryPolicyStore:

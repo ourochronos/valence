@@ -328,13 +328,38 @@ def detect_canaries(content: str, secret_key: Optional[bytes] = None) -> List[Ca
 
 
 def strip_canaries(content: str) -> str:
-    """Remove all canary tokens from content.
+    """Remove all detectable canary tokens from content.
+    
+    ⚠️  SECURITY WARNING (Issue #177):
+    This function is intentionally documented and publicly accessible for
+    transparency, but be aware of its implications:
+    
+    1. ADVERSARIAL USE: Bad actors can use this to strip tracking from leaked
+       content before redistributing it.
+    
+    2. DETECTION EVASION: Advanced adversaries may use this as a starting point
+       to develop more sophisticated evasion techniques.
+    
+    3. NOT FOOLPROOF: Canary tokens can be embedded using techniques this
+       function doesn't detect. This function strips known patterns only.
+    
+    WHY THIS EXISTS:
+    - Transparency: Users have a right to know tracking can be removed
+    - Testing: Developers need to verify canary embedding/extraction
+    - Compliance: Some jurisdictions require disclosure of tracking mechanisms
+    - Defense-in-depth: If we don't provide this, adversaries will build it anyway
+    
+    RECOMMENDATIONS:
+    - Use multiple overlapping watermark techniques
+    - Combine canaries with semantic/stylistic markers
+    - Monitor for patterns of stripped content
+    - Consider legal/contractual protections alongside technical ones
     
     Args:
         content: Content to strip canaries from
         
     Returns:
-        Content with all canary markers removed
+        Content with detected canary markers removed
     """
     # Remove HTML comment markers first (more specific)
     content = re.sub(r"<!--\s*\[CANARY:canary_[a-f0-9_]+:[a-f0-9]+\]\s*-->\n?", "", content)

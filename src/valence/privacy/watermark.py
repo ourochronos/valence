@@ -554,17 +554,65 @@ class WatermarkRegistry:
     """Registry for tracking watermarked content and detecting leaks.
     
     Maintains a mapping of watermarks to recipients for leak investigation.
+    
+    Security Warning (Issue #177):
+        The secret_key is stored in plaintext in memory. This is necessary for
+        signing/verifying watermarks but poses security considerations:
+        
+        1. Memory dumps could expose the key
+        2. Process inspection tools could read the key
+        3. The key persists for the lifetime of the registry
+        
+        Recommendations:
+        - Use a dedicated key for watermarking (not shared with other crypto ops)
+        - Consider key rotation by creating new registries periodically
+        - In high-security contexts, use a KMS or HSM-backed key provider
+        - Clear the registry when no longer needed (del registry)
+        - Avoid serializing/logging the secret_key
+        
+        The `secret_key` property is intentionally exposed for external storage
+        (e.g., persisting to encrypted storage), but should be handled carefully.
     """
     
     def __init__(self, secret_key: bytes):
         """Initialize registry with signing key.
         
         Args:
-            secret_key: Secret key for watermark signing/verification
+            secret_key: Secret key for watermark signing/verification.
+                        SECURITY: This key is stored in plaintext in memory.
+                        See class docstring for security considerations.
+        
+        Raises:
+            ValueError: If secret_key is less than 16 bytes (insecure)
         """
-        self.secret_key = secret_key
+        if len(secret_key) < 16:
+            raise ValueError(
+                "secret_key must be at least 16 bytes for security. "
+                "Use secrets.token_bytes(32) to generate a secure key."
+            )
+        # Store as private attribute but expose via property
+        # This makes it slightly harder to accidentally log/serialize
+        self._secret_key = secret_key
         self._watermarks: Dict[str, Watermark] = {}  # recipient_id -> watermark
         self._content_hashes: Dict[str, Set[str]] = {}  # content_hash -> recipient_ids
+    
+    @property
+    def secret_key(self) -> bytes:
+        """Get the secret key (for external storage/loading).
+        
+        SECURITY WARNING: Handle this value carefully:
+        - Do not log or print this value
+        - Store only in encrypted storage
+        - Consider using a KMS for production deployments
+        """
+        return self._secret_key
+    
+    def __repr__(self) -> str:
+        """Safe repr that doesn't expose the secret key."""
+        return (
+            f"WatermarkRegistry(tokens={len(self._watermarks)}, "
+            f"content_hashes={len(self._content_hashes)})"
+        )
     
     def create_watermark(
         self,
