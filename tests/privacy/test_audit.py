@@ -1704,7 +1704,7 @@ class TestEncryptedAuditBackend:
 
     def test_clear(self):
         """Clear removes all events."""
-        backend, _, _ = self._make_backend()
+        backend, _, inner = self._make_backend()
 
         backend.write(
             AuditEvent(
@@ -1716,11 +1716,16 @@ class TestEncryptedAuditBackend:
             )
         )
 
-        assert len(backend.all_events()) == 1
+        # Verify event was written (use query() for decryption)
+        assert len(backend.query()) == 1
+        # Also verify inner backend has the encrypted event
+        assert len(inner.all_events()) == 1
 
         backend.clear()
 
-        assert len(backend.all_events()) == 0
+        # Verify cleared
+        assert len(backend.query()) == 0
+        assert len(inner.all_events()) == 0
 
     def test_with_audit_logger(self):
         """Works with AuditLogger high-level API."""

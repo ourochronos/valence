@@ -1603,7 +1603,11 @@ class EncryptedAuditBackend:
             for encrypted_event in encrypted_events:
                 try:
                     results.append(self._decrypt_event(encrypted_event))
-                except (DecryptionError, KeyError):
+                except (DecryptionError, KeyError) as e:
+                    # Log error for debugging, but continue for resilience
+                    import logging
+
+                    logging.warning(f"Failed to decrypt event {encrypted_event.event_id}: {e}")
                     continue
             return results
         return self.query(limit=100000)
