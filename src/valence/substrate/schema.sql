@@ -901,6 +901,115 @@ CREATE INDEX IF NOT EXISTS idx_sync_outbound_queue_scheduled ON sync_outbound_qu
     WHERE status = 'pending';
 CREATE INDEX IF NOT EXISTS idx_sync_outbound_queue_belief ON sync_outbound_queue(belief_id);
 
+-- Peer Nodes: Simplified peer tracking for federation sync
+-- This table provides a lightweight peer registry used by federation sync tests.
+-- For full node identity and metadata, use federation_nodes.
+CREATE TABLE IF NOT EXISTS peer_nodes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    -- Node identifier (unique string ID for the peer)
+    node_id TEXT NOT NULL UNIQUE,
+
+    -- Connection endpoint
+    endpoint TEXT NOT NULL,
+
+    -- Trust level (0.0 to 1.0)
+    trust_level NUMERIC(3,2) NOT NULL DEFAULT 0.5,
+
+    -- Peer status
+    status TEXT NOT NULL DEFAULT 'discovered',
+    -- Values: discovered, active, suspended, unreachable
+
+    -- Timestamps
+    last_seen TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    modified_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT peer_nodes_valid_trust CHECK (trust_level >= 0 AND trust_level <= 1),
+    CONSTRAINT peer_nodes_valid_status CHECK (
+        status IN ('discovered', 'active', 'suspended', 'unreachable')
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_peer_nodes_node_id ON peer_nodes(node_id);
+CREATE INDEX IF NOT EXISTS idx_peer_nodes_status ON peer_nodes(status);
+CREATE INDEX IF NOT EXISTS idx_peer_nodes_trust ON peer_nodes(trust_level DESC);
+CREATE INDEX IF NOT EXISTS idx_peer_nodes_last_seen ON peer_nodes(last_seen DESC);
+
+-- Trust Edges: 4D trust relationships between DIDs
+-- Implements the multi-dimensional trust model with competence, integrity,
+-- confidentiality, and judgment dimensions. Used by the privacy module
+-- for DID-to-DID trust management.
+CREATE TABLE IF NOT EXISTS trust_edges (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    -- Trust relationship: source trusts target
+    source_did TEXT NOT NULL,
+    target_did TEXT NOT NULL,
+
+    -- 4D trust dimensions (all 0.0 to 1.0)
+    competence NUMERIC(3,2) NOT NULL DEFAULT 0.5,
+    -- Ability to perform tasks correctly
+
+    integrity NUMERIC(3,2) NOT NULL DEFAULT 0.5,
+    -- Honesty and consistency
+
+    confidentiality NUMERIC(3,2) NOT NULL DEFAULT 0.5,
+    -- Ability to keep secrets
+
+    judgment NUMERIC(3,2) NOT NULL DEFAULT 0.1,
+    -- Ability to evaluate others (affects delegated trust)
+    -- Very low default: trust in judgment must be earned
+
+    -- Domain-specific trust (NULL = global trust)
+    domain TEXT,
+
+    -- Delegation policy
+    can_delegate BOOLEAN NOT NULL DEFAULT FALSE,
+    -- If true, this trust edge can be used for transitive trust
+
+    delegation_depth INTEGER NOT NULL DEFAULT 0,
+    -- Maximum hops for delegation (0 = unlimited when can_delegate=true)
+
+    -- Trust decay settings
+    decay_rate NUMERIC(5,4) NOT NULL DEFAULT 0.0,
+    -- Rate of trust decay per day (0.0 = no decay)
+
+    decay_model TEXT NOT NULL DEFAULT 'exponential',
+    -- Values: none, linear, exponential
+
+    last_refreshed TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- When trust was last confirmed/refreshed
+
+    -- Timestamps
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ,
+
+    -- Constraints
+    CONSTRAINT trust_edges_valid_competence CHECK (competence >= 0 AND competence <= 1),
+    CONSTRAINT trust_edges_valid_integrity CHECK (integrity >= 0 AND integrity <= 1),
+    CONSTRAINT trust_edges_valid_confidentiality CHECK (confidentiality >= 0 AND confidentiality <= 1),
+    CONSTRAINT trust_edges_valid_judgment CHECK (judgment >= 0 AND judgment <= 1),
+    CONSTRAINT trust_edges_valid_decay_rate CHECK (decay_rate >= 0 AND decay_rate <= 1),
+    CONSTRAINT trust_edges_valid_decay_model CHECK (
+        decay_model IN ('none', 'linear', 'exponential')
+    ),
+    CONSTRAINT trust_edges_valid_delegation_depth CHECK (delegation_depth >= 0),
+    CONSTRAINT trust_edges_no_self_trust CHECK (source_did != target_did)
+);
+
+-- Unique constraint for upsert: one edge per (source, target, domain) tuple
+-- COALESCE handles NULL domain for uniqueness
+CREATE UNIQUE INDEX IF NOT EXISTS idx_trust_edges_unique
+    ON trust_edges(source_did, target_did, COALESCE(domain, ''));
+
+CREATE INDEX IF NOT EXISTS idx_trust_edges_source ON trust_edges(source_did);
+CREATE INDEX IF NOT EXISTS idx_trust_edges_target ON trust_edges(target_did);
+CREATE INDEX IF NOT EXISTS idx_trust_edges_domain ON trust_edges(domain) WHERE domain IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_trust_edges_expires ON trust_edges(expires_at)
+    WHERE expires_at IS NOT NULL;
+
 -- ============================================================================
 -- BELIEFS TABLE EXTENSIONS FOR FEDERATION
 -- ============================================================================

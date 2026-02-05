@@ -288,7 +288,6 @@ class TestTrustBasedSync:
             assert "Medium confidence fact" in contents
             # Low confidence might not be in results if threshold applies
 
-    @pytest.mark.skip(reason="peer_nodes table not in schema yet")
     def test_trust_decay_over_time(self, db_conn):
         """Test that trust scores can decay for inactive peers."""
         with db_conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:

@@ -384,7 +384,6 @@ class TestTrustBoundaries:
 class TestTrustMetrics:
     """Tests for trust metrics and monitoring."""
 
-    @pytest.mark.skip(reason="peer_nodes table not in schema yet")
     def test_track_sync_success_rate(self, db_conn):
         """Test tracking sync success rate per peer."""
         with db_conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:

@@ -837,7 +837,6 @@ class TestModuleFunctions:
 
 
 # Integration tests (require database)
-@pytest.mark.skip(reason="trust_edges table not in schema yet - needs migration")
 @pytest.mark.integration
 class TestTrustGraphStoreIntegration:
     """Integration tests that require a real database.
