@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import math
+import threading
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -931,13 +932,20 @@ class RingCoefficientCalculator:
 
 # Default calculator instance
 _default_calculator: RingCoefficientCalculator | None = None
+_default_calculator_lock = threading.Lock()
 
 
 def get_ring_coefficient_calculator() -> RingCoefficientCalculator:
-    """Get the default RingCoefficientCalculator instance."""
+    """Get the default RingCoefficientCalculator instance.
+    
+    Thread-safe initialization using double-checked locking pattern.
+    """
     global _default_calculator
     if _default_calculator is None:
-        _default_calculator = RingCoefficientCalculator()
+        with _default_calculator_lock:
+            # Double-check after acquiring lock
+            if _default_calculator is None:
+                _default_calculator = RingCoefficientCalculator()
     return _default_calculator
 
 

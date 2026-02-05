@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -28,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 # Model singleton (lazy loaded)
 _model: "SentenceTransformer | None" = None
+_model_lock = threading.Lock()  # Thread lock for model initialization
 
 # Default model - bge-small-en-v1.5 is excellent for semantic similarity
 # 384 dimensions, ~33M params, fast inference
@@ -54,6 +56,7 @@ def get_model() -> "SentenceTransformer":
     """Get or initialize the sentence transformer model.
     
     The model is lazily loaded and cached for reuse.
+    Thread-safe initialization using double-checked locking pattern.
     
     Environment variables:
         VALENCE_EMBEDDING_MODEL_PATH: Model name/path (default: BAAI/bge-small-en-v1.5)
@@ -70,58 +73,61 @@ def get_model() -> "SentenceTransformer":
     global _model
     
     if _model is None:
-        try:
-            from sentence_transformers import SentenceTransformer
-        except ImportError as e:
-            raise ModelLoadError(
-                "sentence-transformers not installed. "
-                "Install with: pip install sentence-transformers"
-            ) from e
-        
-        model_path = os.environ.get("VALENCE_EMBEDDING_MODEL_PATH", MODEL_NAME)
-        device = os.environ.get("VALENCE_EMBEDDING_DEVICE", "cpu")
-        
-        is_local = _is_local_path(model_path)
-        
-        if is_local:
-            resolved_path = Path(model_path).expanduser().resolve()
-            if not resolved_path.exists():
-                raise ModelLoadError(
-                    f"Local model path not found: {resolved_path}\n\n"
-                    "To download the model for offline use:\n"
-                    "  python scripts/download_model.py --save-path /path/to/model\n\n"
-                    "Then set:\n"
-                    "  export VALENCE_EMBEDDING_MODEL_PATH=/path/to/model"
-                )
-            logger.info(f"Loading embedding model from local path: {resolved_path}")
-            load_path = str(resolved_path)
-        else:
-            logger.info(f"Loading embedding model: {model_path} (device={device})")
-            load_path = model_path
-        
-        try:
-            _model = SentenceTransformer(load_path, device=device)
-        except OSError as e:
-            # Common error when offline and model not cached
-            error_msg = str(e).lower()
-            if "connection" in error_msg or "resolve" in error_msg or "network" in error_msg:
-                raise ModelLoadError(
-                    f"Cannot download model '{model_path}' - network unavailable.\n\n"
-                    "For offline/air-gapped environments:\n\n"
-                    "Option 1: Pre-download on a connected machine:\n"
-                    "  python scripts/download_model.py\n"
-                    "  scp -r ~/.cache/huggingface/hub/models--BAAI--bge-small-en-v1.5 target:~/.cache/huggingface/hub/\n\n"
-                    "Option 2: Save to custom path:\n"
-                    "  python scripts/download_model.py --save-path /opt/valence/models/bge-small-en-v1.5\n"
-                    "  # Then on target:\n"
-                    "  export VALENCE_EMBEDDING_MODEL_PATH=/opt/valence/models/bge-small-en-v1.5"
-                ) from e
-            raise ModelLoadError(f"Failed to load embedding model: {e}") from e
-        except Exception as e:
-            raise ModelLoadError(f"Failed to load embedding model '{model_path}': {e}") from e
-        
-        dim = _model.get_sentence_embedding_dimension()
-        logger.info(f"Embedding model ready (dim={dim})")
+        with _model_lock:
+            # Double-check after acquiring lock
+            if _model is None:
+                try:
+                    from sentence_transformers import SentenceTransformer
+                except ImportError as e:
+                    raise ModelLoadError(
+                        "sentence-transformers not installed. "
+                        "Install with: pip install sentence-transformers"
+                    ) from e
+                
+                model_path = os.environ.get("VALENCE_EMBEDDING_MODEL_PATH", MODEL_NAME)
+                device = os.environ.get("VALENCE_EMBEDDING_DEVICE", "cpu")
+                
+                is_local = _is_local_path(model_path)
+                
+                if is_local:
+                    resolved_path = Path(model_path).expanduser().resolve()
+                    if not resolved_path.exists():
+                        raise ModelLoadError(
+                            f"Local model path not found: {resolved_path}\n\n"
+                            "To download the model for offline use:\n"
+                            "  python scripts/download_model.py --save-path /path/to/model\n\n"
+                            "Then set:\n"
+                            "  export VALENCE_EMBEDDING_MODEL_PATH=/path/to/model"
+                        )
+                    logger.info(f"Loading embedding model from local path: {resolved_path}")
+                    load_path = str(resolved_path)
+                else:
+                    logger.info(f"Loading embedding model: {model_path} (device={device})")
+                    load_path = model_path
+                
+                try:
+                    _model = SentenceTransformer(load_path, device=device)
+                except OSError as e:
+                    # Common error when offline and model not cached
+                    error_msg = str(e).lower()
+                    if "connection" in error_msg or "resolve" in error_msg or "network" in error_msg:
+                        raise ModelLoadError(
+                            f"Cannot download model '{model_path}' - network unavailable.\n\n"
+                            "For offline/air-gapped environments:\n\n"
+                            "Option 1: Pre-download on a connected machine:\n"
+                            "  python scripts/download_model.py\n"
+                            "  scp -r ~/.cache/huggingface/hub/models--BAAI--bge-small-en-v1.5 target:~/.cache/huggingface/hub/\n\n"
+                            "Option 2: Save to custom path:\n"
+                            "  python scripts/download_model.py --save-path /opt/valence/models/bge-small-en-v1.5\n"
+                            "  # Then on target:\n"
+                            "  export VALENCE_EMBEDDING_MODEL_PATH=/opt/valence/models/bge-small-en-v1.5"
+                        ) from e
+                    raise ModelLoadError(f"Failed to load embedding model: {e}") from e
+                except Exception as e:
+                    raise ModelLoadError(f"Failed to load embedding model '{model_path}': {e}") from e
+                
+                dim = _model.get_sentence_embedding_dimension()
+                logger.info(f"Embedding model ready (dim={dim})")
     
     return _model
 
@@ -181,6 +187,10 @@ def generate_embeddings_batch(
 
 
 def reset_model() -> None:
-    """Reset the cached model (useful for testing)."""
+    """Reset the cached model (useful for testing).
+    
+    Thread-safe reset using lock.
+    """
     global _model
-    _model = None
+    with _model_lock:
+        _model = None

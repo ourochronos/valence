@@ -16,6 +16,7 @@ Refactored in Issue #31 to delegate to specialized components:
 from __future__ import annotations
 
 import logging
+import threading
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -451,13 +452,20 @@ class TrustManager:
 
 # Default manager instance
 _default_manager: TrustManager | None = None
+_default_manager_lock = threading.Lock()
 
 
 def get_trust_manager() -> TrustManager:
-    """Get the default TrustManager instance."""
+    """Get the default TrustManager instance.
+    
+    Thread-safe initialization using double-checked locking pattern.
+    """
     global _default_manager
     if _default_manager is None:
-        _default_manager = TrustManager()
+        with _default_manager_lock:
+            # Double-check after acquiring lock
+            if _default_manager is None:
+                _default_manager = TrustManager()
     return _default_manager
 
 

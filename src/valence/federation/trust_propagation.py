@@ -15,6 +15,7 @@ Key concepts:
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -672,19 +673,26 @@ def weight_query_results_by_trust(
 
 # Default engine instance
 _default_propagation: TrustPropagation | None = None
+_default_propagation_lock = threading.Lock()
 
 
 def get_trust_propagation(
     decay_factor: float = DEFAULT_DECAY_FACTOR,
     max_hops: int = DEFAULT_MAX_HOPS,
 ) -> TrustPropagation:
-    """Get the default TrustPropagation instance."""
+    """Get the default TrustPropagation instance.
+    
+    Thread-safe initialization using double-checked locking pattern.
+    """
     global _default_propagation
     if _default_propagation is None:
-        _default_propagation = TrustPropagation(
-            decay_factor=decay_factor,
-            max_hops=max_hops,
-        )
+        with _default_propagation_lock:
+            # Double-check after acquiring lock
+            if _default_propagation is None:
+                _default_propagation = TrustPropagation(
+                    decay_factor=decay_factor,
+                    max_hops=max_hops,
+                )
     return _default_propagation
 
 

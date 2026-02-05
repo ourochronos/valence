@@ -11,10 +11,11 @@ n to 255 maximum shards but provides excellent error correction properties.
 from __future__ import annotations
 
 import hashlib
+import threading
 import time
 from dataclasses import dataclass
 from typing import Sequence
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from .models import (
     RedundancyLevel,
@@ -45,29 +46,38 @@ class CorruptedDataError(ErasureCodingError):
 _GF_EXP = [0] * 512  # Anti-log table
 _GF_LOG = [0] * 256  # Log table
 _GF_INITIALIZED = False
+_GF_LOCK = threading.Lock()  # Thread lock for Galois table initialization
 
 
 def _init_galois_tables() -> None:
-    """Initialize Galois Field lookup tables."""
+    """Initialize Galois Field lookup tables.
+    
+    Thread-safe initialization using double-checked locking pattern.
+    """
     global _GF_INITIALIZED, _GF_EXP, _GF_LOG
     
     if _GF_INITIALIZED:
         return
     
-    # Generate exp and log tables
-    x = 1
-    for i in range(255):
-        _GF_EXP[i] = x
-        _GF_LOG[x] = i
-        x <<= 1
-        if x & 0x100:
-            x ^= 0x11d  # Primitive polynomial
-    
-    # Extend exp table for easier multiplication
-    for i in range(255, 512):
-        _GF_EXP[i] = _GF_EXP[i - 255]
-    
-    _GF_INITIALIZED = True
+    with _GF_LOCK:
+        # Double-check after acquiring lock
+        if _GF_INITIALIZED:
+            return
+        
+        # Generate exp and log tables
+        x = 1
+        for i in range(255):
+            _GF_EXP[i] = x
+            _GF_LOG[x] = i
+            x <<= 1
+            if x & 0x100:
+                x ^= 0x11d  # Primitive polynomial
+        
+        # Extend exp table for easier multiplication
+        for i in range(255, 512):
+            _GF_EXP[i] = _GF_EXP[i - 255]
+        
+        _GF_INITIALIZED = True
 
 
 def _gf_mul(a: int, b: int) -> int:
@@ -241,7 +251,7 @@ class ErasureCodec:
             total_shards_n=self.total_shards,
             original_size=data_len,
             original_checksum=original_checksum,
-            belief_id=belief_id if belief_id else None,
+            belief_id=UUID(belief_id) if belief_id else None,
         )
         
         return shard_set

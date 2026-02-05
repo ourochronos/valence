@@ -748,20 +748,31 @@ class AuditLogger:
 
 # Module-level singleton for convenience
 _default_logger: Optional[AuditLogger] = None
+_default_logger_lock = threading.Lock()
 
 
 def get_audit_logger() -> AuditLogger:
-    """Get the default audit logger singleton."""
+    """Get the default audit logger singleton.
+    
+    Thread-safe initialization using double-checked locking pattern.
+    """
     global _default_logger
     if _default_logger is None:
-        _default_logger = AuditLogger()
+        with _default_logger_lock:
+            # Double-check after acquiring lock
+            if _default_logger is None:
+                _default_logger = AuditLogger()
     return _default_logger
 
 
 def set_audit_logger(logger: AuditLogger) -> None:
-    """Set the default audit logger singleton."""
+    """Set the default audit logger singleton.
+    
+    Thread-safe setter using lock.
+    """
     global _default_logger
-    _default_logger = logger
+    with _default_logger_lock:
+        _default_logger = logger
 
 
 # Aliases for backward compatibility with expected interface

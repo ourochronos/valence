@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 import math
+import threading
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
@@ -50,6 +51,7 @@ class DecayModel(str, Enum):
 
 # Singleton store instance
 _default_store: Optional[TrustGraphStore] = None
+_default_store_lock = threading.Lock()
 
 
 @dataclass
@@ -1131,12 +1133,17 @@ class TrustGraphStore:
 def get_trust_graph_store() -> TrustGraphStore:
     """Get the singleton TrustGraphStore instance.
 
+    Thread-safe initialization using double-checked locking pattern.
+
     Returns:
         The shared TrustGraphStore instance
     """
     global _default_store
     if _default_store is None:
-        _default_store = TrustGraphStore()
+        with _default_store_lock:
+            # Double-check after acquiring lock
+            if _default_store is None:
+                _default_store = TrustGraphStore()
     return _default_store
 
 

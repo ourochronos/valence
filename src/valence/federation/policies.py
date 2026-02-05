@@ -6,6 +6,7 @@ Ensures critical actions require consensus among administrators.
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -415,17 +416,28 @@ class PolicyManager:
 # =============================================================================
 
 _default_manager: PolicyManager | None = None
+_default_manager_lock = threading.Lock()
 
 
 def get_policy_manager() -> PolicyManager:
-    """Get the default policy manager singleton."""
+    """Get the default policy manager singleton.
+    
+    Thread-safe initialization using double-checked locking pattern.
+    """
     global _default_manager
     if _default_manager is None:
-        _default_manager = PolicyManager()
+        with _default_manager_lock:
+            # Double-check after acquiring lock
+            if _default_manager is None:
+                _default_manager = PolicyManager()
     return _default_manager
 
 
 def reset_policy_manager() -> None:
-    """Reset the default policy manager (for testing)."""
+    """Reset the default policy manager (for testing).
+    
+    Thread-safe reset using lock.
+    """
     global _default_manager
-    _default_manager = None
+    with _default_manager_lock:
+        _default_manager = None

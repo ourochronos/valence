@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from dataclasses import dataclass, field
 from enum import IntEnum, StrEnum
 from typing import Any
@@ -270,13 +271,20 @@ class PIIScanner:
 
 # Global scanner instance
 _default_scanner: PIIScanner | None = None
+_default_scanner_lock = threading.Lock()
 
 
 def get_scanner() -> PIIScanner:
-    """Get the default PII scanner."""
+    """Get the default PII scanner.
+    
+    Thread-safe initialization using double-checked locking pattern.
+    """
     global _default_scanner
     if _default_scanner is None:
-        _default_scanner = PIIScanner()
+        with _default_scanner_lock:
+            # Double-check after acquiring lock
+            if _default_scanner is None:
+                _default_scanner = PIIScanner()
     return _default_scanner
 
 

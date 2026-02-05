@@ -16,6 +16,7 @@ from __future__ import annotations
 import functools
 import json
 import logging
+import threading
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
@@ -1433,20 +1434,31 @@ class CapabilityService:
 # =============================================================================
 
 _default_service: Optional[CapabilityService] = None
+_default_service_lock = threading.Lock()
 
 
 def get_capability_service() -> CapabilityService:
-    """Get the default capability service singleton."""
+    """Get the default capability service singleton.
+    
+    Thread-safe initialization using double-checked locking pattern.
+    """
     global _default_service
     if _default_service is None:
-        _default_service = CapabilityService()
+        with _default_service_lock:
+            # Double-check after acquiring lock
+            if _default_service is None:
+                _default_service = CapabilityService()
     return _default_service
 
 
 def set_capability_service(service: CapabilityService) -> None:
-    """Set the default capability service singleton."""
+    """Set the default capability service singleton.
+    
+    Thread-safe setter using lock.
+    """
     global _default_service
-    _default_service = service
+    with _default_service_lock:
+        _default_service = service
 
 
 # =============================================================================
