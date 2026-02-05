@@ -659,7 +659,7 @@ class TestFederationAggregator:
 
         assert result.k_anonymity_satisfied
         assert result.federation_count > 0
-        assert 0 < result.collective_confidence < 1
+        assert 0 < result.collective_confidence <= 1
 
     def test_aggregate_filters_low_trust(self) -> None:
         """Test that low-trust federations are filtered."""

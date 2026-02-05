@@ -433,7 +433,10 @@ class TestOfflineSupport:
         with patch.dict(os.environ, {"VALENCE_EMBEDDING_MODEL_PATH": "BAAI/bge-small-en-v1.5"}):
             clear_config_cache()
             try:
-                with patch("sentence_transformers.SentenceTransformer", side_effect=network_error):
+                with patch(
+                    "sentence_transformers.SentenceTransformer",
+                    side_effect=network_error,
+                ):
                     with pytest.raises(ModelLoadError) as exc_info:
                         local.get_model()
 
