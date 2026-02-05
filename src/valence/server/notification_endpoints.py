@@ -14,6 +14,15 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from .sharing_endpoints import get_sharing_service
+from .errors import (
+    missing_field_error,
+    invalid_json_error,
+    not_found_error,
+    forbidden_error,
+    internal_error,
+    service_unavailable_error,
+    NOT_FOUND_NOTIFICATION,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,17 +40,11 @@ async def list_notifications_endpoint(request: Request) -> JSONResponse:
     """
     service = get_sharing_service()
     if service is None:
-        return JSONResponse(
-            {"error": "Sharing service not initialized"},
-            status_code=503,
-        )
+        return service_unavailable_error("Sharing service")
     
     recipient_did = request.query_params.get("recipient_did")
     if not recipient_did:
-        return JSONResponse(
-            {"error": "recipient_did query parameter is required"},
-            status_code=400,
-        )
+        return missing_field_error("recipient_did")
     
     try:
         notifications = await service.get_pending_notifications(recipient_did)
@@ -57,10 +60,7 @@ async def list_notifications_endpoint(request: Request) -> JSONResponse:
         
     except Exception as e:
         logger.exception(f"Error listing notifications: {e}")
-        return JSONResponse(
-            {"error": "Internal server error", "success": False},
-            status_code=500,
-        )
+        return internal_error()
 
 
 async def acknowledge_notification_endpoint(request: Request) -> JSONResponse:
@@ -83,41 +83,26 @@ async def acknowledge_notification_endpoint(request: Request) -> JSONResponse:
     """
     service = get_sharing_service()
     if service is None:
-        return JSONResponse(
-            {"error": "Sharing service not initialized"},
-            status_code=503,
-        )
+        return service_unavailable_error("Sharing service")
     
     notification_id = request.path_params.get("id")
     if not notification_id:
-        return JSONResponse(
-            {"error": "Notification ID is required"},
-            status_code=400,
-        )
+        return missing_field_error("Notification ID")
     
     try:
         body = await request.json()
     except Exception:
-        return JSONResponse(
-            {"error": "Invalid JSON body"},
-            status_code=400,
-        )
+        return invalid_json_error()
     
     recipient_did = body.get("recipient_did")
     if not recipient_did:
-        return JSONResponse(
-            {"error": "recipient_did is required"},
-            status_code=400,
-        )
+        return missing_field_error("recipient_did")
     
     try:
         success = await service.acknowledge_notification(notification_id, recipient_did)
         
         if not success:
-            return JSONResponse(
-                {"error": "Notification not found", "success": False},
-                status_code=404,
-            )
+            return not_found_error("Notification", code=NOT_FOUND_NOTIFICATION)
         
         return JSONResponse(
             {
@@ -129,16 +114,10 @@ async def acknowledge_notification_endpoint(request: Request) -> JSONResponse:
         )
         
     except PermissionError as e:
-        return JSONResponse(
-            {"error": str(e), "success": False},
-            status_code=403,
-        )
+        return forbidden_error(str(e))
     except Exception as e:
         logger.exception(f"Error acknowledging notification: {e}")
-        return JSONResponse(
-            {"error": "Internal server error", "success": False},
-            status_code=500,
-        )
+        return internal_error()
 
 
 def _notification_to_dict(notification: Any) -> dict[str, Any]:

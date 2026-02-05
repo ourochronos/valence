@@ -19,6 +19,15 @@ from ..compliance.deletion import (
     get_deletion_verification,
     DeletionReason,
 )
+from .errors import (
+    missing_field_error,
+    invalid_format_error,
+    validation_error,
+    not_found_error,
+    internal_error,
+    NOT_FOUND_TOMBSTONE,
+    VALIDATION_INVALID_VALUE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,22 +55,17 @@ async def delete_user_data_endpoint(request: Request) -> JSONResponse:
     user_id = request.path_params.get("id")
     
     if not user_id:
-        return JSONResponse(
-            {"error": "User ID is required"},
-            status_code=400,
-        )
+        return missing_field_error("User ID")
     
     # Parse reason from query params
     reason_str = request.query_params.get("reason", "user_request")
     try:
         reason = DeletionReason(reason_str)
     except ValueError:
-        return JSONResponse(
-            {
-                "error": f"Invalid reason: {reason_str}",
-                "valid_reasons": [r.value for r in DeletionReason],
-            },
-            status_code=400,
+        valid = ", ".join(r.value for r in DeletionReason)
+        return validation_error(
+            f"Invalid reason: {reason_str}. Valid: {valid}",
+            code=VALIDATION_INVALID_VALUE
         )
     
     legal_basis = request.query_params.get("legal_basis")
@@ -80,10 +84,7 @@ async def delete_user_data_endpoint(request: Request) -> JSONResponse:
             
     except Exception as e:
         logger.exception(f"Error deleting user data: {e}")
-        return JSONResponse(
-            {"error": str(e), "success": False},
-            status_code=500,
-        )
+        return internal_error(str(e))
 
 
 async def get_deletion_verification_endpoint(request: Request) -> JSONResponse:
@@ -103,17 +104,11 @@ async def get_deletion_verification_endpoint(request: Request) -> JSONResponse:
     try:
         tombstone_id = UUID(tombstone_id_str)
     except (TypeError, ValueError):
-        return JSONResponse(
-            {"error": "Invalid tombstone ID"},
-            status_code=400,
-        )
+        return invalid_format_error("tombstone ID", "must be valid UUID")
     
     report = get_deletion_verification(tombstone_id)
     
     if report is None:
-        return JSONResponse(
-            {"error": "Tombstone not found"},
-            status_code=404,
-        )
+        return not_found_error("Tombstone", code=NOT_FOUND_TOMBSTONE)
     
     return JSONResponse(report, status_code=200)

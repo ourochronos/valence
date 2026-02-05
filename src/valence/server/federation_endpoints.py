@@ -23,6 +23,15 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from .config import get_settings
+from .errors import (
+    missing_field_error,
+    invalid_json_error,
+    auth_error,
+    not_found_error,
+    feature_not_enabled_error,
+    internal_error,
+    AUTH_SIGNATURE_FAILED,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -129,20 +138,14 @@ def require_did_signature(handler: Callable) -> Callable:
 
         # Skip verification if federation is disabled
         if not settings.federation_enabled:
-            return JSONResponse(
-                {"error": "Federation not enabled"},
-                status_code=404,
-            )
+            return feature_not_enabled_error("Federation")
 
         # Verify DID signature
         did_info = await verify_did_signature(request)
         if not did_info:
-            return JSONResponse(
-                {
-                    "error": "DID signature verification failed",
-                    "details": "Federation endpoints require valid X-VFP-DID, X-VFP-Signature, X-VFP-Timestamp, and X-VFP-Nonce headers",
-                },
-                status_code=401,
+            return auth_error(
+                "DID signature verification failed. Required headers: X-VFP-DID, X-VFP-Signature, X-VFP-Timestamp, X-VFP-Nonce",
+                code=AUTH_SIGNATURE_FAILED
             )
 
         # Attach verified DID info to request state
@@ -166,10 +169,7 @@ async def vfp_node_metadata(request: Request) -> JSONResponse:
 
     # Check if federation is enabled
     if not settings.federation_enabled:
-        return JSONResponse(
-            {"error": "Federation not enabled on this node"},
-            status_code=404,
-        )
+        return feature_not_enabled_error("Federation")
 
     # Build DID document from configuration
     did_document = _build_did_document(settings)
@@ -195,17 +195,11 @@ async def vfp_trust_anchors(request: Request) -> JSONResponse:
 
     # Check if federation is enabled
     if not settings.federation_enabled:
-        return JSONResponse(
-            {"error": "Federation not enabled on this node"},
-            status_code=404,
-        )
+        return feature_not_enabled_error("Federation")
 
     # Check if trust anchors are published
     if not settings.federation_publish_trust_anchors:
-        return JSONResponse(
-            {"error": "Trust anchors not published by this node"},
-            status_code=404,
-        )
+        return feature_not_enabled_error("Trust anchors publishing")
 
     # Get trust anchors from database
     trust_anchors = _get_trust_anchors()
@@ -375,10 +369,7 @@ async def federation_status(request: Request) -> JSONResponse:
     settings = get_settings()
 
     if not settings.federation_enabled:
-        return JSONResponse(
-            {"error": "Federation not enabled on this node"},
-            status_code=404,
-        )
+        return feature_not_enabled_error("Federation")
 
     # Get federation statistics
     stats = _get_federation_stats()
@@ -493,10 +484,7 @@ async def federation_protocol(request: Request) -> JSONResponse:
         # Validate message structure
         message_type = body.get("type")
         if not message_type:
-            return JSONResponse(
-                {"error": "Missing message type"},
-                status_code=400,
-            )
+            return missing_field_error("message type")
 
         # Import protocol handler
         from ..federation.protocol import parse_message, handle_message
@@ -504,10 +492,7 @@ async def federation_protocol(request: Request) -> JSONResponse:
         # Parse and handle the message
         message = parse_message(body)
         if not message:
-            return JSONResponse(
-                {"error": f"Unknown message type: {message_type}"},
-                status_code=400,
-            )
+            return not_found_error(f"Message type '{message_type}'")
 
         # Handle the message
         response = await handle_message(message)
@@ -515,16 +500,10 @@ async def federation_protocol(request: Request) -> JSONResponse:
         return JSONResponse(response.to_dict() if hasattr(response, 'to_dict') else response)
 
     except json.JSONDecodeError:
-        return JSONResponse(
-            {"error": "Invalid JSON"},
-            status_code=400,
-        )
+        return invalid_json_error()
     except Exception as e:
         logger.exception("Error handling federation protocol message")
-        return JSONResponse(
-            {"error": str(e)},
-            status_code=500,
-        )
+        return internal_error(str(e))
 
 
 # =============================================================================
@@ -545,10 +524,7 @@ async def federation_nodes_list(request: Request) -> JSONResponse:
     settings = get_settings()
 
     if not settings.federation_enabled:
-        return JSONResponse(
-            {"error": "Federation not enabled"},
-            status_code=404,
-        )
+        return feature_not_enabled_error("Federation")
 
     from ..federation.tools import federation_node_list
 
@@ -575,10 +551,7 @@ async def federation_nodes_get(request: Request) -> JSONResponse:
     settings = get_settings()
 
     if not settings.federation_enabled:
-        return JSONResponse(
-            {"error": "Federation not enabled"},
-            status_code=404,
-        )
+        return feature_not_enabled_error("Federation")
 
     from ..federation.tools import federation_node_get
 
@@ -586,7 +559,7 @@ async def federation_nodes_get(request: Request) -> JSONResponse:
     result = federation_node_get(node_id=node_id, include_sync_state=True)
 
     if not result.get("success"):
-        return JSONResponse(result, status_code=404)
+        return not_found_error("Federation node", code="NOT_FOUND_NODE")
 
     return JSONResponse(result)
 
@@ -608,10 +581,7 @@ async def federation_nodes_discover(request: Request) -> JSONResponse:
         body = await request.json()
         url_or_did = body.get("url_or_did")
         if not url_or_did:
-            return JSONResponse(
-                {"error": "url_or_did is required"},
-                status_code=400,
-            )
+            return missing_field_error("url_or_did")
 
         from ..federation.tools import federation_node_discover
 
@@ -623,10 +593,7 @@ async def federation_nodes_discover(request: Request) -> JSONResponse:
         return JSONResponse(result)
 
     except json.JSONDecodeError:
-        return JSONResponse(
-            {"error": "Invalid JSON"},
-            status_code=400,
-        )
+        return invalid_json_error()
 
 
 # =============================================================================
@@ -642,10 +609,7 @@ async def federation_trust_get(request: Request) -> JSONResponse:
     settings = get_settings()
 
     if not settings.federation_enabled:
-        return JSONResponse(
-            {"error": "Federation not enabled"},
-            status_code=404,
-        )
+        return feature_not_enabled_error("Federation")
 
     from ..federation.tools import federation_trust_get as get_trust
 
@@ -660,7 +624,7 @@ async def federation_trust_get(request: Request) -> JSONResponse:
     )
 
     if not result.get("success"):
-        return JSONResponse(result, status_code=404)
+        return not_found_error("Federation node trust", code="NOT_FOUND_NODE")
 
     return JSONResponse(result)
 
@@ -686,10 +650,7 @@ async def federation_trust_set(request: Request) -> JSONResponse:
 
         preference = body.get("preference")
         if not preference:
-            return JSONResponse(
-                {"error": "preference is required"},
-                status_code=400,
-            )
+            return missing_field_error("preference")
 
         from ..federation.tools import federation_trust_set_preference
 
@@ -704,10 +665,7 @@ async def federation_trust_set(request: Request) -> JSONResponse:
         return JSONResponse(result)
 
     except json.JSONDecodeError:
-        return JSONResponse(
-            {"error": "Invalid JSON"},
-            status_code=400,
-        )
+        return invalid_json_error()
 
 
 # =============================================================================
@@ -723,10 +681,7 @@ async def federation_sync_status(request: Request) -> JSONResponse:
     settings = get_settings()
 
     if not settings.federation_enabled:
-        return JSONResponse(
-            {"error": "Federation not enabled"},
-            status_code=404,
-        )
+        return feature_not_enabled_error("Federation")
 
     from ..federation.tools import federation_sync_status as get_sync_status
 
@@ -764,10 +719,7 @@ async def federation_sync_trigger(request: Request) -> JSONResponse:
         return JSONResponse(result)
 
     except json.JSONDecodeError:
-        return JSONResponse(
-            {"error": "Invalid JSON"},
-            status_code=400,
-        )
+        return invalid_json_error()
 
 
 # =============================================================================
@@ -794,10 +746,7 @@ async def federation_belief_share(request: Request) -> JSONResponse:
         body = await request.json()
         belief_id = body.get("belief_id")
         if not belief_id:
-            return JSONResponse(
-                {"error": "belief_id is required"},
-                status_code=400,
-            )
+            return missing_field_error("belief_id")
 
         from ..federation.tools import federation_belief_share as share_belief
 
@@ -811,10 +760,7 @@ async def federation_belief_share(request: Request) -> JSONResponse:
         return JSONResponse(result)
 
     except json.JSONDecodeError:
-        return JSONResponse(
-            {"error": "Invalid JSON"},
-            status_code=400,
-        )
+        return invalid_json_error()
 
 
 @require_did_signature
@@ -837,10 +783,7 @@ async def federation_belief_query(request: Request) -> JSONResponse:
         body = await request.json()
         query = body.get("query")
         if not query:
-            return JSONResponse(
-                {"error": "query is required"},
-                status_code=400,
-            )
+            return missing_field_error("query")
 
         from ..federation.tools import federation_belief_query as query_beliefs
 
@@ -855,10 +798,7 @@ async def federation_belief_query(request: Request) -> JSONResponse:
         return JSONResponse(result)
 
     except json.JSONDecodeError:
-        return JSONResponse(
-            {"error": "Invalid JSON"},
-            status_code=400,
-        )
+        return invalid_json_error()
 
 
 @require_did_signature
@@ -881,10 +821,7 @@ async def federation_corroboration_check(request: Request) -> JSONResponse:
         content = body.get("content")
 
         if not belief_id and not content:
-            return JSONResponse(
-                {"error": "Either belief_id or content is required"},
-                status_code=400,
-            )
+            return missing_field_error("belief_id or content")
 
         from ..federation.tools import federation_corroboration_check as check_corroboration
 
@@ -897,10 +834,7 @@ async def federation_corroboration_check(request: Request) -> JSONResponse:
         return JSONResponse(result)
 
     except json.JSONDecodeError:
-        return JSONResponse(
-            {"error": "Invalid JSON"},
-            status_code=400,
-        )
+        return invalid_json_error()
 
 
 # =============================================================================

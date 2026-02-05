@@ -12,6 +12,14 @@ from uuid import UUID
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from .errors import (
+    missing_field_error,
+    invalid_format_error,
+    not_found_error,
+    internal_error,
+    NOT_FOUND_BELIEF,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -42,18 +50,12 @@ async def belief_corroboration_endpoint(request: Request) -> JSONResponse:
     belief_id_str = request.path_params.get("belief_id")
     
     if not belief_id_str:
-        return JSONResponse(
-            {"success": False, "error": "belief_id is required"},
-            status_code=400,
-        )
+        return missing_field_error("belief_id")
     
     try:
         belief_id = UUID(belief_id_str)
     except ValueError:
-        return JSONResponse(
-            {"success": False, "error": f"Invalid belief_id format: {belief_id_str}"},
-            status_code=400,
-        )
+        return invalid_format_error("belief_id", "must be valid UUID")
     
     try:
         from ..core.corroboration import get_corroboration
@@ -61,10 +63,7 @@ async def belief_corroboration_endpoint(request: Request) -> JSONResponse:
         corroboration = get_corroboration(belief_id)
         
         if not corroboration:
-            return JSONResponse(
-                {"success": False, "error": f"Belief not found: {belief_id_str}"},
-                status_code=404,
-            )
+            return not_found_error("Belief", code=NOT_FOUND_BELIEF)
         
         # Generate confidence label
         count = corroboration.corroboration_count
@@ -90,10 +89,7 @@ async def belief_corroboration_endpoint(request: Request) -> JSONResponse:
     
     except Exception as e:
         logger.exception(f"Error getting corroboration for {belief_id_str}")
-        return JSONResponse(
-            {"success": False, "error": str(e)},
-            status_code=500,
-        )
+        return internal_error(str(e))
 
 
 async def most_corroborated_beliefs_endpoint(request: Request) -> JSONResponse:
@@ -144,7 +140,4 @@ async def most_corroborated_beliefs_endpoint(request: Request) -> JSONResponse:
     
     except Exception as e:
         logger.exception("Error getting most corroborated beliefs")
-        return JSONResponse(
-            {"success": False, "error": str(e)},
-            status_code=500,
-        )
+        return internal_error(str(e))
