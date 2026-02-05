@@ -13,6 +13,80 @@ from uuid import UUID, uuid4
 
 import pytest
 
+
+# ============================================================================
+# PostgreSQL Availability Detection
+# ============================================================================
+
+def _check_postgres_available() -> tuple[bool, str | None]:
+    """Check if PostgreSQL is available for integration tests.
+    
+    Returns:
+        Tuple of (is_available, error_message)
+    """
+    try:
+        import psycopg2
+    except ImportError:
+        return False, "psycopg2 not installed"
+    
+    # Get connection params from environment
+    host = os.environ.get("VKB_DB_HOST", "localhost")
+    port = int(os.environ.get("VKB_DB_PORT", "5432"))
+    dbname = os.environ.get("VKB_DB_NAME", "valence")
+    user = os.environ.get("VKB_DB_USER", "valence")
+    password = os.environ.get("VKB_DB_PASSWORD", "")
+    
+    try:
+        conn = psycopg2.connect(
+            host=host,
+            port=port,
+            database=dbname,
+            user=user,
+            password=password,
+            connect_timeout=3,
+        )
+        conn.close()
+        return True, None
+    except psycopg2.OperationalError as e:
+        return False, f"PostgreSQL connection failed: {e}"
+    except Exception as e:
+        return False, f"Unexpected error connecting to PostgreSQL: {e}"
+
+
+# Check PostgreSQL availability once at module load
+POSTGRES_AVAILABLE, POSTGRES_ERROR = _check_postgres_available()
+
+
+def pytest_configure(config):
+    """Register custom markers and check PostgreSQL availability."""
+    config.addinivalue_line(
+        "markers",
+        "requires_postgres: mark test as requiring a real PostgreSQL database"
+    )
+    
+    # Store availability status on config for access in fixtures
+    config._postgres_available = POSTGRES_AVAILABLE
+    config._postgres_error = POSTGRES_ERROR
+
+
+def pytest_collection_modifyitems(config, items):
+    """Add skip markers to tests that require PostgreSQL when DB is unavailable."""
+    if POSTGRES_AVAILABLE:
+        # PostgreSQL is available, don't skip anything
+        return
+    
+    skip_postgres = pytest.mark.skip(
+        reason=f"PostgreSQL not available: {POSTGRES_ERROR}"
+    )
+    
+    for item in items:
+        # Skip tests marked with @pytest.mark.integration
+        if "integration" in item.keywords:
+            item.add_marker(skip_postgres)
+        # Skip tests marked with @pytest.mark.requires_postgres
+        elif "requires_postgres" in item.keywords:
+            item.add_marker(skip_postgres)
+
 # ============================================================================
 # Environment Fixtures
 # ============================================================================

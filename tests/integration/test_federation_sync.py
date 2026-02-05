@@ -5,6 +5,12 @@ Tests the federation protocol:
 - Belief propagation between peers
 - Selective sync based on trust levels
 - Conflict resolution during sync
+
+Requirements:
+    - PostgreSQL database available (VKB_DB_HOST, VKB_DB_NAME, etc.)
+    - Schema initialized with federation tables
+    
+These tests are automatically skipped when PostgreSQL is unavailable.
 """
 
 from __future__ import annotations

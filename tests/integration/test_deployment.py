@@ -4,6 +4,12 @@ Integration tests for Valence Pod deployment.
 These tests verify that a deployed pod is functioning correctly.
 They can be run against a local development database or a remote pod.
 
+Requirements:
+    - PostgreSQL database available (VKB_DB_HOST, VKB_DB_NAME, etc.)
+    - For remote tests: VALENCE_DOMAIN environment variable
+
+These tests are automatically skipped when PostgreSQL is unavailable.
+
 Usage:
     # Test local database
     pytest tests/integration/test_deployment.py -v

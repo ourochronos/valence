@@ -5,6 +5,12 @@ Tests the complete lifecycle of beliefs:
 - Querying with semantic search
 - Updates and supersession
 - Deletion and archival
+
+Requirements:
+    - PostgreSQL database available (VKB_DB_HOST, VKB_DB_NAME, etc.)
+    - Schema initialized with beliefs, entities tables
+    
+These tests are automatically skipped when PostgreSQL is unavailable.
 """
 
 from __future__ import annotations

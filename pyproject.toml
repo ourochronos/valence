@@ -79,7 +79,8 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = [
     "unit: Unit tests (fast, no external dependencies)",
-    "integration: Integration tests (may need database/mocks)",
+    "integration: Integration tests (requires PostgreSQL database)",
+    "requires_postgres: Tests that require a real PostgreSQL database",
     "slow: Tests that take a long time to run",
 ]
 addopts = "-q --tb=line --no-header"

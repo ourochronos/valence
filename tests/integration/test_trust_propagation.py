@@ -5,6 +5,12 @@ Tests the trust propagation model:
 - Transitive trust calculation
 - Trust score updates from corroboration
 - Trust boundaries and limits
+
+Requirements:
+    - PostgreSQL database available (VKB_DB_HOST, VKB_DB_NAME, etc.)
+    - Schema initialized with federation_nodes, node_trust tables
+    
+These tests are automatically skipped when PostgreSQL is unavailable.
 """
 
 from __future__ import annotations
