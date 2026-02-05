@@ -209,6 +209,11 @@ if analysis['alerts']:
 4. **Anti-Sybil**: Identity attestations required for eligibility
 5. **Anti-Entrenchment**: Tenure penalties reduce long-term validator advantage
 
+> **⚠️ VRF Implementation Note**: The VRF uses a simplified construction based on
+> Ed25519 signatures rather than full ECVRF-EDWARDS25519-SHA512-TAI (RFC 9381).
+> See [VRF_SECURITY.md](./VRF_SECURITY.md) for detailed security analysis and
+> justification that the simplified construction is secure for validator selection.
+
 ## Tests
 
 Run the test suite:
