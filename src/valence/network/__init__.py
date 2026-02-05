@@ -78,6 +78,23 @@ from valence.network.node import (
     NoRoutersAvailableError,
     create_node_client,
 )
+# Decomposed NodeClient components (Issue #128)
+from valence.network.connection_manager import (
+    ConnectionManager,
+    ConnectionManagerConfig,
+)
+from valence.network.message_handler import (
+    MessageHandler,
+    MessageHandlerConfig,
+)
+from valence.network.router_client import (
+    RouterClient,
+    RouterClientConfig,
+)
+from valence.network.health_monitor import (
+    HealthMonitor,
+    HealthMonitorConfig,
+)
 from valence.network.config import (
     TrafficAnalysisMitigationConfig,
     PrivacyLevel,
@@ -161,6 +178,15 @@ __all__ = [
     "NodeError",
     "NoRoutersAvailableError",
     "create_node_client",
+    # NodeClient components (Issue #128)
+    "ConnectionManager",
+    "ConnectionManagerConfig",
+    "MessageHandler",
+    "MessageHandlerConfig",
+    "RouterClient",
+    "RouterClientConfig",
+    "HealthMonitor",
+    "HealthMonitorConfig",
     # Traffic Analysis Mitigations (Issue #120)
     "TrafficAnalysisMitigationConfig",
     "PrivacyLevel",
