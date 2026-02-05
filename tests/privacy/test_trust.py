@@ -42,10 +42,10 @@ class TestTrustEdge:
 
         assert edge.source_did == "did:key:alice"
         assert edge.target_did == "did:key:bob"
-        assert edge.competence == 0.5  # default
+        assert edge.competence == Decimal("0.5")  # default
         assert edge.integrity == Decimal("0.5")
         assert edge.confidentiality == Decimal("0.5")
-        assert edge.judgment == 0.1  # very low default - judgment must be earned
+        assert edge.judgment == Decimal("0.1")  # very low default - judgment must be earned
         assert edge.domain is None
         assert edge.id is None
 
@@ -64,7 +64,7 @@ class TestTrustEdge:
         assert edge.competence == Decimal("0.9")
         assert edge.integrity == Decimal("0.8")
         assert edge.confidentiality == Decimal("0.7")
-        assert edge.judgment == 0.6
+        assert edge.judgment == Decimal("0.6")
         assert edge.domain == "medical"
 
     def test_overall_trust_calculation(self):
@@ -90,7 +90,7 @@ class TestTrustEdge:
             judgment=0.0,
         )
         # geometric mean of (1, 1, 1, 0) = 0
-        assert edge2.overall_trust == 0.0
+        assert edge2.overall_trust == Decimal("0.0")
 
     def test_invalid_score_too_high(self):
         """Test that scores > 1.0 raise ValueError."""
@@ -171,7 +171,7 @@ class TestTrustEdge:
         assert data["competence"] == Decimal("0.9")
         assert data["integrity"] == Decimal("0.8")
         assert data["confidentiality"] == Decimal("0.7")
-        assert data["judgment"] == 0.6
+        assert data["judgment"] == Decimal("0.6")
         assert data["domain"] == "research"
         assert "overall_trust" in data
 
@@ -190,8 +190,8 @@ class TestTrustEdge:
         assert edge.target_did == "did:key:bob"
         assert edge.competence == Decimal("0.9")
         assert edge.integrity == Decimal("0.8")
-        assert edge.confidentiality == 0.5  # default
-        assert edge.judgment == 0.1  # default (very low)
+        assert edge.confidentiality == Decimal("0.5")  # default
+        assert edge.judgment == Decimal("0.1")  # default (very low)
         assert edge.domain == "test"
 
     def test_roundtrip_serialization(self):
@@ -229,7 +229,7 @@ class TestJudgmentDimension:
             source_did="did:key:alice",
             target_did="did:key:bob",
         )
-        assert edge.judgment == 0.1
+        assert edge.judgment == Decimal("0.1")
 
     def test_judgment_affects_overall_trust(self):
         """Test that low judgment pulls down overall trust."""
@@ -609,7 +609,7 @@ class TestTrustGraphStore:
         assert edge.source_did == "did:key:alice"
         assert edge.target_did == "did:key:bob"
         assert edge.competence == Decimal("0.9")
-        assert edge.judgment == 0.6
+        assert edge.judgment == Decimal("0.6")
 
     def test_get_edge_not_found(self, store, mock_cursor):
         """Test getting a non-existent trust edge."""
@@ -878,7 +878,7 @@ class TestTrustGraphStoreIntegration:
         retrieved = store.get_edge("did:test:alice", "did:test:bob")
         assert retrieved is not None
         assert retrieved.competence == Decimal("0.9")
-        assert retrieved.judgment == 0.6
+        assert retrieved.judgment == Decimal("0.6")
 
         # Update
         edge.competence = 0.95
@@ -1330,7 +1330,7 @@ class TestDomainScopedTrustOverrides:
         # Domain query gets domain-specific (not global)
         edge = service.get_trust("did:key:alice", "did:key:bob", domain="finance")
         assert edge.domain == "finance"
-        assert edge.competence == 0.9  # Not 0.5
+        assert edge.competence == Decimal("0.9")  # Not 0.5
 
     def test_get_trust_no_domain_returns_global_only(self, service):
         """Test that querying without domain returns only global trust."""
@@ -1410,7 +1410,7 @@ class TestDomainScopedTrustOverrides:
 
         # Carol should have global trust (no override)
         assert by_target["did:key:carol"].domain is None
-        assert by_target["did:key:carol"].competence == 0.6
+        assert by_target["did:key:carol"].competence == Decimal("0.6")
 
     def test_list_trusted_no_domain_returns_all(self, service):
         """Test that list_trusted without domain returns all edges."""
@@ -1473,7 +1473,7 @@ class TestDomainScopedTrustOverrides:
 
         # Personal query returns lower trust
         personal_edge = service.get_trust("did:key:alice", "did:key:bob", domain="personal")
-        assert personal_edge.competence == 0.3
+        assert personal_edge.competence == Decimal("0.3")
         assert personal_edge.domain == "personal"
 
     def test_multiple_domains(self, service):
@@ -1535,7 +1535,7 @@ class TestDomainScopedTrustOverrides:
         assert medical_edge.confidentiality == Decimal("0.95")
 
         assert finance_edge.domain == "finance"
-        assert finance_edge.competence == 0.3
+        assert finance_edge.competence == Decimal("0.3")
 
         # Unknown domain falls back to global
         assert unknown_edge.domain is None
@@ -1683,8 +1683,8 @@ class TestDomainScopedConvenienceFunctions:
         assert len(edges) == 2
 
         by_target = {e.target_did: e for e in edges}
-        assert by_target["did:key:bob"].competence == 0.9  # Domain override
-        assert by_target["did:key:carol"].competence == 0.6  # Global fallback
+        assert by_target["did:key:bob"].competence == Decimal("0.9")  # Domain override
+        assert by_target["did:key:carol"].competence == Decimal("0.6")  # Global fallback
 
 
 # =============================================================================
@@ -2199,11 +2199,11 @@ class TestFederationTrustEdge:
 
         assert edge.source_federation == "acme-corp"
         assert edge.target_federation == "globex-inc"
-        assert edge.competence == 0.5  # default
+        assert edge.competence == Decimal("0.5")  # default
         assert edge.integrity == Decimal("0.5")
         assert edge.confidentiality == Decimal("0.5")
-        assert edge.judgment == 0.3  # federation default
-        assert edge.inheritance_factor == 0.5  # default
+        assert edge.judgment == Decimal("0.3")  # federation default
+        assert edge.inheritance_factor == Decimal("0.5")  # default
         assert edge.domain is None
 
     def test_create_federation_edge_with_values(self):
@@ -2224,8 +2224,8 @@ class TestFederationTrustEdge:
         assert edge.competence == Decimal("0.9")
         assert edge.integrity == Decimal("0.8")
         assert edge.confidentiality == Decimal("0.7")
-        assert edge.judgment == 0.6
-        assert edge.inheritance_factor == 0.75
+        assert edge.judgment == Decimal("0.6")
+        assert edge.inheritance_factor == Decimal("0.75")
         assert edge.domain == "research"
 
     def test_federation_edge_invalid_scores(self):
@@ -2322,7 +2322,7 @@ class TestFederationTrustEdge:
         assert fed_edge.source_federation == "acme-corp"
         assert fed_edge.target_federation == "globex-inc"
         assert fed_edge.competence == Decimal("0.9")
-        assert fed_edge.inheritance_factor == 0.6
+        assert fed_edge.inheritance_factor == Decimal("0.6")
 
     def test_federation_edge_from_trust_edge_invalid_prefix(self):
         """Test that from_trust_edge rejects non-federation edges."""
@@ -2457,7 +2457,7 @@ class TestFederationTrustService:
         assert result.source_federation == "acme-corp"
         assert result.target_federation == "globex-inc"
         assert result.competence == Decimal("0.9")
-        assert result.judgment == 0.6
+        assert result.judgment == Decimal("0.6")
 
     def test_get_federation_trust(self, service):
         """Test getting federation trust."""
@@ -2721,7 +2721,7 @@ class TestEffectiveTrustWithFederation:
         assert result is not None
         # Inherited (0.9 * 0.5 = 0.45) > direct (0.3)
         # Takes max
-        assert result.competence == 0.45
+        assert result.competence == Decimal("0.45")
 
     def test_same_federation_no_inheritance(self, service, registry):
         """Test that members of the same federation don't get inherited trust."""
