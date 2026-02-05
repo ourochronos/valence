@@ -9,7 +9,7 @@ Tests the complete lifecycle of beliefs:
 Requirements:
     - PostgreSQL database available (VKB_DB_HOST, VKB_DB_NAME, etc.)
     - Schema initialized with beliefs, entities tables
-    
+
 These tests are automatically skipped when PostgreSQL is unavailable.
 """
 

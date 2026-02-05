@@ -60,9 +60,7 @@ POSTGRES_AVAILABLE, POSTGRES_ERROR = _check_postgres_available()
 
 def pytest_configure(config):
     """Register custom markers and check PostgreSQL availability."""
-    config.addinivalue_line(
-        "markers", "requires_postgres: mark test as requiring a real PostgreSQL database"
-    )
+    config.addinivalue_line("markers", "requires_postgres: mark test as requiring a real PostgreSQL database")
 
     # Store availability status on config for access in fixtures
     config._postgres_available = POSTGRES_AVAILABLE

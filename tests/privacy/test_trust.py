@@ -840,7 +840,7 @@ class TestModuleFunctions:
 @pytest.mark.integration
 class TestTrustGraphStoreIntegration:
     """Integration tests that require a real database.
-    
+
     These tests are automatically skipped when PostgreSQL is unavailable.
     To run: pytest -m integration (with PostgreSQL running)
     """
