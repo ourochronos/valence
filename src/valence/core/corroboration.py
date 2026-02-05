@@ -8,12 +8,12 @@ Corroboration boosts the `corroboration` dimension of 6D confidence.
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any
 from uuid import UUID
+
+import psycopg2
 
 from .db import get_cursor
 from .confidence import DimensionalConfidence, ConfidenceDimension
@@ -149,8 +149,8 @@ def check_corroboration(
                 is_new_source=is_new_source,
             )
     
-    except Exception as e:
-        logger.warning(f"Error checking corroboration: {e}")
+    except psycopg2.Error as e:
+        logger.warning(f"Database error checking corroboration: {e}")
         return None
 
 
@@ -189,8 +189,8 @@ def add_corroboration(
             
             return added
     
-    except Exception as e:
-        logger.warning(f"Error adding corroboration: {e}")
+    except psycopg2.Error as e:
+        logger.warning(f"Database error adding corroboration: {e}")
         return False
 
 
@@ -226,8 +226,8 @@ def get_corroboration(belief_id: UUID) -> CorroborationInfo | None:
                 sources=row["corroborating_sources"] or [],
             )
     
-    except Exception as e:
-        logger.warning(f"Error getting corroboration: {e}")
+    except psycopg2.Error as e:
+        logger.warning(f"Database error getting corroboration: {e}")
         return None
 
 
@@ -328,6 +328,6 @@ def get_most_corroborated_beliefs(
             
             return results
     
-    except Exception as e:
-        logger.warning(f"Error getting most corroborated beliefs: {e}")
+    except psycopg2.Error as e:
+        logger.warning(f"Database error getting most corroborated beliefs: {e}")
         return []

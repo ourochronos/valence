@@ -155,7 +155,7 @@ class ConnectionPool:
                 # Try to close the connection if we can't return it
                 try:
                     conn.close()
-                except Exception:
+                except Exception:  # Intentionally broad: cleanup must not raise
                     pass
 
     def close_all(self) -> None:
@@ -370,11 +370,11 @@ class AsyncConnectionPool:
         if self._pool is not None and conn is not None:
             try:
                 await self._pool.release(conn)
-            except Exception as e:
+            except Exception as e:  # Intentionally broad: pool release errors shouldn't propagate
                 logger.warning(f"Error returning connection to pool: {e}")
                 try:
                     await conn.close()
-                except Exception:
+                except Exception:  # Intentionally broad: cleanup must not raise
                     pass
 
     async def close_all(self) -> None:

@@ -1294,8 +1294,8 @@ def _aes_gcm_decrypt(key: bytes, ciphertext_with_tag: bytes, nonce: bytes) -> by
     try:
         aesgcm = AESGCM(key)
         return aesgcm.decrypt(nonce, ciphertext_with_tag, None)
-    except Exception as e:
-        raise DecryptionError(f"Decryption failed: {e}")
+    except Exception as e:  # Intentionally broad: wrap all crypto failures as DecryptionError
+        raise DecryptionError(f"Decryption failed: {e}") from e
 
 
 def encrypt_envelope(plaintext: bytes, key_provider: KeyProvider) -> EncryptedEnvelope:

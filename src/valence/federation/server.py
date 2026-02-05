@@ -184,7 +184,7 @@ class FederationNode:
             
         except json.JSONDecodeError:
             return JSONResponse({"error": "Invalid JSON"}, status_code=400)
-        except Exception as e:
+        except Exception as e:  # Intentionally broad: top-level endpoint handler
             logger.exception("Error in introduce endpoint")
             return JSONResponse({"error": "Internal server error"}, status_code=500)
     
@@ -281,7 +281,7 @@ class FederationNode:
             
         except json.JSONDecodeError:
             return JSONResponse({"error": "Invalid JSON"}, status_code=400)
-        except Exception as e:
+        except Exception as e:  # Intentionally broad: top-level endpoint handler
             logger.exception("Error in share endpoint")
             return JSONResponse({"error": "Internal server error"}, status_code=500)
     
@@ -347,7 +347,7 @@ class FederationNode:
             
         except json.JSONDecodeError:
             return JSONResponse({"error": "Invalid JSON"}, status_code=400)
-        except Exception as e:
+        except Exception as e:  # Intentionally broad: top-level endpoint handler
             logger.exception("Error in query endpoint")
             return JSONResponse({"error": "Internal server error"}, status_code=500)
     

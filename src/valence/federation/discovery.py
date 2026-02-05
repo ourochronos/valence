@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 import aiohttp
+import psycopg2
 
 from ..core.db import get_cursor
 from .identity import (
@@ -88,8 +89,9 @@ async def _fetch_node_metadata(base_url: str) -> DIDDocument | None:
     except aiohttp.ClientError as e:
         logger.warning(f"Network error fetching node metadata from {url}: {e}")
         return None
-    except Exception as e:
-        logger.warning(f"Error fetching node metadata from {url}: {e}")
+    except (ValueError, KeyError, TypeError) as e:
+        # ValueError: invalid JSON, KeyError/TypeError: malformed response
+        logger.warning(f"Error parsing node metadata from {url}: {e}")
         return None
 
 
@@ -100,7 +102,7 @@ def discover_node_sync(url_or_did: str) -> DIDDocument | None:
     """
     try:
         return asyncio.run(discover_node(url_or_did))
-    except Exception as e:
+    except Exception as e:  # Intentionally broad: asyncio.run can raise various errors
         logger.warning(f"Error in sync discover: {e}")
         return None
 
@@ -222,8 +224,8 @@ def register_node(did_document: DIDDocument) -> FederationNode | None:
 
             return FederationNode.from_row(row)
 
-    except Exception as e:
-        logger.exception(f"Error registering node {did}")
+    except psycopg2.Error as e:
+        logger.exception(f"Database error registering node {did}")
         return None
 
 
@@ -243,8 +245,8 @@ def get_node_by_did(did: str) -> FederationNode | None:
             if row:
                 return FederationNode.from_row(row)
             return None
-    except Exception as e:
-        logger.warning(f"Error getting node {did}: {e}")
+    except psycopg2.Error as e:
+        logger.warning(f"Database error getting node {did}: {e}")
         return None
 
 
@@ -264,8 +266,8 @@ def get_node_by_id(node_id: UUID) -> FederationNode | None:
             if row:
                 return FederationNode.from_row(row)
             return None
-    except Exception as e:
-        logger.warning(f"Error getting node {node_id}: {e}")
+    except psycopg2.Error as e:
+        logger.warning(f"Database error getting node {node_id}: {e}")
         return None
 
 
@@ -285,8 +287,8 @@ def get_node_trust(node_id: UUID) -> NodeTrust | None:
             if row:
                 return NodeTrust.from_row(row)
             return None
-    except Exception as e:
-        logger.warning(f"Error getting trust for node {node_id}: {e}")
+    except psycopg2.Error as e:
+        logger.warning(f"Database error getting trust for node {node_id}: {e}")
         return None
 
 
@@ -313,8 +315,8 @@ def update_node_status(node_id: UUID, status: NodeStatus) -> bool:
                 WHERE id = %s
             """, (status.value, node_id))
             return True
-    except Exception as e:
-        logger.warning(f"Error updating node status: {e}")
+    except psycopg2.Error as e:
+        logger.warning(f"Database error updating node status: {e}")
         return False
 
 
@@ -371,7 +373,7 @@ async def bootstrap_federation(bootstrap_nodes: list[str]) -> list[FederationNod
             else:
                 logger.warning(f"Could not discover node: {node_spec}")
 
-        except Exception as e:
+        except Exception as e:  # Intentionally broad: discovery can fail in many ways
             logger.warning(f"Error bootstrapping from {node_spec}: {e}")
 
     return registered
@@ -381,7 +383,7 @@ def bootstrap_federation_sync(bootstrap_nodes: list[str]) -> list[FederationNode
     """Synchronous version of bootstrap_federation."""
     try:
         return asyncio.run(bootstrap_federation(bootstrap_nodes))
-    except Exception as e:
+    except Exception as e:  # Intentionally broad: asyncio.run can raise various errors
         logger.warning(f"Error in sync bootstrap: {e}")
         return []
 
@@ -421,7 +423,8 @@ async def check_node_health(node: FederationNode) -> bool:
             mark_node_unreachable(node.id)
             return False
 
-    except Exception as e:
+    except (aiohttp.ClientError, psycopg2.Error) as e:
+        # Network error or database error during health check
         logger.warning(f"Health check failed for {node.did}: {e}")
         mark_node_unreachable(node.id)
         return False
@@ -455,8 +458,8 @@ async def check_all_nodes_health() -> dict[str, bool]:
             else:
                 results[node.did] = health
 
-    except Exception as e:
-        logger.exception("Error checking node health")
+    except psycopg2.Error as e:
+        logger.exception("Database error checking node health")
 
     return results
 
@@ -511,8 +514,8 @@ def list_nodes(
             """, params)
             rows = cur.fetchall()
             return [FederationNode.from_row(row) for row in rows]
-    except Exception as e:
-        logger.warning(f"Error listing nodes: {e}")
+    except psycopg2.Error as e:
+        logger.warning(f"Database error listing nodes: {e}")
         return []
 
 
@@ -561,8 +564,8 @@ def list_nodes_with_trust() -> list[tuple[FederationNode, NodeTrust | None]]:
 
             return results
 
-    except Exception as e:
-        logger.warning(f"Error listing nodes with trust: {e}")
+    except psycopg2.Error as e:
+        logger.warning(f"Database error listing nodes with trust: {e}")
         return []
 
 
@@ -597,8 +600,8 @@ def get_known_peers() -> list[dict[str, Any]]:
                 for row in rows
             ]
 
-    except Exception as e:
-        logger.warning(f"Error getting known peers: {e}")
+    except psycopg2.Error as e:
+        logger.warning(f"Database error getting known peers: {e}")
         return []
 
 

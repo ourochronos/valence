@@ -102,7 +102,7 @@ class MCPServerBase(ABC):
                 "error": f"Database error: {e.message}",
             }))]
 
-        except Exception as e:
+        except Exception as e:  # Intentionally broad: top-level handler for unexpected errors
             logger.exception(f"Unexpected error in tool {name}")
             return [TextContent(type="text", text=json.dumps({
                 "success": False,

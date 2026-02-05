@@ -14,6 +14,8 @@ from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
+import psycopg2
+
 from ..core.db import get_cursor
 from .models import (
     NodeTrust,
@@ -211,8 +213,8 @@ class TrustPolicy:
                             self.registry.save_node_trust(node_trust)
                             count += 1
 
-        except Exception as e:
-            logger.exception(f"Error applying trust decay: {e}")
+        except psycopg2.Error as e:
+            logger.exception(f"Database error applying trust decay: {e}")
 
         return count
 
@@ -317,8 +319,8 @@ class TrustPolicy:
                 logger.info(f"Node {node_id} transitioned to phase {new_phase.value}: {reason}")
                 return True
 
-        except Exception as e:
-            logger.exception(f"Error transitioning node {node_id} to phase {new_phase.value}")
+        except psycopg2.Error as e:
+            logger.exception(f"Database error transitioning node {node_id} to phase {new_phase.value}")
             return False
 
     def check_and_apply_transitions(self) -> list[tuple[UUID, TrustPhase, TrustPhase]]:
@@ -346,8 +348,8 @@ class TrustPolicy:
                     if self.transition_phase(node_id, new_phase, reason):
                         transitions.append((node_id, old_phase, new_phase))
 
-        except Exception as e:
-            logger.exception(f"Error checking phase transitions: {e}")
+        except psycopg2.Error as e:
+            logger.exception(f"Database error checking phase transitions: {e}")
 
         return transitions
 
@@ -403,8 +405,8 @@ class TrustPolicy:
                         float(row.get("trust_score", 0.1)),
                     ))
                     
-        except Exception as e:
-            logger.warning(f"Error fetching trust data: {e}")
+        except psycopg2.Error as e:
+            logger.warning(f"Database error fetching trust data: {e}")
             # Return empty report on error
             return TrustConcentrationReport(
                 warnings=[TrustConcentrationWarning(

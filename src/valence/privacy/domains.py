@@ -193,7 +193,7 @@ class AdminSignatureVerifier:
                     hashlib.sha256
                 ).hexdigest()
                 verified = hmac.compare_digest(signature, expected_sig)
-            except Exception as e:
+            except Exception as e:  # Intentionally broad: return verification failure, don't propagate
                 return VerificationResult(
                     verified=False,
                     method=VerificationMethod.ADMIN_SIGNATURE,
@@ -279,7 +279,7 @@ class DNSTxtVerifier:
         resolver = self.dns_resolver or self._default_dns_lookup
         try:
             txt_records = await resolver(hostname)
-        except Exception as e:
+        except Exception as e:  # Intentionally broad: external resolver may raise various errors
             return VerificationResult(
                 verified=False,
                 method=VerificationMethod.DNS_TXT,

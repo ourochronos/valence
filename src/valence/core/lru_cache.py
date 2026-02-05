@@ -22,7 +22,8 @@ def get_cache_max_size() -> int:
     from .config import get_config
     try:
         return get_config().cache_max_size
-    except Exception:
+    except (RuntimeError, AttributeError):
+        # RuntimeError: config not initialized, AttributeError: field missing
         return DEFAULT_CACHE_MAX_SIZE
 
 

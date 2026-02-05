@@ -189,7 +189,8 @@ class TrustedDomain:
                 return any(re.match(pattern, parsed.path) for pattern in self.allowed_paths)
             
             return True
-        except Exception:
+        except (ValueError, re.error):
+            # ValueError: invalid URL, re.error: invalid regex pattern
             return False
     
     def to_dict(self) -> dict[str, Any]:
@@ -368,7 +369,8 @@ class TrustedSourceRegistry:
             parsed = urlparse(url)
             domain = parsed.netloc.lower()
             return any(domain.endswith(blocked) for blocked in self._blocklist)
-        except Exception:
+        except ValueError:
+            # Invalid URL format
             return False
     
     def get_domain_info(self, url: str) -> TrustedDomain | None:
@@ -392,7 +394,8 @@ class TrustedSourceRegistry:
                         return info
             
             return None
-        except Exception:
+        except (ValueError, re.error):
+            # ValueError: invalid URL, re.error: invalid regex in matches_url()
             return None
     
     def get_doi_prefix_info(self, doi: str) -> DOIPrefix | None:

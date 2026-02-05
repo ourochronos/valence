@@ -140,7 +140,8 @@ class CanaryToken:
                 token_id=token_id,
                 signature=full_signature,
             )
-        except Exception:
+        except (ValueError, UnicodeDecodeError, IndexError):
+            # Parse failures: invalid format, encoding issues, or missing parts
             return None
 
 
@@ -186,7 +187,8 @@ def _decode_from_zero_width(encoded: str) -> Optional[str]:
             return None
             
         return bytes(bytes_data).decode("utf-8")
-    except Exception:
+    except (ValueError, UnicodeDecodeError):
+        # Invalid binary encoding or UTF-8 decode failure
         return None
 
 

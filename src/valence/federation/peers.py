@@ -100,7 +100,8 @@ class PeerStore:
                     peer = Peer.from_dict(peer_data)
                     self._peers[peer.did] = peer
             logger.info(f"Loaded {len(self._peers)} peers from {self._persist_path}")
-        except Exception as e:
+        except (OSError, json.JSONDecodeError, KeyError, TypeError) as e:
+            # OSError: file issues, JSONDecodeError: invalid JSON, KeyError/TypeError: schema mismatch
             logger.warning(f"Failed to load peers: {e}")
     
     def _save(self) -> None:
@@ -114,7 +115,8 @@ class PeerStore:
                 json.dump({
                     "peers": [p.to_dict() for p in self._peers.values()]
                 }, f, indent=2)
-        except Exception as e:
+        except OSError as e:
+            # File system errors (permissions, disk full, etc.)
             logger.warning(f"Failed to save peers: {e}")
     
     def add_peer(

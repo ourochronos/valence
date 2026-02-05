@@ -131,7 +131,7 @@ async def share_belief_endpoint(request: Request) -> JSONResponse:
         
     except ValueError as e:
         return validation_error(str(e), code=VALIDATION_INVALID_VALUE)
-    except Exception as e:
+    except Exception as e:  # Intentionally broad: top-level endpoint handler
         logger.exception(f"Error sharing belief: {e}")
         return internal_error()
 
@@ -183,7 +183,7 @@ async def list_shares_endpoint(request: Request) -> JSONResponse:
             status_code=200,
         )
         
-    except Exception as e:
+    except Exception as e:  # Intentionally broad: top-level endpoint handler
         logger.exception(f"Error listing shares: {e}")
         return internal_error()
 
@@ -221,7 +221,7 @@ async def get_share_endpoint(request: Request) -> JSONResponse:
             status_code=200,
         )
         
-    except Exception as e:
+    except Exception as e:  # Intentionally broad: top-level endpoint handler
         logger.exception(f"Error getting share: {e}")
         return internal_error()
 
@@ -295,7 +295,7 @@ async def revoke_share_endpoint(request: Request) -> JSONResponse:
         return validation_error(error_msg, code=VALIDATION_INVALID_VALUE)
     except PermissionError as e:
         return forbidden_error(str(e), code=FORBIDDEN_NOT_OWNER)
-    except Exception as e:
+    except Exception as e:  # Intentionally broad: top-level endpoint handler
         logger.exception(f"Error revoking share: {e}")
         return internal_error()
 

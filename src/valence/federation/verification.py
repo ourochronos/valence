@@ -416,7 +416,7 @@ async def verify_dns_txt_record(
                     continue
                 logger.warning(f"DNS timeout for {query_domain} after {retries + 1} attempts")
                 
-            except Exception as e:
+            except Exception as e:  # Intentionally broad: various DNS library errors possible
                 if attempt < retries:
                     await asyncio.sleep(0.5)
                     continue
@@ -434,7 +434,7 @@ def verify_dns_txt_record_sync(
     """Synchronous version of verify_dns_txt_record."""
     try:
         return asyncio.run(verify_dns_txt_record(domain, expected_did, timeout, retries))
-    except Exception as e:
+    except Exception as e:  # Intentionally broad: asyncio.run can raise various errors
         return False, None, f"DNS verification error: {str(e)}"
 
 
@@ -498,7 +498,7 @@ async def verify_did_document_claim(
         
         return False, None, "No matching domain claim in DID document"
         
-    except Exception as e:
+    except Exception as e:  # Intentionally broad: DID resolution can fail in many ways
         logger.warning(f"DID document verification error for {remote_did}: {e}")
         return False, None, f"DID resolution error: {str(e)}"
 
@@ -511,7 +511,7 @@ def verify_did_document_claim_sync(
     """Synchronous version of verify_did_document_claim."""
     try:
         return asyncio.run(verify_did_document_claim(remote_did, domain, timeout))
-    except Exception as e:
+    except Exception as e:  # Intentionally broad: asyncio.run can raise various errors
         return False, None, f"DID document verification error: {str(e)}"
 
 
@@ -595,7 +595,7 @@ async def verify_cross_federation_domain(
         result.did_service_endpoint = did_endpoint
         result.did_error = did_error
         
-    except Exception as e:
+    except Exception as e:  # Intentionally broad: gather may raise various async errors
         logger.exception(f"Error during domain verification for {domain}")
         result.status = VerificationStatus.ERROR
         result.error = str(e)
@@ -673,7 +673,7 @@ def verify_cross_federation_domain_sync(
             require_did=require_did,
             use_cache=use_cache,
         ))
-    except Exception as e:
+    except Exception as e:  # Intentionally broad: asyncio.run can raise various errors
         return VerificationResult(
             local_federation=local_fed,
             remote_federation=remote_fed,

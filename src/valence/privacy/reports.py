@@ -829,7 +829,7 @@ class ReportService:
 
             return report
 
-        except Exception as e:
+        except Exception as e:  # Intentionally broad: wrap all failures, update status, re-raise
             logger.error(f"Report generation failed for {report_id}: {e}")
             await self._report_store.update_status(report_id, ReportStatus.FAILED, str(e))
             raise ReportGenerationError(f"Failed to generate report: {e}") from e

@@ -14,6 +14,8 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
+import psycopg2
+
 from ..core.db import get_cursor
 from .models import (
     FederationNode,
@@ -57,8 +59,8 @@ class TrustRegistry:
                 if row:
                     return NodeTrust.from_row(row)
                 return None
-        except Exception as e:
-            logger.warning(f"Error getting trust for node {node_id}: {e}")
+        except psycopg2.Error as e:
+            logger.warning(f"Database error getting trust for node {node_id}: {e}")
             return None
 
     def get_node(self, node_id: UUID) -> FederationNode | None:
@@ -70,8 +72,8 @@ class TrustRegistry:
                 if row:
                     return FederationNode.from_row(row)
                 return None
-        except Exception as e:
-            logger.warning(f"Error getting node {node_id}: {e}")
+        except psycopg2.Error as e:
+            logger.warning(f"Database error getting node {node_id}: {e}")
             return None
 
     def save_node_trust(self, node_trust: NodeTrust) -> NodeTrust | None:
@@ -120,8 +122,8 @@ class TrustRegistry:
                     return NodeTrust.from_row(row)
                 return None
 
-        except Exception as e:
-            logger.exception(f"Error saving node trust for {node_trust.node_id}")
+        except psycopg2.Error as e:
+            logger.exception(f"Database error saving node trust for {node_trust.node_id}")
             return None
 
     # -------------------------------------------------------------------------
@@ -144,8 +146,8 @@ class TrustRegistry:
                 if row:
                     return UserNodeTrust.from_row(row)
                 return None
-        except Exception as e:
-            logger.warning(f"Error getting user trust preference for node {node_id}: {e}")
+        except psycopg2.Error as e:
+            logger.warning(f"Database error getting user trust preference for node {node_id}: {e}")
             return None
 
     def set_user_preference(
@@ -192,8 +194,8 @@ class TrustRegistry:
                     return UserNodeTrust.from_row(row)
                 return None
 
-        except Exception as e:
-            logger.exception(f"Error setting user preference for node {node_id}")
+        except psycopg2.Error as e:
+            logger.exception(f"Database error setting user preference for node {node_id}")
             return None
 
     # -------------------------------------------------------------------------
@@ -242,8 +244,8 @@ class TrustRegistry:
                     return BeliefTrustAnnotation.from_row(row)
                 return None
 
-        except Exception as e:
-            logger.exception(f"Error annotating belief {belief_id}")
+        except psycopg2.Error as e:
+            logger.exception(f"Database error annotating belief {belief_id}")
             return None
 
     def get_belief_trust_adjustments(self, belief_id: UUID) -> float:
@@ -266,6 +268,6 @@ class TrustRegistry:
                 row = cur.fetchone()
                 return float(row["total_delta"]) if row else 0.0
 
-        except Exception as e:
-            logger.warning(f"Error getting belief trust adjustments: {e}")
+        except psycopg2.Error as e:
+            logger.warning(f"Database error getting belief trust adjustments: {e}")
             return 0.0
