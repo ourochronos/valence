@@ -915,3 +915,89 @@ class TestEdgeCases:
                 source_id=f"test-{level.value}",
             )
             assert insight.level == level
+
+
+# =============================================================================
+# MockInsightExtractor Production Guard Tests (Issue #175)
+# =============================================================================
+
+class TestMockExtractorProductionGuard:
+    """Tests for MockInsightExtractor production guard.
+    
+    Issue #175: Ensure MockInsightExtractor cannot be used in production.
+    """
+    
+    def test_mock_extractor_allowed_without_env(self, monkeypatch):
+        """MockInsightExtractor works when VALENCE_ENV is not set."""
+        monkeypatch.delenv("VALENCE_ENV", raising=False)
+        
+        # Should not raise
+        extractor = MockInsightExtractor()
+        assert extractor.extractor_id == "mock-extractor-v1"
+    
+    def test_mock_extractor_allowed_in_dev(self, monkeypatch):
+        """MockInsightExtractor works when VALENCE_ENV=development."""
+        monkeypatch.setenv("VALENCE_ENV", "development")
+        
+        # Should not raise
+        extractor = MockInsightExtractor()
+        assert extractor.extractor_id == "mock-extractor-v1"
+    
+    def test_mock_extractor_allowed_in_test(self, monkeypatch):
+        """MockInsightExtractor works when VALENCE_ENV=test."""
+        monkeypatch.setenv("VALENCE_ENV", "test")
+        
+        # Should not raise
+        extractor = MockInsightExtractor()
+        assert extractor.extractor_id == "mock-extractor-v1"
+    
+    def test_mock_extractor_blocked_in_production(self, monkeypatch):
+        """MockInsightExtractor raises RuntimeError when VALENCE_ENV=production."""
+        monkeypatch.setenv("VALENCE_ENV", "production")
+        
+        with pytest.raises(RuntimeError) as exc_info:
+            MockInsightExtractor()
+        
+        assert "cannot be used in production" in str(exc_info.value)
+        assert "VALENCE_ENV" in str(exc_info.value)
+    
+    def test_mock_extractor_blocked_case_insensitive(self, monkeypatch):
+        """Production guard is case-insensitive."""
+        monkeypatch.setenv("VALENCE_ENV", "PRODUCTION")
+        
+        with pytest.raises(RuntimeError) as exc_info:
+            MockInsightExtractor()
+        
+        assert "cannot be used in production" in str(exc_info.value)
+    
+    def test_mock_extractor_blocked_mixed_case(self, monkeypatch):
+        """Production guard handles mixed case."""
+        monkeypatch.setenv("VALENCE_ENV", "Production")
+        
+        with pytest.raises(RuntimeError) as exc_info:
+            MockInsightExtractor()
+        
+        assert "cannot be used in production" in str(exc_info.value)
+    
+    def test_allow_in_production_flag_for_testing(self, monkeypatch):
+        """Internal _allow_in_production flag bypasses guard for testing."""
+        monkeypatch.setenv("VALENCE_ENV", "production")
+        
+        # Should not raise with the internal flag
+        extractor = MockInsightExtractor(_allow_in_production=True)
+        assert extractor.extractor_id == "mock-extractor-v1"
+    
+    def test_mock_extractor_error_message_helpful(self, monkeypatch):
+        """Error message provides guidance on what to do instead."""
+        monkeypatch.setenv("VALENCE_ENV", "production")
+        
+        with pytest.raises(RuntimeError) as exc_info:
+            MockInsightExtractor()
+        
+        error_msg = str(exc_info.value)
+        # Should mention it's a mock
+        assert "MockInsightExtractor" in error_msg
+        # Should explain why it's blocked
+        assert "production" in error_msg.lower()
+        # Should suggest using a real implementation
+        assert "real" in error_msg.lower() or "InsightExtractor" in error_msg

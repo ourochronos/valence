@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 import hashlib
+import os
 import uuid
 
 
@@ -212,23 +213,47 @@ class InsightExtractor(ABC):
 
 
 class MockInsightExtractor(InsightExtractor):
-    """Mock AI extractor for testing.
+    """Mock AI extractor for testing. **TEST ONLY - DO NOT USE IN PRODUCTION.**
     
-    Simulates AI extraction with deterministic, template-based outputs.
-    Useful for testing the extraction workflow without real AI calls.
+    ⚠️  WARNING: This class is intended ONLY for testing purposes.
+    It provides deterministic, template-based outputs that simulate AI extraction
+    without making real AI calls. Using this in production would bypass actual
+    insight extraction and could expose private content.
+    
+    This extractor will raise RuntimeError if instantiated when VALENCE_ENV
+    is set to 'production'.
+    
+    For production use, implement a real InsightExtractor subclass that calls
+    an actual AI service.
     """
     
     def __init__(
         self,
         extractor_id: str = "mock-extractor-v1",
         custom_extractors: Optional[Dict[ExtractionLevel, Callable[[str], str]]] = None,
+        _allow_in_production: bool = False,
     ):
         """Initialize the mock extractor.
         
         Args:
             extractor_id: Identifier for this extractor instance
             custom_extractors: Optional custom extraction functions per level
+            _allow_in_production: Internal flag for testing the guard itself.
+                DO NOT use this in application code.
+        
+        Raises:
+            RuntimeError: If VALENCE_ENV is set to 'production' and 
+                _allow_in_production is False.
         """
+        # Production guard: prevent accidental use in production
+        env = os.environ.get("VALENCE_ENV", "").lower()
+        if env == "production" and not _allow_in_production:
+            raise RuntimeError(
+                "MockInsightExtractor cannot be used in production. "
+                "VALENCE_ENV is set to 'production'. "
+                "Please use a real InsightExtractor implementation for production workloads."
+            )
+        
         self._extractor_id = extractor_id
         self._custom_extractors = custom_extractors or {}
     
