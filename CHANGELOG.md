@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-02-05
+
+### Security Fixes
+- **Timing Attack Prevention** (#169): OAuth credential validation now uses `secrets.compare_digest()` for constant-time comparison
+- **Cryptographic Randomness** (#170): Replaced `random` module with `secrets.SystemRandom()` for all security-sensitive operations (timing jitter, router selection, privacy weights)
+- **ILIKE Injection Prevention** (#171): User input in search functions now escapes SQL ILIKE metacharacters (`%`, `_`)
+- **SQL Identifier Safety** (#172): Table names use `psycopg2.sql.Identifier()` for defense-in-depth
+- **OAuth Rate Limiting** (#173): Added IP and client-based rate limiting to `/oauth/token` and `/oauth/register` endpoints
+- **Generic Error Messages** (#174): Internal error responses no longer leak exception details, paths, or stack traces
+
+### Privacy Fixes
+- **Production Guard for MockInsightExtractor** (#175): Raises `RuntimeError` if `VALENCE_ENV=production` to prevent accidental use of test-only PII handling
+- **Cross-Federation Hop Validation** (#176): Strengthened consent chain verification with full provenance requirements, cryptographic validation of all hops, and trust thresholds for unknown chains
+- **Privacy Hardening Batch** (#177):
+  - Structured domain classification (replaces imprecise substring matching)
+  - PII sanitization layer for audit metadata
+  - Budget consumption for failed k-anonymity queries (prevents probing)
+  - Bucketed sync logging (prevents traffic analysis)
+  - 15-minute default capability TTL (was 1 hour)
+  - LRU eviction for consent chain stores
+  - Rate limiting for extraction service
+
+### Quality Improvements
+- **Mypy Type Errors** (#178): Fixed ~80 type errors (162 → 82 remaining)
+- **Timezone-Aware Datetime** (#181): Replaced deprecated `datetime.utcnow()` with `datetime.now(UTC)`
+- **Test Coverage** (#179): Added 3,291 lines of tests for previously uncovered modules (cli/router, cli/seed, federation/server, threat_detector, sharing_endpoints, notification_endpoints)
+
+### Documentation
+- **OpenAPI URL Fix** (#182): Corrected contact URL from `valence-dev` to `orobobos`
+
+### Stats
+- 54 files changed, +7,255 lines
+- All 6 HIGH severity audit findings addressed
+- 13 PRs merged in parallel
+
 ## [0.2.0] - 2026-02-04
 
 ### Highlights
@@ -132,8 +167,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `TrustWeightedAggregator` - Trust-weighted statistics
     - `PrivacyPreservingAggregator` - Differential privacy integration
   - Four conflict types: CONTRADICTION, DIVERGENCE, TEMPORAL, SCOPE
-  - Five conflict resolution strategies: 
-    - TRUST_WEIGHTED, RECENCY_WINS, CORROBORATION, 
+  - Five conflict resolution strategies:
+    - TRUST_WEIGHTED, RECENCY_WINS, CORROBORATION,
     - EXCLUDE_CONFLICTING, FLAG_FOR_REVIEW
   - Trust-weighted aggregation with:
     - Configurable weights (trust, recency, corroboration)
@@ -155,7 +190,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Full implementation of `spec/components/verification-protocol/`
   - `verification.py` module with complete data models:
     - `Verification`, `Dispute`, `Evidence`, `Stake`, `ReputationScore`
-    - All enums: `VerificationResult`, `VerificationStatus`, `StakeType`, 
+    - All enums: `VerificationResult`, `VerificationStatus`, `StakeType`,
       `EvidenceType`, `EvidenceContribution`, `DisputeType`, `DisputeOutcome`
   - Stake calculation functions per REPUTATION.md:
     - `calculate_min_stake()`, `calculate_max_stake()`, `calculate_dispute_min_stake()`
