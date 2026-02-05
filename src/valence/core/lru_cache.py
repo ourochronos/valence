@@ -5,7 +5,6 @@ Issue #147: Prevent unbounded memory growth in in-memory caches.
 
 from __future__ import annotations
 
-import os
 import threading
 from collections import OrderedDict
 from collections.abc import Iterator
@@ -19,10 +18,11 @@ V = TypeVar("V")
 
 
 def get_cache_max_size() -> int:
-    """Get the configured cache max size from environment."""
+    """Get the configured cache max size from config."""
+    from .config import get_config
     try:
-        return int(os.environ.get("VALENCE_CACHE_MAX_SIZE", str(DEFAULT_CACHE_MAX_SIZE)))
-    except (ValueError, TypeError):
+        return get_config().cache_max_size
+    except Exception:
         return DEFAULT_CACHE_MAX_SIZE
 
 

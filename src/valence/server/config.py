@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import secrets
 from pathlib import Path
 from typing import Any
@@ -98,6 +97,12 @@ class ServerSettings(BaseSettings):
     server_name: str = Field(default="valence", description="MCP server name")
     server_version: str = Field(default="1.0.0", description="Server version")
 
+    # Production mode flag (explicit override)
+    production: bool = Field(
+        default=False,
+        description="Force production mode (stricter security requirements)",
+    )
+
     # ==========================================================================
     # FEDERATION SETTINGS
     # ==========================================================================
@@ -190,7 +195,7 @@ class ServerSettings(BaseSettings):
         is_production = (
             self.external_url is not None
             or self.host not in ("localhost", "127.0.0.1", "0.0.0.0")
-            or os.environ.get("VALENCE_PRODUCTION", "").lower() in ("true", "1", "yes")
+            or self.production
         )
 
         if is_production and self.oauth_enabled:

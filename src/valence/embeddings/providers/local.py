@@ -17,7 +17,6 @@ For offline/air-gapped environments:
 from __future__ import annotations
 
 import logging
-import os
 import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -84,8 +83,10 @@ def get_model() -> "SentenceTransformer":
                         "Install with: pip install sentence-transformers"
                     ) from e
                 
-                model_path = os.environ.get("VALENCE_EMBEDDING_MODEL_PATH", MODEL_NAME)
-                device = os.environ.get("VALENCE_EMBEDDING_DEVICE", "cpu")
+                from ...core.config import get_config
+                config = get_config()
+                model_path = config.embedding_model_path
+                device = config.embedding_device
                 
                 is_local = _is_local_path(model_path)
                 
