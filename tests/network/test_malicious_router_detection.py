@@ -27,9 +27,8 @@ from valence.network.messages import (
 from valence.network.node import NodeClient, RouterConnection
 from valence.network.discovery import RouterInfo
 
-pytestmark = pytest.mark.skip(
-    reason="Needs update for NodeClient decomposition - see #167"
-)
+# Note: Some tests need further update to use health_monitor component
+# Methods moved: _record_ack_outcome, _get_router_metrics, _record_delivery_outcome -> HealthMonitor
 
 
 # =============================================================================

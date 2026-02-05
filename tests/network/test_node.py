@@ -275,9 +275,8 @@ class TestNodeClient:
 # =============================================================================
 
 
-@pytest.mark.skip(reason="Needs update for NodeClient decomposition - see #167")
 class TestRouterSelection:
-    """Tests for router selection logic."""
+    """Tests for router selection logic (uses ConnectionManager internally)."""
 
     def test_select_router_no_connections(self, node_client):
         """Test router selection with no connections."""
@@ -295,7 +294,9 @@ class TestRouterSelection:
             connected_at=time.time(),
             last_seen=time.time(),
         )
+        # Add to both NodeClient.connections and ConnectionManager.connections
         node_client.connections[mock_router_info.router_id] = conn
+        node_client.connection_manager.connections[mock_router_info.router_id] = conn
         
         result = node_client._select_router()
         assert result is mock_router_info
@@ -313,7 +314,9 @@ class TestRouterSelection:
             connected_at=time.time(),
             last_seen=time.time(),
         )
+        # Add to both NodeClient.connections and ConnectionManager.connections
         node_client.connections[mock_router_info.router_id] = conn
+        node_client.connection_manager.connections[mock_router_info.router_id] = conn
         
         result = node_client._select_router()
         assert result is None
@@ -364,8 +367,11 @@ class TestRouterSelection:
             ping_latency_ms=400,
         )
         
+        # Add to both NodeClient.connections and ConnectionManager.connections
         node_client.connections[healthy_router.router_id] = healthy_conn
         node_client.connections[unhealthy_router.router_id] = unhealthy_conn
+        node_client.connection_manager.connections[healthy_router.router_id] = healthy_conn
+        node_client.connection_manager.connections[unhealthy_router.router_id] = unhealthy_conn
         
         # Run multiple selections and count
         healthy_count = 0
@@ -386,17 +392,19 @@ class TestRouterSelection:
 # =============================================================================
 
 
-@pytest.mark.skip(reason="Needs update for NodeClient decomposition - see #167")
 class TestIPDiversity:
-    """Tests for IP diversity enforcement."""
+    """Tests for IP diversity enforcement (via ConnectionManager)."""
 
     def test_check_ip_diversity_empty(self, node_client, mock_router_info):
         """Test IP diversity check with no existing connections."""
-        result = node_client._check_ip_diversity(mock_router_info)
+        conn_mgr = node_client.connection_manager
+        result = conn_mgr.check_ip_diversity(mock_router_info)
         assert result is True
 
     def test_check_ip_diversity_same_subnet(self, node_client):
         """Test IP diversity check rejects same /16 subnet."""
+        conn_mgr = node_client.connection_manager
+        
         # Add first router
         router1 = RouterInfo(
             router_id="a" * 64,
@@ -406,7 +414,7 @@ class TestIPDiversity:
             regions=[],
             features=[],
         )
-        node_client._add_subnet(router1)
+        conn_mgr._add_subnet(router1)
         
         # Check second router in same /16
         router2 = RouterInfo(
@@ -418,11 +426,13 @@ class TestIPDiversity:
             features=[],
         )
         
-        result = node_client._check_ip_diversity(router2)
+        result = conn_mgr.check_ip_diversity(router2)
         assert result is False
 
     def test_check_ip_diversity_different_subnet(self, node_client):
         """Test IP diversity check allows different /16 subnets."""
+        conn_mgr = node_client.connection_manager
+        
         # Add first router
         router1 = RouterInfo(
             router_id="a" * 64,
@@ -432,7 +442,7 @@ class TestIPDiversity:
             regions=[],
             features=[],
         )
-        node_client._add_subnet(router1)
+        conn_mgr._add_subnet(router1)
         
         # Check second router in different /16
         router2 = RouterInfo(
@@ -444,11 +454,13 @@ class TestIPDiversity:
             features=[],
         )
         
-        result = node_client._check_ip_diversity(router2)
+        result = conn_mgr.check_ip_diversity(router2)
         assert result is True
 
     def test_check_ip_diversity_hostname(self, node_client):
         """Test IP diversity check allows hostnames."""
+        conn_mgr = node_client.connection_manager
+        
         # Add first router with IP
         router1 = RouterInfo(
             router_id="a" * 64,
@@ -458,7 +470,7 @@ class TestIPDiversity:
             regions=[],
             features=[],
         )
-        node_client._add_subnet(router1)
+        conn_mgr._add_subnet(router1)
         
         # Check router with hostname
         router2 = RouterInfo(
@@ -470,11 +482,13 @@ class TestIPDiversity:
             features=[],
         )
         
-        result = node_client._check_ip_diversity(router2)
+        result = conn_mgr.check_ip_diversity(router2)
         assert result is True
 
     def test_check_ip_diversity_no_endpoints(self, node_client):
         """Test IP diversity check with no endpoints."""
+        conn_mgr = node_client.connection_manager
+        
         router = RouterInfo(
             router_id="a" * 64,
             endpoints=[],
@@ -484,11 +498,13 @@ class TestIPDiversity:
             features=[],
         )
         
-        result = node_client._check_ip_diversity(router)
+        result = conn_mgr.check_ip_diversity(router)
         assert result is False
 
     def test_add_and_remove_subnet(self, node_client):
         """Test adding and removing subnet tracking."""
+        conn_mgr = node_client.connection_manager
+        
         router = RouterInfo(
             router_id="a" * 64,
             endpoints=["10.0.1.1:8471"],
@@ -499,16 +515,16 @@ class TestIPDiversity:
         )
         
         # Initially empty
-        assert len(node_client._connected_subnets) == 0
+        assert len(conn_mgr._connected_subnets) == 0
         
         # Add subnet
-        node_client._add_subnet(router)
-        assert len(node_client._connected_subnets) == 1
-        assert "10.0.0.0/16" in node_client._connected_subnets
+        conn_mgr._add_subnet(router)
+        assert len(conn_mgr._connected_subnets) == 1
+        assert "10.0.0.0/16" in conn_mgr._connected_subnets
         
         # Remove subnet
-        node_client._remove_subnet(router)
-        assert len(node_client._connected_subnets) == 0
+        conn_mgr._remove_subnet(router)
+        assert len(conn_mgr._connected_subnets) == 0
 
     def test_ip_diversity_disabled(self, ed25519_keypair, x25519_keypair):
         """Test that IP diversity can be disabled."""
@@ -521,6 +537,7 @@ class TestIPDiversity:
             encryption_private_key=enc_private,
             enforce_ip_diversity=False,
         )
+        conn_mgr = node.connection_manager
         
         # Add first router
         router1 = RouterInfo(
@@ -531,7 +548,7 @@ class TestIPDiversity:
             regions=[],
             features=[],
         )
-        node._add_subnet(router1)
+        conn_mgr._add_subnet(router1)
         
         # Same subnet should be allowed
         router2 = RouterInfo(
@@ -543,9 +560,10 @@ class TestIPDiversity:
             features=[],
         )
         
-        # When disabled, check_ip_diversity isn't called, but if it were:
-        result = node._check_ip_diversity(router2)
-        # Still returns False because subnet is tracked, but enforcement is at _ensure_connections
+        # When disabled, check_ip_diversity isn't called at connection time,
+        # but the method still works if called directly
+        result = conn_mgr.check_ip_diversity(router2)
+        # Still returns False because subnet is tracked, but enforcement is at ensure_connections
 
 
 # =============================================================================
@@ -553,9 +571,8 @@ class TestIPDiversity:
 # =============================================================================
 
 
-@pytest.mark.skip(reason="Needs update for NodeClient decomposition - see #167")
 class TestMessageQueueing:
-    """Tests for message queueing during failover."""
+    """Tests for message queueing during failover (via MessageHandler)."""
 
     @pytest.mark.asyncio
     async def test_send_message_queues_when_no_routers(
@@ -563,6 +580,7 @@ class TestMessageQueueing:
     ):
         """Test that messages are queued when no routers available."""
         _, recipient_pub = x25519_keypair
+        handler = node_client.message_handler
         
         message_id = await node_client.send_message(
             recipient_id="recipient-123",
@@ -571,15 +589,16 @@ class TestMessageQueueing:
         )
         
         assert message_id is not None
-        assert len(node_client.message_queue) == 1
-        assert node_client.message_queue[0].content == b"Hello!"
-        assert node_client._stats["messages_queued"] == 1
+        assert len(handler.message_queue) == 1
+        assert handler.message_queue[0].content == b"Hello!"
+        assert handler._stats["messages_queued"] == 1
 
     @pytest.mark.asyncio
     async def test_queue_limit_enforced(self, node_client, x25519_keypair):
         """Test that queue size limit is enforced."""
         _, recipient_pub = x25519_keypair
-        node_client.MAX_QUEUE_SIZE = 5
+        handler = node_client.message_handler
+        handler.config.max_queue_size = 5
         
         # Queue up to limit
         for i in range(5):
@@ -589,7 +608,7 @@ class TestMessageQueueing:
                 content=f"Message {i}".encode(),
             )
         
-        assert len(node_client.message_queue) == 5
+        assert len(handler.message_queue) == 5
         
         # Next message should raise error
         with pytest.raises(NoRoutersAvailableError):
@@ -599,7 +618,7 @@ class TestMessageQueueing:
                 content=b"Overflow!",
             )
         
-        assert node_client._stats["messages_dropped"] == 1
+        assert handler._stats["messages_dropped"] == 1
 
 
 # =============================================================================
@@ -864,7 +883,6 @@ class TestNodeIntegration:
 # =============================================================================
 
 
-@pytest.mark.skip(reason="Needs update for NodeClient decomposition - see #167")
 class TestEdgeCases:
     """Tests for edge cases and error handling."""
 
@@ -912,7 +930,7 @@ class TestEdgeCases:
     async def test_close_connection_already_closed(
         self, node_client, mock_router_info, mock_session
     ):
-        """Test closing an already closed connection."""
+        """Test closing an already closed connection (via ConnectionManager)."""
         ws = AsyncMock()
         ws.closed = True
         ws.close = AsyncMock()
@@ -926,10 +944,12 @@ class TestEdgeCases:
         )
         
         # Should not raise
-        await node_client._close_connection(mock_router_info.router_id, conn)
+        await node_client.connection_manager.close_connection(mock_router_info.router_id, conn)
 
     def test_ip_diversity_ipv6(self, node_client):
-        """Test IP diversity with IPv6 addresses."""
+        """Test IP diversity with IPv6 addresses (via ConnectionManager)."""
+        conn_mgr = node_client.connection_manager
+        
         # Add IPv6 router (using bracket notation for port separator)
         router1 = RouterInfo(
             router_id="a" * 64,
@@ -939,7 +959,7 @@ class TestEdgeCases:
             regions=[],
             features=[],
         )
-        node_client._add_subnet(router1)
+        conn_mgr._add_subnet(router1)
         
         # Check same /48 (should be blocked by diversity)
         router2 = RouterInfo(
@@ -951,7 +971,7 @@ class TestEdgeCases:
             features=[],
         )
         
-        result = node_client._check_ip_diversity(router2)
+        result = conn_mgr.check_ip_diversity(router2)
         assert result is False
         
         # Check different /48 (should be allowed)
@@ -964,7 +984,7 @@ class TestEdgeCases:
             features=[],
         )
         
-        result = node_client._check_ip_diversity(router3)
+        result = conn_mgr.check_ip_diversity(router3)
         assert result is True
 
 
@@ -973,7 +993,6 @@ class TestEdgeCases:
 # =============================================================================
 
 
-@pytest.mark.skip(reason="Needs update for NodeClient decomposition - see #167")
 class TestRouterFailover:
     """Tests for router failover logic (Issue #107)."""
 
@@ -1308,7 +1327,6 @@ class TestRouterFailover:
 # =============================================================================
 
 
-@pytest.mark.skip(reason="Needs update for NodeClient decomposition - see #167")
 class TestSeedRedundancy:
     """Tests for seed redundancy feature (Issue #108)."""
 
@@ -1569,9 +1587,8 @@ class TestFastFailureDetection:
             assert failure_called is True
 
 
-@pytest.mark.skip(reason="Needs update for NodeClient decomposition - see #167")
 class TestMessagePreservation:
-    """Tests for message preservation during failover."""
+    """Tests for message preservation during failover (via MessageHandler)."""
 
     @pytest.mark.asyncio
     async def test_pending_messages_preserved_on_failure(
@@ -1614,13 +1631,14 @@ class TestMessagePreservation:
         
         retry_called = []
         
-        async def mock_retry(msg_id):
+        original_retry = node_client.message_handler._retry_message
+        async def mock_retry(msg_id, send_via_router, router_selector):
             retry_called.append(msg_id)
         
         with patch.object(node_client.discovery, 'discover_routers', 
                           new_callable=AsyncMock, return_value=[alt_router]):
-            with patch.object(node_client, '_connect_to_router', new_callable=AsyncMock):
-                with patch.object(node_client, '_retry_message', mock_retry):
+            with patch.object(node_client.connection_manager, 'connect_to_router', new_callable=AsyncMock):
+                with patch.object(node_client.message_handler, '_retry_message', mock_retry):
                     await node_client._handle_router_failure(mock_router_info.router_id)
         
         # All 3 messages should have been retried
@@ -1635,7 +1653,7 @@ class TestMessagePreservation:
         from valence.network.node import PendingAck
         
         _, recipient_pub = x25519_keypair
-        node_client.reconnect_delay = 0.01  # Fast for testing
+        node_client.router_client.config.reconnect_delay = 0.01  # Fast for testing
         
         conn = RouterConnection(
             router=mock_router_info,
@@ -1658,12 +1676,12 @@ class TestMessagePreservation:
         
         retry_called = []
         
-        async def mock_retry(msg_id):
+        async def mock_retry(msg_id, send_via_router, router_selector):
             retry_called.append(msg_id)
         
         with patch.object(node_client.discovery, 'discover_routers',
                           new_callable=AsyncMock, return_value=[]):
-            with patch.object(node_client, '_retry_message', mock_retry):
+            with patch.object(node_client.message_handler, '_retry_message', mock_retry):
                 await node_client._handle_router_failure(mock_router_info.router_id)
         
         # No retry because no alternative was found
@@ -1675,7 +1693,6 @@ class TestMessagePreservation:
 # =============================================================================
 
 
-@pytest.mark.skip(reason="Needs update for NodeClient decomposition - see #167")
 class TestMultiRouterConnections:
     """Tests for multi-router connection management (Issue #106).
     
@@ -1710,6 +1727,7 @@ class TestMultiRouterConnections:
         self, node_client, mock_session
     ):
         """Test that multiple router connections are tracked correctly."""
+        conn_mgr = node_client.connection_manager
         routers = []
         for i in range(3):
             router = RouterInfo(
@@ -1733,11 +1751,11 @@ class TestMultiRouterConnections:
                 last_seen=time.time(),
             )
             node_client.connections[router.router_id] = conn
-            node_client._add_subnet(router)
+            conn_mgr._add_subnet(router)
         
         # Verify all connections are tracked
         assert len(node_client.connections) == 3
-        assert len(node_client._connected_subnets) == 3
+        assert len(conn_mgr._connected_subnets) == 3
         
         # Verify connection info is retrievable
         conn_info = node_client.get_connections()
@@ -1806,6 +1824,7 @@ class TestMultiRouterConnections:
         self, node_client, mock_session
     ):
         """Test that healthiest router is selected most often."""
+        conn_mgr = node_client.connection_manager
         # Create 3 routers with different health levels
         routers_and_health = [
             ("excellent", 0.95),
@@ -1843,7 +1862,9 @@ class TestMultiRouterConnections:
                 ack_failure=ack_failure,
                 ping_latency_ms=latency,
             )
+            # Add to both NodeClient and ConnectionManager connections
             node_client.connections[router.router_id] = conn
+            conn_mgr.connections[router.router_id] = conn
         
         # Sample selections
         selection_counts = {}

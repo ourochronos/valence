@@ -30,10 +30,7 @@ from valence.network.config import (
 )
 from valence.network.messages import get_padded_size, pad_message, unpad_message
 from valence.network.node import NodeClient
-
-pytestmark = pytest.mark.skip(
-    reason="Needs update for NodeClient decomposition - see #167"
-)
+from valence.network.message_handler import MessageHandler
 
 # =============================================================================
 # CONFIGURATION TESTS
@@ -395,70 +392,89 @@ class TestBatchingBehavior:
 
     @pytest.mark.asyncio
     async def test_add_to_batch(self, mock_node_client):
-        """Test adding messages to batch."""
+        """Test adding messages to batch via MessageHandler."""
         client = mock_node_client
+        handler = client.message_handler
         recipient_key = X25519PrivateKey.generate().public_key()
 
-        # Add a message to batch
-        msg_id = await client._add_to_batch(
+        # Create mock router selector and send function
+        mock_router_selector = MagicMock(return_value=None)
+        mock_send_via_router = AsyncMock()
+
+        # Add a message to batch via MessageHandler
+        msg_id = await handler._add_to_batch(
             message_id="test-msg-1",
             recipient_id="recipient123",
             recipient_public_key=recipient_key,
             content=b"Hello",
             require_ack=True,
             timeout_ms=30000,
+            router_selector=mock_router_selector,
+            send_via_router=mock_send_via_router,
         )
 
         assert msg_id == "test-msg-1"
-        assert len(client._message_batch) == 1
-        assert client._stats["batched_messages"] == 1
+        assert len(handler._message_batch) == 1
+        assert handler._stats["batched_messages"] == 1
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Needs update after NodeClient refactor - see #166")
     async def test_batch_triggers_on_max_size(self, mock_node_client):
         """Test batch triggers flush when max size reached."""
         client = mock_node_client
-        client.traffic_analysis_mitigation.batching.max_batch_size = 3
+        handler = client.message_handler
+        handler.traffic_mitigation_config.batching.max_batch_size = 3
         recipient_key = X25519PrivateKey.generate().public_key()
+
+        # Create mock router selector and send function
+        mock_router_selector = MagicMock(return_value=None)
+        mock_send_via_router = AsyncMock()
 
         # Add messages up to max
         for i in range(3):
-            await client._add_to_batch(
+            await handler._add_to_batch(
                 message_id=f"test-msg-{i}",
                 recipient_id="recipient123",
                 recipient_public_key=recipient_key,
                 content=b"Hello",
                 require_ack=False,
                 timeout_ms=30000,
+                router_selector=mock_router_selector,
+                send_via_router=mock_send_via_router,
             )
 
-        # Event should be set
-        assert client._pending_batch_event.is_set()
+        # Event should be set when batch is full
+        assert handler._pending_batch_event.is_set()
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Needs update after NodeClient refactor - see #166")
     async def test_flush_randomizes_order(self, mock_node_client):
         """Test batch flush randomizes message order."""
         client = mock_node_client
+        handler = client.message_handler
         recipient_key = X25519PrivateKey.generate().public_key()
+
+        # Create mock router selector and send function
+        mock_router_selector = MagicMock(return_value=None)
+        mock_send_via_router = AsyncMock()
 
         # Add multiple messages
         for i in range(10):
-            await client._add_to_batch(
+            await handler._add_to_batch(
                 message_id=f"msg-{i:02d}",
                 recipient_id="recipient123",
                 recipient_public_key=recipient_key,
                 content=b"Hello",
                 require_ack=False,
                 timeout_ms=30000,
+                router_selector=mock_router_selector,
+                send_via_router=mock_send_via_router,
             )
 
         # Get the message IDs before flush
-        _ = [m["message_id"] for m in client._message_batch]
+        _ = [m["message_id"] for m in handler._message_batch]
 
         # The batch is copied and shuffled during flush
         # We can't easily test randomness, but we can verify config
-        assert client.traffic_analysis_mitigation.batching.randomize_order
+        assert handler.traffic_mitigation_config.batching.randomize_order
 
 
 class TestJitterBehavior:

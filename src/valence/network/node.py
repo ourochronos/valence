@@ -1577,6 +1577,7 @@ class NodeClient:
                 k: v for k, v in self._stats.items()
                 if k.startswith(("batched", "batch_", "jitter", "constant_rate"))
             },
+            "latency_estimate": tam.estimate_latency_overhead(),
         }
 
 
