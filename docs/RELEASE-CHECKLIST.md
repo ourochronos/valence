@@ -78,16 +78,28 @@ Required test categories:
 
 ## Release Process
 
-1. **Create release branch**: `git checkout -b release/vX.Y.Z`
-2. **Run all audits**: Document findings in `docs/audits/`
-3. **Resolve MEDIUM+ issues**: All must be closed
-4. **Update CHANGELOG.md**: Document all changes
-5. **Update version**: In `pyproject.toml` and `src/valence/__init__.py`
-6. **Create PR**: Review and merge to main
-7. **Tag release**: `git tag vX.Y.Z && git push --tags`
-8. **Deploy to nodes**: Follow deployment runbook
-9. **Run deployment validation**: All checks must pass
-10. **Create GitHub release**: With changelog notes
+### Phase 1: Preparation
+1. **Open release issue**: Create `Release vX.Y.Z` issue listing:
+   - All issues/PRs to be included
+   - Audit checklist status
+   - Blockers (MEDIUM+ issues)
+2. **Resolve MEDIUM+ issues**: All must be closed before proceeding
+3. **Run all audits**: Document findings in `docs/audits/`
+
+### Phase 2: Release PR
+4. **Create release branch**: `git checkout -b release/vX.Y.Z`
+5. **Update CHANGELOG.md**: Document all changes for this version
+6. **Update version**: In `pyproject.toml` and `src/valence/__init__.py`
+7. **Create release PR**: Reference the release issue
+   - Title: `Release vX.Y.Z`
+   - Body: Changelog excerpt, link to release issue
+8. **Review and merge**: Squash merge to main
+
+### Phase 3: Tag and Deploy
+9. **Tag release**: `git tag vX.Y.Z && git push --tags`
+10. **Deploy to nodes**: Follow deployment runbook
+11. **Run deployment validation**: All checks must pass
+12. **Create GitHub release**: With changelog notes, close release issue
 
 ## Audit Report Template
 
