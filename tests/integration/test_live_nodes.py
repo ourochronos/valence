@@ -244,6 +244,150 @@ class TestMetrics:
             assert "valence" in response.text or "http" in response.text
 
 
+class TestVersionConsistency:
+    """Test version consistency across nodes."""
+
+    def test_nodes_same_version(self):
+        """Both nodes should run the same version."""
+        response1 = httpx.get(f"{NODE_1}/", timeout=10)
+        response2 = httpx.get(f"{NODE_2}/", timeout=10)
+
+        data1 = response1.json()
+        data2 = response2.json()
+
+        # Both should report version
+        assert "version" in data1 or "server_version" in data1
+        assert "version" in data2 or "server_version" in data2
+
+        # Versions should match
+        v1 = data1.get("version") or data1.get("server_version")
+        v2 = data2.get("version") or data2.get("server_version")
+        assert v1 == v2, f"Version mismatch: {NODE_1}={v1}, {NODE_2}={v2}"
+
+
+class TestPerformanceBaseline:
+    """Test performance baselines for key endpoints."""
+
+    @pytest.mark.parametrize("node_url", [NODE_1, NODE_2])
+    def test_health_latency(self, node_url: str):
+        """Health endpoint should respond within 100ms."""
+        import time
+
+        start = time.time()
+        response = httpx.get(f"{node_url}/api/v1/health", timeout=10)
+        latency_ms = (time.time() - start) * 1000
+
+        assert response.status_code == 200
+        assert latency_ms < 100, f"Health endpoint too slow: {latency_ms:.0f}ms > 100ms"
+
+    @pytest.mark.parametrize("node_url", [NODE_1, NODE_2])
+    def test_info_latency(self, node_url: str):
+        """Info endpoint should respond within 200ms."""
+        import time
+
+        start = time.time()
+        response = httpx.get(f"{node_url}/", timeout=10)
+        latency_ms = (time.time() - start) * 1000
+
+        assert response.status_code == 200
+        assert latency_ms < 200, f"Info endpoint too slow: {latency_ms:.0f}ms > 200ms"
+
+    @pytest.mark.parametrize("node_url", [NODE_1, NODE_2])
+    def test_federation_status_latency(self, node_url: str):
+        """Federation status should respond within 500ms."""
+        import time
+
+        start = time.time()
+        response = httpx.get(f"{node_url}/api/v1/federation/status", timeout=10)
+        latency_ms = (time.time() - start) * 1000
+
+        assert response.status_code == 200
+        assert latency_ms < 500, f"Federation status too slow: {latency_ms:.0f}ms > 500ms"
+
+
+class TestTrustEndpoints:
+    """Test trust-related endpoints."""
+
+    @pytest.mark.parametrize("node_url", [NODE_1, NODE_2])
+    def test_trust_endpoint_exists(self, node_url: str):
+        """Trust endpoint should exist (may require auth)."""
+        response = httpx.get(f"{node_url}/api/v1/trust", timeout=10)
+        # Should return 401/403 (needs auth) or 200, not 404
+        assert response.status_code in [
+            200,
+            401,
+            403,
+        ], f"Trust endpoint missing: {response.status_code}"
+
+
+class TestPrivacyEndpoints:
+    """Test privacy and sharing endpoints."""
+
+    @pytest.mark.parametrize("node_url", [NODE_1, NODE_2])
+    def test_share_endpoint_exists(self, node_url: str):
+        """Share endpoint should exist (may require auth)."""
+        response = httpx.get(f"{node_url}/api/v1/share/pending", timeout=10)
+        # Should return 401/403 (needs auth) or 200, not 404
+        assert response.status_code in [
+            200,
+            401,
+            403,
+        ], f"Share endpoint missing: {response.status_code}"
+
+
+class TestFederationAdvanced:
+    """Advanced federation tests."""
+
+    def test_federation_discovery_endpoint(self):
+        """Federation discovery should be available."""
+        for node_url in [NODE_1, NODE_2]:
+            response = httpx.get(f"{node_url}/api/v1/federation/peers", timeout=10)
+            # Should return list or require auth
+            assert response.status_code in [200, 401, 403]
+
+    def test_both_nodes_healthy(self):
+        """Both nodes must be healthy for federation to work."""
+        for node_url in [NODE_1, NODE_2]:
+            response = httpx.get(f"{node_url}/api/v1/health", timeout=10)
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "healthy", f"{node_url} not healthy: {data}"
+
+
+class TestDatabaseConnectivity:
+    """Test database connectivity indicators."""
+
+    @pytest.mark.parametrize("node_url", [NODE_1, NODE_2])
+    def test_database_connected(self, node_url: str):
+        """Health should report database connected."""
+        response = httpx.get(f"{node_url}/api/v1/health", timeout=10)
+        data = response.json()
+        assert data.get("database") == "connected", f"Database not connected: {data}"
+
+
+class TestContentTypeHandling:
+    """Test proper content type handling."""
+
+    @pytest.mark.parametrize("node_url", [NODE_1, NODE_2])
+    def test_json_content_type(self, node_url: str):
+        """API should return application/json."""
+        response = httpx.get(f"{node_url}/api/v1/health", timeout=10)
+        content_type = response.headers.get("content-type", "")
+        assert "application/json" in content_type
+
+    @pytest.mark.parametrize("node_url", [NODE_1, NODE_2])
+    def test_rejects_invalid_content_type(self, node_url: str):
+        """POST endpoints should validate content type."""
+        response = httpx.post(
+            f"{node_url}/api/v1/oauth/register",
+            content="not json",
+            headers={"Content-Type": "text/plain"},
+            timeout=10,
+        )
+        # Should reject non-JSON or handle gracefully
+        assert response.status_code in [400, 415, 422]
+
+
 # Conftest additions for pytest
 def pytest_addoption(parser):
     parser.addoption(
