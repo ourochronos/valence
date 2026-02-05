@@ -15,11 +15,16 @@ Privacy Note (Issue #177):
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import json
 import logging
 import random
+import secrets
+import time
 from datetime import datetime, timedelta
 from typing import Any
+from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 import aiohttp
@@ -95,6 +100,72 @@ def _noisy_count(count: int, noise_scale: float = 0.1) -> int:
     noise_magnitude = max(1, int(count * noise_scale))
     noise = random.randint(-noise_magnitude, noise_magnitude)
     return max(0, count + noise)
+
+
+# =============================================================================
+# REQUEST SIGNING (VFP Protocol - Issue #236)
+# =============================================================================
+
+
+def _create_auth_headers(
+    method: str,
+    url: str,
+    body: bytes,
+) -> dict[str, str]:
+    """Create VFP authentication headers for outbound federation requests.
+
+    Signs the request per VFP protocol for verification by receiving nodes.
+
+    Args:
+        method: HTTP method (POST, GET, etc.)
+        url: Full request URL
+        body: Request body bytes (JSON encoded)
+
+    Returns:
+        Dict of headers to include in the request:
+        - X-VFP-DID: The sender's DID
+        - X-VFP-Signature: Base64-encoded Ed25519 signature
+        - X-VFP-Timestamp: Unix timestamp
+        - X-VFP-Nonce: Random nonce
+
+    Raises:
+        RuntimeError: If federation credentials are not configured
+    """
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    config = get_federation_config()
+    did = config.federation_node_did
+    private_key_hex = config.federation_private_key
+
+    if not did or not private_key_hex:
+        raise RuntimeError("Federation credentials not configured. Set VALENCE_FEDERATION_NODE_DID and VALENCE_FEDERATION_PRIVATE_KEY.")
+
+    # Extract path from URL
+    parsed = urlparse(url)
+    path = parsed.path
+
+    # Generate timestamp and nonce
+    timestamp = str(int(time.time()))
+    nonce = secrets.token_hex(16)
+    body_hash = hashlib.sha256(body).hexdigest()
+
+    # Construct message to sign (matches verify_did_signature format)
+    # Format: METHOD PATH TIMESTAMP NONCE BODYHASH
+    message = f"{method} {path} {timestamp} {nonce} {body_hash}"
+    message_bytes = message.encode("utf-8")
+
+    # Sign with Ed25519
+    private_key_bytes = bytes.fromhex(private_key_hex)
+    private_key = Ed25519PrivateKey.from_private_bytes(private_key_bytes)
+    signature = private_key.sign(message_bytes)
+    signature_b64 = base64.b64encode(signature).decode("ascii")
+
+    return {
+        "X-VFP-DID": did,
+        "X-VFP-Signature": signature_b64,
+        "X-VFP-Timestamp": timestamp,
+        "X-VFP-Nonce": nonce,
+    }
 
 
 # =============================================================================
@@ -471,16 +542,26 @@ class SyncManager:
         # Send to node
         try:
             url = f"{federation_endpoint}/beliefs"
+            request_body: dict[str, Any] = {
+                "type": "SHARE_BELIEF",
+                "request_id": str(uuid4()),
+                "beliefs": beliefs_data,
+                "timestamp": datetime.now().isoformat(),
+            }
+            body_bytes = json.dumps(request_body).encode("utf-8")
+
+            # Create VFP auth headers (Issue #236)
+            try:
+                auth_headers = _create_auth_headers("POST", url, body_bytes)
+            except RuntimeError as e:
+                logger.warning(f"Skipping auth for beliefs sync (credentials not configured): {e}")
+                auth_headers = {}
+
             async with aiohttp.ClientSession() as session:
-                # TODO: Add authentication headers
                 async with session.post(
                     url,
-                    json={
-                        "type": "SHARE_BELIEF",
-                        "request_id": str(uuid4()),
-                        "beliefs": beliefs_data,
-                        "timestamp": datetime.now().isoformat(),
-                    },
+                    data=body_bytes,
+                    headers={"Content-Type": "application/json", **auth_headers},
                     timeout=aiohttp.ClientTimeout(total=30),
                 ) as response:
                     if response.status == 200:
@@ -645,17 +726,27 @@ class SyncManager:
             url = f"{federation_endpoint}/sync"
             since = last_sync or (datetime.now() - timedelta(days=7))
 
+            request_body: dict[str, Any] = {
+                "type": "SYNC_REQUEST",
+                "request_id": str(uuid4()),
+                "since": since.isoformat(),
+                "domains": [],  # All domains
+                "cursor": cursor,
+            }
+            body_bytes = json.dumps(request_body).encode("utf-8")
+
+            # Create VFP auth headers (Issue #236)
+            try:
+                auth_headers = _create_auth_headers("POST", url, body_bytes)
+            except RuntimeError as e:
+                logger.warning(f"Skipping auth for sync pull (credentials not configured): {e}")
+                auth_headers = {}
+
             async with aiohttp.ClientSession() as session:
-                # TODO: Add authentication
                 async with session.post(
                     url,
-                    json={
-                        "type": "SYNC_REQUEST",
-                        "request_id": str(uuid4()),
-                        "since": since.isoformat(),
-                        "domains": [],  # All domains
-                        "cursor": cursor,
-                    },
+                    data=body_bytes,
+                    headers={"Content-Type": "application/json", **auth_headers},
                     timeout=aiohttp.ClientTimeout(total=60),
                 ) as response:
                     if response.status == 200:
