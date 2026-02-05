@@ -572,14 +572,7 @@ def _process_incoming_belief(
     origin_node_did = belief_data["origin_node_did"]
     content = belief_data["content"]
 
-    # Check if we already have this belief
-    with get_cursor() as cur:
-        cur.execute(
-            "SELECT id FROM belief_provenance WHERE federation_id = %s",
-            (federation_id,),
-        )
-        if cur.fetchone():
-            return "Belief already exists"
+    # NOTE: Existence check moved to INSERT with ON CONFLICT to prevent TOCTOU race (#235)
 
     # Verify signature
     signable_content = {
@@ -659,7 +652,7 @@ def _process_incoming_belief(
     confidence = confidence.with_dimension(ConfidenceDimension.OVERALL, adjusted_overall, recalculate=False)
 
     with get_cursor() as cur:
-        # Insert belief
+        # Insert belief atomically - ON CONFLICT handles duplicates (fixes #235 TOCTOU race)
         cur.execute(
             """
             INSERT INTO beliefs (
@@ -671,6 +664,7 @@ def _process_incoming_belief(
                 'active', FALSE, %s, %s, %s,
                 %s
             )
+            ON CONFLICT (federation_id) WHERE federation_id IS NOT NULL DO NOTHING
             RETURNING id
         """,
             (
@@ -686,9 +680,14 @@ def _process_incoming_belief(
             ),
         )
         belief_row = cur.fetchone()
+
+        # If no row returned, belief already existed (duplicate federation_id)
+        if belief_row is None:
+            return "Belief already exists"
+
         belief_id = belief_row["id"]
 
-        # Insert provenance
+        # Insert provenance with ON CONFLICT for safety (fixes #237)
         federation_path = belief_data.get("federation_path", [])
         cur.execute(
             """
@@ -701,6 +700,7 @@ def _process_incoming_belief(
                 (SELECT id FROM federation_nodes WHERE did = %s),
                 %s, %s, %s, TRUE, %s, %s, %s
             )
+            ON CONFLICT (federation_id) DO NOTHING
         """,
             (
                 belief_id,
