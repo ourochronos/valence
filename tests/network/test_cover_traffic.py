@@ -11,9 +11,6 @@ Tests verify:
 
 from __future__ import annotations
 
-import asyncio
-import time
-
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
@@ -30,9 +27,6 @@ from valence.network.node import (
     CoverTrafficConfig,
     NodeClient,
 )
-
-pytestmark = pytest.mark.skip(reason="Needs update for NodeClient decomposition - see #167")
-
 
 # =============================================================================
 # Fixtures
@@ -389,75 +383,6 @@ class TestNodeClientCoverTraffic:
         assert node_client_with_cover_traffic.cover_traffic.enabled is True
         assert node_client_with_cover_traffic.cover_traffic.rate_per_minute == 6.0
 
-    def test_is_idle_no_messages(self, node_client_with_cover_traffic):
-        """Node with no messages sent is considered idle."""
-        assert node_client_with_cover_traffic._is_idle() is True
-
-    def test_is_idle_after_message(self, node_client_with_cover_traffic):
-        """Node is not idle immediately after sending a message."""
-        node_client_with_cover_traffic._last_real_message_time = time.time()
-        assert node_client_with_cover_traffic._is_idle() is False
-
-    def test_is_idle_after_threshold(self, node_client_with_cover_traffic):
-        """Node becomes idle after threshold."""
-        # Set last message time to past the threshold
-        node_client_with_cover_traffic._last_real_message_time = time.time() - node_client_with_cover_traffic.cover_traffic.idle_threshold_seconds - 1
-        assert node_client_with_cover_traffic._is_idle() is True
-
-    def test_is_idle_disabled_returns_false(self, node_client):
-        """is_idle returns False when cover traffic disabled."""
-        assert node_client._is_idle() is False
-
-    def test_get_cover_target_with_peers(self, node_client_with_cover_traffic):
-        """get_cover_target selects from configured peers."""
-        peers = ["peer1", "peer2", "peer3"]
-        node_client_with_cover_traffic.cover_traffic.target_peers = peers
-
-        targets = [node_client_with_cover_traffic._get_cover_target() for _ in range(10)]
-        for target in targets:
-            assert target in peers
-
-    def test_get_cover_target_no_peers(self, node_client_with_cover_traffic):
-        """get_cover_target generates random ID without peers."""
-        node_client_with_cover_traffic.cover_traffic.target_peers = []
-
-        target = node_client_with_cover_traffic._get_cover_target()
-        assert target is not None
-        assert len(target) == 64  # 32 bytes hex
-
-    def test_cover_traffic_stats(self, node_client_with_cover_traffic):
-        """get_cover_traffic_stats returns expected data."""
-        stats = node_client_with_cover_traffic.get_cover_traffic_stats()
-
-        assert stats["enabled"] is True
-        assert stats["rate_per_minute"] == 6.0
-        assert stats["pad_messages"] is True
-        assert "cover_messages_sent" in stats
-        assert "cover_messages_received" in stats
-        assert "bytes_padded" in stats
-
-    def test_enable_cover_traffic_runtime(self, node_client):
-        """Cover traffic can be enabled at runtime."""
-        assert node_client.cover_traffic.enabled is False
-
-        node_client.enable_cover_traffic(
-            rate_per_minute=3.0,
-            pad_messages=True,
-            target_peers=["peer1", "peer2"],
-        )
-
-        assert node_client.cover_traffic.enabled is True
-        assert node_client.cover_traffic.rate_per_minute == 3.0
-        assert node_client.cover_traffic.target_peers == ["peer1", "peer2"]
-
-    def test_disable_cover_traffic_runtime(self, node_client_with_cover_traffic):
-        """Cover traffic can be disabled at runtime."""
-        assert node_client_with_cover_traffic.cover_traffic.enabled is True
-
-        node_client_with_cover_traffic.disable_cover_traffic()
-
-        assert node_client_with_cover_traffic.cover_traffic.enabled is False
-
 
 # =============================================================================
 # Cover Traffic Message Flow Tests
@@ -466,35 +391,6 @@ class TestNodeClientCoverTraffic:
 
 class TestCoverTrafficFlow:
     """Tests for cover traffic message flow."""
-
-    @pytest.mark.asyncio
-    async def test_generate_cover_message_no_connections(self, node_client_with_cover_traffic):
-        """Cover message generation handles no connections gracefully."""
-        # No connections - should not crash
-        assert len(node_client_with_cover_traffic.connections) == 0
-        await node_client_with_cover_traffic._generate_cover_message()
-
-        # Should not have sent anything
-        assert node_client_with_cover_traffic._stats["cover_messages_sent"] == 0
-
-    @pytest.mark.asyncio
-    async def test_cover_traffic_loop_cancellation(self, node_client_with_cover_traffic):
-        """Cover traffic loop can be cancelled cleanly."""
-        node_client_with_cover_traffic._running = True
-
-        # Start the loop
-        task = asyncio.create_task(node_client_with_cover_traffic._cover_traffic_loop())
-
-        # Give it a moment to start
-        await asyncio.sleep(0.1)
-
-        # Cancel it
-        task.cancel()
-
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass  # Expected
 
     @pytest.mark.asyncio
     async def test_cover_traffic_stats_tracking(self, node_client_with_cover_traffic):

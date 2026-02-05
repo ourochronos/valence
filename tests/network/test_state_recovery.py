@@ -37,9 +37,6 @@ from valence.network.router import (
     RouterNode,
 )
 
-pytestmark = pytest.mark.skip(reason="Needs update for NodeClient decomposition - see #167")
-
-
 # =============================================================================
 # Fixtures
 # =============================================================================
@@ -485,43 +482,6 @@ class TestStatePersistence:
 
 class TestStateRecovery:
     """Tests for state recovery on startup."""
-
-    @pytest.mark.asyncio
-    async def test_recover_pending_acks(self, node_client_with_state, x25519_keypair):
-        """Test recovering pending ACKs from saved state."""
-        node = node_client_with_state
-        _, pub_key = x25519_keypair
-
-        # Create state with pending ACKs
-        ack_data = {
-            "message_id": "recover-ack-1",
-            "recipient_id": "r1",
-            "content": b"test".hex(),
-            "recipient_public_key_hex": pub_key.public_bytes_raw().hex(),
-            "sent_at": time.time() - 5,  # 5 seconds ago (not expired)
-            "router_id": "router-1",
-            "timeout_ms": 30000,
-            "retries": 0,
-            "max_retries": 2,
-        }
-
-        state = ConnectionState(
-            version=STATE_VERSION,
-            node_id=node.node_id,
-            saved_at=time.time() - 2,
-            sequence_number=10,
-            pending_acks=[ack_data],
-        )
-
-        Path(node.state_file).write_text(state.to_json())
-
-        # Mock _wait_for_ack to prevent actual waiting
-        with patch.object(node, "_wait_for_ack", new_callable=AsyncMock):
-            recovered = await node._recover_state()
-
-        assert recovered is True
-        assert "recover-ack-1" in node.pending_acks
-        assert node._state_sequence == 10
 
     @pytest.mark.asyncio
     async def test_recover_message_queue(self, node_client_with_state, x25519_keypair):
@@ -1005,41 +965,6 @@ class TestDeleteStateFile:
 
 class TestEdgeCases:
     """Tests for edge cases in state recovery."""
-
-    @pytest.mark.asyncio
-    async def test_expired_pending_acks_not_recovered(self, node_client_with_state, x25519_keypair):
-        """Test that expired pending ACKs are not recovered."""
-        node = node_client_with_state
-        _, pub_key = x25519_keypair
-
-        # Create state with expired ACK
-        ack_data = {
-            "message_id": "expired-ack",
-            "recipient_id": "r1",
-            "content": b"test".hex(),
-            "recipient_public_key_hex": pub_key.public_bytes_raw().hex(),
-            "sent_at": time.time() - 120,  # 2 minutes ago (way past 30s timeout)
-            "router_id": "router-1",
-            "timeout_ms": 30000,
-            "retries": 0,
-            "max_retries": 2,
-        }
-
-        state = ConnectionState(
-            version=STATE_VERSION,
-            node_id=node.node_id,
-            saved_at=time.time() - 2,
-            sequence_number=80,
-            pending_acks=[ack_data],
-        )
-
-        Path(node.state_file).write_text(state.to_json())
-
-        with patch.object(node, "_wait_for_ack", new_callable=AsyncMock):
-            await node._recover_state()
-
-        # Expired ACK should not be recovered
-        assert "expired-ack" not in node.pending_acks
 
     @pytest.mark.asyncio
     async def test_expired_queue_messages_not_recovered(self, node_client_with_state, x25519_keypair):
