@@ -52,9 +52,9 @@ def assert_no_sensitive_info(response_body: dict | str, context: str = "") -> No
     body_lower = body_str.lower()
 
     for pattern in SENSITIVE_PATTERNS:
-        assert pattern.lower() not in body_lower, (
-            f"Sensitive pattern '{pattern}' found in error response{' (' + context + ')' if context else ''}: {body_str[:200]}"
-        )
+        assert (
+            pattern.lower() not in body_lower
+        ), f"Sensitive pattern '{pattern}' found in error response{' (' + context + ')' if context else ''}: {body_str[:200]}"
 
 
 # =============================================================================
@@ -164,7 +164,7 @@ class TestComplianceEndpointsSecurity:
 
         routes = [
             Route(
-                "/compliance/delete/{user_id}",
+                "/compliance/delete/{id}",
                 delete_user_data_endpoint,
                 methods=["DELETE"],
             ),
@@ -177,10 +177,10 @@ class TestComplianceEndpointsSecurity:
 
     def test_deletion_error_no_leakage(self, client):
         """User data deletion errors should not leak details."""
-        with patch("valence.compliance.deletion.delete_user_data") as mock_delete:
+        with patch("valence.server.compliance_endpoints.delete_user_data") as mock_delete:
             mock_delete.side_effect = Exception("Failed to connect to PostgreSQL at 192.168.1.100:5432 with user 'valence_admin'")
 
-            response = client.delete("/compliance/delete/user123?reason=gdpr_request")
+            response = client.delete("/compliance/delete/user123?reason=user_request")
 
         assert response.status_code == 500
         data = response.json()

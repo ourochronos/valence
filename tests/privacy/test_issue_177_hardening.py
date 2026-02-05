@@ -88,11 +88,12 @@ class TestAuditPIISanitization:
         assert "[PII_REDACTED]" in result["phone"]
 
     def test_ssn_sanitized(self):
-        """SSN patterns are redacted."""
+        """SSN key is sensitive and value is fully redacted."""
         from valence.privacy.audit import sanitize_metadata
 
+        # "ssn" is a sensitive key, so value is fully redacted (not PII pattern)
         result = sanitize_metadata({"ssn": "123-45-6789"})
-        assert "[PII_REDACTED]" in result["ssn"]
+        assert result["ssn"] == "[REDACTED]"
 
     def test_sensitive_keys_fully_redacted(self):
         """Keys named after sensitive data are fully redacted."""
@@ -215,7 +216,8 @@ class TestFailedQueryBudgetConsumption:
             execute_private_query,
         )
 
-        config = PrivacyConfig(epsilon=1.0, min_contributors=3)
+        # min_contributors must be >= 5
+        config = PrivacyConfig(epsilon=1.0, min_contributors=5)
         budget = PrivacyBudget(federation_id=uuid4())
 
         # Query with sufficient contributors
