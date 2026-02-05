@@ -32,13 +32,18 @@ from valence.federation.groups import (
     WelcomeMessage,
     CommitMessage,
     GroupState,
+    RemovalAuditEntry,
     # Functions
     create_group,
     add_member,
+    remove_member,
     process_welcome,
     process_commit,
     encrypt_group_content,
     decrypt_group_content,
+    can_decrypt_at_epoch,
+    get_removal_history,
+    rotate_keys,
 )
 
 
@@ -967,3 +972,478 @@ class TestMemberOnboardingFlow:
         )
         
         assert plaintext == message
+
+
+# =============================================================================
+# MEMBER REMOVAL (OFFBOARDING) TESTS - Issue #75
+# =============================================================================
+
+
+class TestMemberRemoval:
+    """Tests for member removal/offboarding functionality.
+    
+    This is the core functionality for Issue #75.
+    """
+    
+    def test_remove_member_basic(
+        self,
+        test_group,
+        creator_did,
+        creator_keypair,
+        new_member_did,
+        new_member_key_package,
+    ):
+        """Test basic member removal."""
+        new_kp, _ = new_member_key_package
+        creator_private, _ = creator_keypair
+        
+        # Add a member first
+        group_with_member, _, _ = add_member(
+            group=test_group,
+            new_member_did=new_member_did,
+            new_member_key_package=new_kp,
+            adder_did=creator_did,
+            adder_signing_key=creator_private,
+        )
+        
+        # Remove the member
+        updated_group, commit, audit = remove_member(
+            group=group_with_member,
+            member_did=new_member_did,
+            remover_did=creator_did,
+            remover_signing_key=creator_private,
+        )
+        
+        # Verify removal
+        member = updated_group.get_member(new_member_did)
+        assert member is not None
+        assert member.status == MemberStatus.REMOVED
+        assert member.removed_at is not None
+    
+    def test_remove_member_increments_epoch(
+        self,
+        test_group,
+        creator_did,
+        creator_keypair,
+        new_member_did,
+        new_member_key_package,
+    ):
+        """Test that removing a member increments the epoch."""
+        new_kp, _ = new_member_key_package
+        creator_private, _ = creator_keypair
+        
+        group_with_member, _, _ = add_member(
+            group=test_group,
+            new_member_did=new_member_did,
+            new_member_key_package=new_kp,
+            adder_did=creator_did,
+            adder_signing_key=creator_private,
+        )
+        
+        epoch_before = group_with_member.epoch
+        
+        updated_group, _, _ = remove_member(
+            group=group_with_member,
+            member_did=new_member_did,
+            remover_did=creator_did,
+            remover_signing_key=creator_private,
+        )
+        
+        assert updated_group.epoch == epoch_before + 1
+    
+    def test_remove_member_rotates_keys(
+        self,
+        test_group,
+        creator_did,
+        creator_keypair,
+        new_member_did,
+        new_member_key_package,
+    ):
+        """Test that removing a member rotates group keys (new epoch secrets)."""
+        new_kp, _ = new_member_key_package
+        creator_private, _ = creator_keypair
+        
+        group_with_member, _, _ = add_member(
+            group=test_group,
+            new_member_did=new_member_did,
+            new_member_key_package=new_kp,
+            adder_did=creator_did,
+            adder_signing_key=creator_private,
+        )
+        
+        old_encryption_key = group_with_member.current_secrets.encryption_key
+        
+        updated_group, _, _ = remove_member(
+            group=group_with_member,
+            member_did=new_member_did,
+            remover_did=creator_did,
+            remover_signing_key=creator_private,
+        )
+        
+        # Keys should be different
+        assert updated_group.current_secrets.encryption_key != old_encryption_key
+    
+    def test_removed_member_not_in_commit(
+        self,
+        test_group,
+        creator_did,
+        creator_keypair,
+        new_member_did,
+        new_member_key_package,
+    ):
+        """Test that removed member doesn't receive commit secrets.
+        
+        This is critical for forward secrecy - the removed member
+        should not be able to decrypt the commit message.
+        """
+        new_kp, _ = new_member_key_package
+        creator_private, _ = creator_keypair
+        
+        group_with_member, _, _ = add_member(
+            group=test_group,
+            new_member_did=new_member_did,
+            new_member_key_package=new_kp,
+            adder_did=creator_did,
+            adder_signing_key=creator_private,
+        )
+        
+        _, commit, _ = remove_member(
+            group=group_with_member,
+            member_did=new_member_did,
+            remover_did=creator_did,
+            remover_signing_key=creator_private,
+        )
+        
+        # The removed member should NOT have encrypted commit secrets
+        assert new_member_did not in commit.encrypted_commit_secrets
+        
+        # The remaining member (creator) should have commit secrets
+        assert creator_did in commit.encrypted_commit_secrets
+    
+    def test_forward_secrecy_preserved(
+        self,
+        test_group,
+        creator_did,
+        creator_keypair,
+        new_member_did,
+        new_member_key_package,
+    ):
+        """Test that forward secrecy is preserved after member removal.
+        
+        Forward secrecy means:
+        1. Removed member's status shows they can't decrypt new messages
+        2. The commit for removal only goes to remaining members
+        3. New epoch secrets are different from old ones
+        """
+        new_kp, _ = new_member_key_package
+        creator_private, _ = creator_keypair
+        
+        # Add member
+        group_with_bob, _, _ = add_member(
+            group=test_group,
+            new_member_did=new_member_did,
+            new_member_key_package=new_kp,
+            adder_did=creator_did,
+            adder_signing_key=creator_private,
+        )
+        
+        epoch_with_bob = group_with_bob.epoch
+        secrets_with_bob = group_with_bob.current_secrets.encryption_key
+        
+        # Remove the member
+        group_without_bob, commit, _ = remove_member(
+            group=group_with_bob,
+            member_did=new_member_did,
+            remover_did=creator_did,
+            remover_signing_key=creator_private,
+        )
+        
+        # Member's status should be REMOVED
+        bob = group_without_bob.get_member(new_member_did)
+        assert bob.status == MemberStatus.REMOVED
+        
+        # Member should NOT receive commit secrets
+        assert new_member_did not in commit.encrypted_commit_secrets
+        
+        # Encryption key should be different
+        assert group_without_bob.current_secrets.encryption_key != secrets_with_bob
+        
+        # Epoch advanced
+        assert group_without_bob.epoch > epoch_with_bob
+    
+    def test_non_admin_cannot_remove_others(
+        self,
+        test_group,
+        creator_did,
+        creator_keypair,
+        new_member_did,
+        new_member_key_package,
+    ):
+        """Test that non-admins cannot remove other members."""
+        new_kp, new_init_private = new_member_key_package
+        creator_private, _ = creator_keypair
+        
+        # Add a member
+        group_v1, _, _ = add_member(
+            group=test_group,
+            new_member_did=new_member_did,
+            new_member_key_package=new_kp,
+            adder_did=creator_did,
+            adder_signing_key=creator_private,
+        )
+        
+        # Add second member
+        member2_private = Ed25519PrivateKey.generate()
+        member2_private_bytes = member2_private.private_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PrivateFormat.Raw,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        member2_kp, _ = KeyPackage.generate(
+            member_did="did:vkb:key:z6MkMember2",
+            signing_private_key=member2_private_bytes,
+        )
+        
+        group_v2, _, _ = add_member(
+            group=group_v1,
+            new_member_did="did:vkb:key:z6MkMember2",
+            new_member_key_package=member2_kp,
+            adder_did=creator_did,
+            adder_signing_key=creator_private,
+        )
+        
+        # First member (non-admin) tries to remove second member - should fail
+        with pytest.raises(PermissionError):
+            remove_member(
+                group=group_v2,
+                member_did="did:vkb:key:z6MkMember2",
+                remover_did=new_member_did,
+                remover_signing_key=new_init_private,
+            )
+    
+    def test_member_can_remove_self(
+        self,
+        test_group,
+        creator_did,
+        creator_keypair,
+        new_member_did,
+        new_member_key_package,
+    ):
+        """Test that members can remove themselves (leave group)."""
+        new_kp, new_init_private = new_member_key_package
+        creator_private, _ = creator_keypair
+        
+        group_with_member, _, _ = add_member(
+            group=test_group,
+            new_member_did=new_member_did,
+            new_member_key_package=new_kp,
+            adder_did=creator_did,
+            adder_signing_key=creator_private,
+        )
+        
+        # Member removes themselves
+        updated_group, _, _ = remove_member(
+            group=group_with_member,
+            member_did=new_member_did,
+            remover_did=new_member_did,
+            remover_signing_key=new_init_private,
+        )
+        
+        member = updated_group.get_member(new_member_did)
+        assert member.status == MemberStatus.REMOVED
+    
+    def test_audit_entry_created(
+        self,
+        test_group,
+        creator_did,
+        creator_keypair,
+        new_member_did,
+        new_member_key_package,
+    ):
+        """Test that removal creates an audit entry."""
+        new_kp, _ = new_member_key_package
+        creator_private, _ = creator_keypair
+        
+        group_with_member, _, _ = add_member(
+            group=test_group,
+            new_member_did=new_member_did,
+            new_member_key_package=new_kp,
+            adder_did=creator_did,
+            adder_signing_key=creator_private,
+        )
+        
+        _, _, audit = remove_member(
+            group=group_with_member,
+            member_did=new_member_did,
+            remover_did=creator_did,
+            remover_signing_key=creator_private,
+            reason="Test removal",
+        )
+        
+        assert audit.removed_did == new_member_did
+        assert audit.remover_did == creator_did
+        assert audit.reason == "Test removal"
+        assert audit.signature != b""  # Signed
+    
+    def test_cannot_remove_nonexistent_member(
+        self,
+        test_group,
+        creator_did,
+        creator_keypair,
+    ):
+        """Test that removing a non-existent member fails."""
+        creator_private, _ = creator_keypair
+        
+        with pytest.raises(ValueError, match="not found"):
+            remove_member(
+                group=test_group,
+                member_did="did:vkb:key:z6MkNobody",
+                remover_did=creator_did,
+                remover_signing_key=creator_private,
+            )
+
+
+class TestKeyRotation:
+    """Tests for key rotation functionality."""
+    
+    def test_manual_key_rotation(
+        self,
+        test_group,
+        creator_did,
+        creator_keypair,
+    ):
+        """Test manual key rotation."""
+        creator_private, _ = creator_keypair
+        epoch_before = test_group.epoch
+        
+        updated_group, commit = rotate_keys(
+            group=test_group,
+            rotator_did=creator_did,
+            rotator_signing_key=creator_private,
+            reason="Periodic rotation",
+        )
+        
+        assert updated_group.epoch == epoch_before + 1
+    
+    def test_key_rotation_creates_new_secrets(
+        self,
+        test_group,
+        creator_did,
+        creator_keypair,
+    ):
+        """Test that key rotation creates new epoch secrets."""
+        creator_private, _ = creator_keypair
+        old_key = test_group.current_secrets.encryption_key
+        
+        updated_group, _ = rotate_keys(
+            group=test_group,
+            rotator_did=creator_did,
+            rotator_signing_key=creator_private,
+        )
+        
+        assert updated_group.current_secrets.encryption_key != old_key
+    
+    def test_non_admin_cannot_rotate_keys(
+        self,
+        test_group,
+        creator_did,
+        creator_keypair,
+        new_member_did,
+        new_member_key_package,
+    ):
+        """Test that non-admins cannot rotate keys."""
+        new_kp, new_init_private = new_member_key_package
+        creator_private, _ = creator_keypair
+        
+        group_with_member, _, _ = add_member(
+            group=test_group,
+            new_member_did=new_member_did,
+            new_member_key_package=new_kp,
+            adder_did=creator_did,
+            adder_signing_key=creator_private,
+        )
+        
+        with pytest.raises(PermissionError):
+            rotate_keys(
+                group=group_with_member,
+                rotator_did=new_member_did,
+                rotator_signing_key=new_init_private,
+            )
+
+
+class TestRemovalHistory:
+    """Tests for removal history tracking."""
+    
+    def test_get_removal_history(
+        self,
+        test_group,
+        creator_did,
+        creator_keypair,
+        new_member_did,
+        new_member_key_package,
+    ):
+        """Test getting removal history."""
+        new_kp, _ = new_member_key_package
+        creator_private, _ = creator_keypair
+        
+        group_with_member, _, _ = add_member(
+            group=test_group,
+            new_member_did=new_member_did,
+            new_member_key_package=new_kp,
+            adder_did=creator_did,
+            adder_signing_key=creator_private,
+        )
+        
+        updated_group, _, _ = remove_member(
+            group=group_with_member,
+            member_did=new_member_did,
+            remover_did=creator_did,
+            remover_signing_key=creator_private,
+        )
+        
+        history = get_removal_history(updated_group)
+        
+        assert len(history) == 1
+        assert history[0]["member_did"] == new_member_did
+        assert history[0]["status"] == "removed"
+
+
+class TestAuditEntrySerialization:
+    """Tests for audit entry serialization."""
+    
+    def test_audit_entry_roundtrip(
+        self,
+        test_group,
+        creator_did,
+        creator_keypair,
+        new_member_did,
+        new_member_key_package,
+    ):
+        """Test round-trip serialization of audit entry."""
+        new_kp, _ = new_member_key_package
+        creator_private, _ = creator_keypair
+        
+        group_with_member, _, _ = add_member(
+            group=test_group,
+            new_member_did=new_member_did,
+            new_member_key_package=new_kp,
+            adder_did=creator_did,
+            adder_signing_key=creator_private,
+        )
+        
+        _, _, audit = remove_member(
+            group=group_with_member,
+            member_did=new_member_did,
+            remover_did=creator_did,
+            remover_signing_key=creator_private,
+            reason="Test",
+        )
+        
+        data = audit.to_dict()
+        restored = RemovalAuditEntry.from_dict(data)
+        
+        assert restored.removed_did == audit.removed_did
+        assert restored.remover_did == audit.remover_did
+        assert restored.reason == audit.reason
+        assert restored.epoch_before == audit.epoch_before
+        assert restored.epoch_after == audit.epoch_after
