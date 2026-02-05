@@ -19,13 +19,13 @@ jobs:
           cache: "pip"
 
       - name: Install dev dependencies
-        run: pip install ruff black mypy types-PyYAML
+        run: pip install ruff mypy types-PyYAML
 
       - name: Lint (ruff)
         run: ruff check src/valence
 
-      - name: Format check (black)
-        run: black --check src/valence tests
+      - name: Format check (ruff)
+        run: ruff format --check src/valence tests
 
       - name: Type check (mypy)
         run: mypy src/valence --ignore-missing-imports
