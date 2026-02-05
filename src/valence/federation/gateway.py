@@ -17,7 +17,7 @@ import logging
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import Any, Callable, Awaitable
 from uuid import UUID, uuid4
@@ -264,7 +264,7 @@ class AuditEntry:
     """An entry in the gateway audit log."""
     
     id: UUID = field(default_factory=uuid4)
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     event_type: AuditEventType = AuditEventType.INBOUND_SHARE
     
     # Source/destination
@@ -322,7 +322,7 @@ class InboundShare:
     signature: str = ""
     
     # Metadata
-    received_at: datetime = field(default_factory=datetime.utcnow)
+    received_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -346,7 +346,7 @@ class OutboundShare:
     acknowledged_at: datetime | None = None
     
     # Metadata
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -441,7 +441,7 @@ class GatewayNode:
         # Known external gateways
         self._external_gateways: dict[UUID, str] = {}  # federation_id -> endpoint
         
-        self.created_at = datetime.utcnow()
+        self.created_at = datetime.now(UTC)
         
         logger.info(
             f"Gateway node initialized for federation {federation_id} "
@@ -571,7 +571,7 @@ class GatewayNode:
     
     async def _get_federation_trust(self, federation_id: UUID) -> float:
         """Get trust score for a federation, using cache if available."""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         
         # Check cache
         if federation_id in self._trust_cache:
@@ -705,7 +705,7 @@ class GatewayNode:
         self._audit_log.append(entry)
         
         # Prune old entries
-        cutoff = datetime.utcnow() - timedelta(days=self.config.audit_retention_days)
+        cutoff = datetime.now(UTC) - timedelta(days=self.config.audit_retention_days)
         self._audit_log = [e for e in self._audit_log if e.timestamp >= cutoff]
         
         logger.debug(f"Audit: {event_type.value} - success={success}")
@@ -948,7 +948,7 @@ class GatewayNode:
         # Send via handler
         if self._outbound_handler:
             try:
-                share.sent_at = datetime.utcnow()
+                share.sent_at = datetime.now(UTC)
                 result = await self._outbound_handler(share)
                 
                 self._audit(
@@ -1038,7 +1038,7 @@ class GatewayNode:
     
     def get_stats(self) -> dict[str, Any]:
         """Get gateway statistics."""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         last_hour = now - timedelta(hours=1)
         last_day = now - timedelta(days=1)
         

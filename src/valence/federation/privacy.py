@@ -16,7 +16,7 @@ import math
 import random
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
@@ -218,7 +218,7 @@ class TopicBudget:
     topic_hash: str
     query_count: int = 0
     epsilon_spent: float = 0.0
-    last_query: datetime = field(default_factory=datetime.utcnow)
+    last_query: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def can_query(self, max_queries: int = MAX_QUERIES_PER_TOPIC_PER_DAY) -> bool:
         """Check if topic can be queried."""
@@ -228,7 +228,7 @@ class TopicBudget:
         """Record a query against this topic."""
         self.query_count += 1
         self.epsilon_spent += epsilon
-        self.last_query = datetime.utcnow()
+        self.last_query = datetime.now(UTC)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary for persistence."""
@@ -248,7 +248,7 @@ class TopicBudget:
             epsilon_spent=data.get("epsilon_spent", 0.0),
             last_query=datetime.fromisoformat(data["last_query"])
             if "last_query" in data
-            else datetime.utcnow(),
+            else datetime.now(UTC),
         )
 
 
@@ -258,7 +258,7 @@ class RequesterBudget:
 
     requester_id: str
     queries_this_hour: int = 0
-    hour_start: datetime = field(default_factory=datetime.utcnow)
+    hour_start: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def can_query(self, max_per_hour: int = MAX_QUERIES_PER_REQUESTER_PER_HOUR) -> bool:
         """Check if requester can query."""
@@ -272,7 +272,7 @@ class RequesterBudget:
 
     def _maybe_reset_hour(self) -> None:
         """Reset hourly counter if needed."""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         if (now - self.hour_start).total_seconds() > 3600:
             self.queries_this_hour = 0
             self.hour_start = now
@@ -293,7 +293,7 @@ class RequesterBudget:
             queries_this_hour=data.get("queries_this_hour", 0),
             hour_start=datetime.fromisoformat(data["hour_start"])
             if "hour_start" in data
-            else datetime.utcnow(),
+            else datetime.now(UTC),
         )
 
 
@@ -545,7 +545,7 @@ class DatabaseBudgetStore:
                 data.get("queries_today", 0),
                 datetime.fromisoformat(data["period_start"])
                 if "period_start" in data
-                else datetime.utcnow(),
+                else datetime.now(UTC),
                 json.dumps(data.get("topic_budgets", {})),
                 json.dumps(data.get("requester_budgets", {})),
                 data.get("_version", 1),
@@ -592,7 +592,7 @@ class DatabaseBudgetStore:
                     data.get("queries_today", 0),
                     datetime.fromisoformat(data["period_start"])
                     if "period_start" in data
-                    else datetime.utcnow(),
+                    else datetime.now(UTC),
                     json.dumps(data.get("topic_budgets", {})),
                     json.dumps(data.get("requester_budgets", {})),
                     data.get("_version", 1),
@@ -848,7 +848,7 @@ class PrivacyBudget:
     requester_budgets: dict[str, RequesterBudget] = field(default_factory=dict)
 
     # Reset tracking
-    period_start: datetime = field(default_factory=datetime.utcnow)
+    period_start: datetime = field(default_factory=lambda: datetime.now(UTC))
     budget_period_hours: int = 24
 
     # Storage (not serialized, set after creation)
@@ -958,7 +958,7 @@ class PrivacyBudget:
 
     def _maybe_reset_period(self) -> None:
         """Reset budget if period has elapsed."""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         if (now - self.period_start).total_seconds() > self.budget_period_hours * 3600:
             self.spent_epsilon = 0.0
             self.spent_delta = 0.0
@@ -1031,7 +1031,7 @@ class PrivacyBudget:
         if period_start_str:
             period_start = datetime.fromisoformat(period_start_str)
         else:
-            period_start = datetime.utcnow()
+            period_start = datetime.now(UTC)
 
         budget = cls(
             federation_id=UUID(data["federation_id"]),
@@ -1231,7 +1231,7 @@ class TemporalSmoother:
             MembershipEvent(
                 member_id=member_id,
                 event_type="joined",
-                timestamp=timestamp or datetime.utcnow(),
+                timestamp=timestamp or datetime.now(UTC),
             )
         )
 
@@ -1241,7 +1241,7 @@ class TemporalSmoother:
             MembershipEvent(
                 member_id=member_id,
                 event_type="departed",
-                timestamp=timestamp or datetime.utcnow(),
+                timestamp=timestamp or datetime.now(UTC),
             )
         )
 
@@ -1263,7 +1263,7 @@ class TemporalSmoother:
         Returns:
             Weight in [0, 1] for member's contribution
         """
-        query_time = query_time or datetime.utcnow()
+        query_time = query_time or datetime.now(UTC)
 
         # Active member: check if recently joined (ramp up)
         if departed_at is None:

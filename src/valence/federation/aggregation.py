@@ -15,7 +15,7 @@ import hashlib
 import logging
 import math
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import Any, Callable
 from uuid import UUID, uuid4
@@ -166,7 +166,7 @@ class DetectedConflict:
     belief_a_content: str = ""
     belief_b_content: str = ""
     
-    detected_at: datetime = field(default_factory=datetime.utcnow)
+    detected_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -269,7 +269,7 @@ class CrossFederationAggregateResult:
     k_anonymity_satisfied: bool = True
     
     # Metadata
-    computed_at: datetime = field(default_factory=datetime.utcnow)
+    computed_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     valid_until: datetime | None = None
     config_used: dict[str, Any] = field(default_factory=dict)
     
@@ -657,7 +657,7 @@ class TrustWeightedAggregator:
             return 0.5
         
         # Get most recent belief
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         max_age_days = 365
         
         most_recent = max(
@@ -983,7 +983,7 @@ class FederationAggregator:
             privacy_delta=self.config.privacy_config.delta,
             k_anonymity_satisfied=k_satisfied,
             config_used=self.config.to_dict(),
-            valid_until=datetime.utcnow() + timedelta(hours=1),
+            valid_until=datetime.now(UTC) + timedelta(hours=1),
         )
     
     def _resolve_conflicts(

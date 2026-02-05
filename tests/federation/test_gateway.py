@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4, UUID
 
@@ -786,12 +786,12 @@ class TestGatewayNodeAuditLogging:
         """Test audit log filtering by time."""
         # Create old entry
         old_entry = gateway._audit(AuditEventType.INBOUND_SHARE, success=True)
-        old_entry.timestamp = datetime.utcnow() - timedelta(hours=2)
+        old_entry.timestamp = datetime.now(UTC) - timedelta(hours=2)
         
         # Create recent entry
         gateway._audit(AuditEventType.OUTBOUND_SHARE, success=True)
         
-        since = datetime.utcnow() - timedelta(hours=1)
+        since = datetime.now(UTC) - timedelta(hours=1)
         log = gateway.get_audit_log(since=since)
         
         assert len(log) == 1

@@ -15,7 +15,7 @@ a live PostgreSQL instance.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -55,7 +55,7 @@ def federation_id() -> UUID:
 @pytest.fixture
 def sample_budget_data(federation_id: UUID) -> dict[str, Any]:
     """Create sample budget data for testing."""
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     return {
         "federation_id": str(federation_id),
         "daily_epsilon_budget": 10.0,
@@ -127,7 +127,7 @@ class TestTopicBudget:
     
     def test_to_dict(self) -> None:
         """Test serializing TopicBudget to dictionary."""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         budget = TopicBudget(
             topic_hash="test_hash",
             query_count=3,
@@ -144,7 +144,7 @@ class TestTopicBudget:
     
     def test_from_dict(self) -> None:
         """Test deserializing TopicBudget from dictionary."""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         data = {
             "topic_hash": "test_hash",
             "query_count": 5,
@@ -168,7 +168,7 @@ class TestTopicBudget:
         assert budget.topic_hash == "minimal_hash"
         assert budget.query_count == 0
         assert budget.epsilon_spent == 0.0
-        # last_query defaults to utcnow()
+        # last_query defaults to datetime.now(UTC)
         assert budget.last_query is not None
     
     def test_can_query_under_limit(self) -> None:
@@ -221,7 +221,7 @@ class TestRequesterBudget:
     
     def test_to_dict(self) -> None:
         """Test serializing RequesterBudget to dictionary."""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         budget = RequesterBudget(
             requester_id="test_requester",
             queries_this_hour=10,
@@ -236,7 +236,7 @@ class TestRequesterBudget:
     
     def test_from_dict(self) -> None:
         """Test deserializing RequesterBudget from dictionary."""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         data = {
             "requester_id": "test_requester",
             "queries_this_hour": 15,
@@ -272,7 +272,7 @@ class TestRequesterBudget:
     
     def test_hourly_reset(self) -> None:
         """Test that budget resets after an hour."""
-        past_hour = datetime.utcnow() - timedelta(hours=2)
+        past_hour = datetime.now(UTC) - timedelta(hours=2)
         budget = RequesterBudget(
             requester_id="test",
             queries_this_hour=MAX_QUERIES_PER_REQUESTER_PER_HOUR,
@@ -546,7 +546,7 @@ class TestDatabaseBudgetStoreAsync:
             "spent_epsilon": 2.5,
             "spent_delta": 1e-5,
             "queries_today": 15,
-            "period_start": datetime.utcnow(),
+            "period_start": datetime.now(UTC),
             "topic_budgets": "{}",
             "requester_budgets": "{}",
             "schema_version": 1,
@@ -598,7 +598,7 @@ class TestDatabaseBudgetStoreAsync:
             "spent_epsilon": 0.0,
             "spent_delta": 0.0,
             "queries_today": 0,
-            "period_start": datetime.utcnow(),
+            "period_start": datetime.now(UTC),
             "topic_budgets": json.dumps(topic_budgets),
             "requester_budgets": json.dumps(requester_budgets),
             "schema_version": 1,
@@ -723,7 +723,7 @@ class TestDatabaseBudgetStoreSync:
             2.5,        # spent_epsilon
             1e-5,       # spent_delta
             15,         # queries_today
-            datetime.utcnow(),  # period_start
+            datetime.now(UTC),  # period_start
             "{}",       # topic_budgets
             "{}",       # requester_budgets
             1,          # schema_version
@@ -811,7 +811,7 @@ class TestDatabaseBudgetStoreRowConversion:
         store: DatabaseBudgetStore,
     ) -> None:
         """Test conversion with dict-like row (asyncpg Record)."""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         row = {
             "federation_id": "fed-123",
             "daily_epsilon_budget": 10.0,
@@ -846,7 +846,7 @@ class TestDatabaseBudgetStoreRowConversion:
             "spent_epsilon": 0.0,
             "spent_delta": 0.0,
             "queries_today": 0,
-            "period_start": datetime.utcnow(),
+            "period_start": datetime.now(UTC),
             "topic_budgets": '{"hash1": {"topic_hash": "hash1"}}',
             "requester_budgets": '{"req1": {"requester_id": "req1"}}',
             "schema_version": 1,
@@ -864,7 +864,7 @@ class TestDatabaseBudgetStoreRowConversion:
         store: DatabaseBudgetStore,
     ) -> None:
         """Test that datetime is converted to ISO string."""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         row = {
             "federation_id": "fed-123",
             "daily_epsilon_budget": 10.0,
@@ -890,7 +890,7 @@ class TestDatabaseBudgetStoreRowConversion:
         """Test that defaults are used for missing values."""
         row = {
             "federation_id": "fed-123",
-            "period_start": datetime.utcnow(),
+            "period_start": datetime.now(UTC),
             "topic_budgets": {},
             "requester_budgets": {},
         }
@@ -1016,7 +1016,7 @@ class TestPrivacyBudgetPersistence:
         assert len(budget.topic_budgets) == 1
         
         # Force period reset by setting old period_start
-        budget.period_start = datetime.utcnow() - timedelta(hours=25)
+        budget.period_start = datetime.now(UTC) - timedelta(hours=25)
         budget._maybe_reset_period()
         
         assert budget.spent_epsilon == 0.0
@@ -1032,7 +1032,7 @@ class TestPrivacyBudgetPersistence:
         budget.consume(1.0, 1e-6, "topic", "requester_1")
         
         # Force period reset
-        budget.period_start = datetime.utcnow() - timedelta(hours=25)
+        budget.period_start = datetime.now(UTC) - timedelta(hours=25)
         budget._maybe_reset_period()
         
         # Requester budgets are preserved (they reset hourly, not daily)
