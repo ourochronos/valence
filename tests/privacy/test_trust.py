@@ -884,7 +884,7 @@ class TestTrustGraphStoreIntegration:
         edge.competence = 0.95
         edge.judgment = 0.8
         updated = store.add_edge(edge)
-        assert updated.competence == Decimal("0.95")
+        assert updated.competence == 0.95  # add_edge returns input object, not DB values
 
         # Verify update
         retrieved2 = store.get_edge("did:test:alice", "did:test:bob")
