@@ -15,6 +15,7 @@ from mcp.types import Tool
 from ..core.db import get_cursor
 from ..core.models import Belief, Entity, Tension
 from ..core.confidence import DimensionalConfidence
+from ..core.utils import escape_ilike
 
 logger = logging.getLogger(__name__)
 
@@ -704,7 +705,7 @@ def entity_search(
             WHERE (name ILIKE %s OR %s = ANY(aliases))
             AND canonical_id IS NULL
         """
-        params: list[Any] = [f"%{query}%", query]
+        params: list[Any] = [f"%{escape_ilike(query)}%", query]
 
         if type:
             sql += " AND type = %s"

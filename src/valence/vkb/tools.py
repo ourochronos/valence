@@ -16,6 +16,7 @@ from mcp.types import Tool
 from ..core.db import get_cursor
 from ..core.models import Session, Exchange, Pattern
 from ..core.confidence import DimensionalConfidence
+from ..core.utils import escape_ilike
 
 logger = logging.getLogger(__name__)
 
@@ -722,7 +723,7 @@ def pattern_search(
             ORDER BY confidence DESC
             LIMIT %s
             """,
-            (f"%{query}%", limit),
+            (f"%{escape_ilike(query)}%", limit),
         )
         rows = cur.fetchall()
 
