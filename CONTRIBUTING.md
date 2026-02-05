@@ -1,158 +1,117 @@
 # Contributing to Valence
 
-Thank you for your interest in contributing to Valence! This document provides guidelines and instructions for contributing.
+## Workflow
 
-## Getting Started
+### 1. Issue First
+Every code change must be tied to an issue.
 
-### Prerequisites
+```bash
+# Create issue first
+gh issue create --title "Brief description" --body "Details..."
 
-- Python 3.10+
-- PostgreSQL with pgvector extension (or use Docker)
-- Git
+# Then branch from that issue
+git checkout -b fix/123-brief-description  # for bugs
+git checkout -b feat/123-brief-description # for features
+git checkout -b docs/123-brief-description # for docs
+```
 
-### Development Setup
+**No direct commits to main.** All changes go through PRs.
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/orobobos/valence.git
-   cd valence
-   ```
+### 2. Branch Naming
+```
+<type>/<issue-number>-<brief-description>
 
-2. **Create a virtual environment:**
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-   ```
+Types:
+- fix/     Bug fixes
+- feat/    New features
+- docs/    Documentation
+- refactor/ Code restructuring
+- test/    Test additions/fixes
+- chore/   Maintenance tasks
+```
 
-3. **Install in development mode:**
-   ```bash
-   pip install -e ".[dev]"
-   ```
+### 3. Commit Messages
+Follow conventional commits:
+```
+<type>: <description>
 
-4. **Set up the database:**
-   ```bash
-   # Using Docker (recommended for development)
-   docker run -d --name valence-db \
-     -e POSTGRES_USER=valence \
-     -e POSTGRES_PASSWORD=valence \
-     -e POSTGRES_DB=valence \
-     -p 5433:5432 \
-     pgvector/pgvector:pg16
+[optional body]
 
-   # Or configure your existing PostgreSQL with pgvector
-   ```
+Closes #123
+```
 
-5. **Set environment variables:**
-   ```bash
-   export VALENCE_DB_URL="postgresql://valence:valence@localhost:5433/valence"
-   export OPENAI_API_KEY="your-key-here"  # For embeddings
-   ```
+Examples:
+```
+fix: Handle None in trust computation
+
+The compute_delegated_trust function now respects the
+respect_delegation flag when chaining trust edges.
+
+Closes #126
+```
+
+### 4. Pull Request Process
+
+1. **Create PR** with descriptive title and body
+2. **Link issues** using "Closes #N" in description
+3. **Automated checks** run (pre-commit, tests)
+4. **Review** required before merge
+5. **Squash merge** to main (clean history)
+
+### 5. Review Checklist
+
+Reviewers should check:
+- [ ] Tests pass
+- [ ] New code has tests
+- [ ] No security issues (bandit clean)
+- [ ] Types correct (mypy clean on changed files)
+- [ ] Documentation updated if needed
+- [ ] Commit message follows convention
+
+### 6. Pre-commit Hooks
+
+Installed automatically. Runs on commit:
+- Trailing whitespace fix
+- End of file fix
+- YAML validation
+- Ruff (linting + formatting)
+- Mypy (type checking)
+- Bandit (security)
+
+To skip (emergency only):
+```bash
+git commit --no-verify -m "message"
+```
+
+---
 
 ## Code Style
 
-We use the following tools to maintain code quality:
+- **Python 3.11+**
+- **Ruff** for linting/formatting
+- **Type hints** required for public APIs
+- **Docstrings** for all public functions/classes
 
-### Formatting with Black
-
-```bash
-black src/ tests/
-```
-
-### Linting with Ruff
-
-```bash
-ruff check src/ tests/
-ruff check --fix src/ tests/  # Auto-fix issues
-```
-
-### Type Checking with mypy
-
-```bash
-mypy src/
-```
-
-### Running All Checks
-
-```bash
-# Run all quality checks
-black --check src/ tests/
-ruff check src/ tests/
-mypy src/
-pytest
-```
-
-## Running Tests
+## Testing
 
 ```bash
 # Run all tests
-pytest
+pytest tests/
 
 # Run with coverage
-pytest --cov=valence
+pytest tests/ --cov=src/valence
 
-# Run specific test file
-pytest tests/test_db.py
-
-# Run with verbose output
-pytest -v
+# Run specific test
+pytest tests/privacy/test_trust.py -v
 ```
 
-## Submitting Changes
+## Security
 
-### Pull Request Process
+- Run `bandit -r src/valence` before PRs
+- Run `pip-audit --skip-editable` for dependency checks
+- No secrets in code
+- Parameterized SQL only
 
-1. **Fork the repository** and create your branch from `main`:
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
+---
 
-2. **Make your changes** and ensure:
-   - All tests pass (`pytest`)
-   - Code is formatted (`black`)
-   - No linting errors (`ruff check`)
-   - Type hints are correct (`mypy`)
-
-3. **Write clear commit messages:**
-   ```
-   feat: add new query ranking algorithm
-   
-   - Implement multi-signal ranking
-   - Add recency weighting option
-   - Update documentation
-   ```
-
-4. **Push to your fork** and open a Pull Request
-
-5. **Describe your changes** in the PR description:
-   - What problem does this solve?
-   - How did you test it?
-   - Any breaking changes?
-
-### Commit Message Convention
-
-We follow conventional commits:
-
-- `feat:` - New features
-- `fix:` - Bug fixes
-- `docs:` - Documentation changes
-- `test:` - Test additions/changes
-- `refactor:` - Code refactoring
-- `chore:` - Maintenance tasks
-
-## Code of Conduct
-
-We are committed to providing a welcoming and inclusive environment. A formal Code of Conduct will be added soon. In the meantime, please:
-
-- Be respectful and inclusive
-- Welcome newcomers
-- Focus on constructive feedback
-- Assume good intentions
-
-## Questions?
-
-- **GitHub Issues:** For bugs and feature requests
-- **GitHub Discussions:** For questions and ideas (coming soon)
-
-## License
-
-By contributing to Valence, you agree that your contributions will be licensed under the MIT License.
+*Last updated: 2026-02-04*
