@@ -29,7 +29,6 @@ import argparse
 import asyncio
 import json
 import logging
-import os
 import signal
 import sys
 from typing import Optional
@@ -45,20 +44,22 @@ logger = logging.getLogger(__name__)
 
 
 def get_config_from_env() -> dict:
-    """Get seed node configuration from environment variables."""
+    """Get seed node configuration from core config."""
+    from ..core.config import get_config
+    core_config = get_config()
     config = {}
     
-    if host := os.environ.get("VALENCE_SEED_HOST"):
-        config["host"] = host
+    if core_config.seed_host:
+        config["host"] = core_config.seed_host
     
-    if port := os.environ.get("VALENCE_SEED_PORT"):
-        config["port"] = int(port)
+    if core_config.seed_port:
+        config["port"] = core_config.seed_port
     
-    if seed_id := os.environ.get("VALENCE_SEED_ID"):
-        config["seed_id"] = seed_id
+    if core_config.seed_id:
+        config["seed_id"] = core_config.seed_id
     
-    if peers := os.environ.get("VALENCE_SEED_PEERS"):
-        config["known_seeds"] = [p.strip() for p in peers.split(",") if p.strip()]
+    if core_config.seed_peers:
+        config["known_seeds"] = [p.strip() for p in core_config.seed_peers.split(",") if p.strip()]
     
     return config
 
@@ -125,11 +126,12 @@ async def cmd_start(args: argparse.Namespace) -> int:
 
 async def cmd_status(args: argparse.Namespace) -> int:
     """Check seed node status."""
+    from ..core.config import get_config
     url = args.url
     
     # Default to local if no URL provided
     if not url:
-        port = args.port or int(os.environ.get("VALENCE_SEED_PORT", "8470"))
+        port = args.port or get_config().seed_port
         url = f"http://localhost:{port}"
     
     # Normalize URL
@@ -179,11 +181,12 @@ async def cmd_status(args: argparse.Namespace) -> int:
 
 async def cmd_discover(args: argparse.Namespace) -> int:
     """Discover routers from a seed node."""
+    from ..core.config import get_config
     url = args.url
     
     # Default to local if no URL provided
     if not url:
-        port = args.port or int(os.environ.get("VALENCE_SEED_PORT", "8470"))
+        port = args.port or get_config().seed_port
         url = f"http://localhost:{port}"
     
     # Normalize URL

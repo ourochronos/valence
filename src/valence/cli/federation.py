@@ -36,7 +36,6 @@ import base64
 import hashlib
 import json
 import logging
-import os
 import sys
 import time
 from datetime import datetime
@@ -53,8 +52,10 @@ logger = logging.getLogger(__name__)
 
 
 def get_private_key() -> bytes | None:
-    """Get the Ed25519 private key from environment."""
-    key_hex = os.environ.get("VALENCE_FEDERATION_PRIVATE_KEY")
+    """Get the Ed25519 private key from config."""
+    from ..core.config import get_config
+    config = get_config()
+    key_hex = config.federation_private_key
     if key_hex:
         return bytes.fromhex(key_hex)
     return None
@@ -62,12 +63,14 @@ def get_private_key() -> bytes | None:
 
 def get_public_key_multibase() -> str | None:
     """Get the Ed25519 public key in multibase format."""
-    return os.environ.get("VALENCE_FEDERATION_PUBLIC_KEY")
+    from ..core.config import get_config
+    return get_config().federation_public_key
 
 
 def get_local_did() -> str | None:
     """Get the local node's DID."""
-    return os.environ.get("VALENCE_FEDERATION_DID")
+    from ..core.config import get_config
+    return get_config().federation_did
 
 
 # =============================================================================

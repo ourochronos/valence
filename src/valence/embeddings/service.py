@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import struct
 from concurrent.futures import ThreadPoolExecutor
 from enum import StrEnum
@@ -23,6 +22,7 @@ from typing import Any
 import numpy as np
 from openai import OpenAI
 
+from ..core.config import get_config
 from ..core.db import get_cursor
 from ..core.exceptions import EmbeddingException, DatabaseException
 from .registry import get_embedding_type, ensure_default_type
@@ -38,12 +38,13 @@ class EmbeddingProvider(StrEnum):
 
 
 def get_embedding_provider() -> EmbeddingProvider:
-    """Get configured embedding provider from environment.
+    """Get configured embedding provider from config.
     
     Defaults to 'local' for privacy and to avoid API costs.
     Set VALENCE_EMBEDDING_PROVIDER=openai to use OpenAI embeddings.
     """
-    provider = os.environ.get("VALENCE_EMBEDDING_PROVIDER", "local").lower()
+    config = get_config()
+    provider = config.embedding_provider.lower()
     try:
         return EmbeddingProvider(provider)
     except ValueError:
@@ -62,7 +63,8 @@ def get_openai_client() -> OpenAI:
     """Get or create OpenAI client."""
     global _openai_client
     if _openai_client is None:
-        api_key = os.environ.get("OPENAI_API_KEY")
+        config = get_config()
+        api_key = config.openai_api_key
         if not api_key:
             raise ValueError("OPENAI_API_KEY environment variable required for OpenAI embeddings")
         _openai_client = OpenAI(api_key=api_key)

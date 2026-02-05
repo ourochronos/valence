@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import sys
 import uuid
 from collections.abc import Generator
@@ -178,13 +177,16 @@ def configure_logging(
         VALENCE_LOG_FORMAT: Log format ("json" or "text", auto-detect if unset)
         VALENCE_LOG_FILE: Log file path
     """
-    # Get settings from environment
-    level = os.environ.get("VALENCE_LOG_LEVEL", level)
+    # Get settings from config
+    from .config import get_config
+    config = get_config()
+
+    level = config.log_level if level == "INFO" else level
     if isinstance(level, str):
         level = getattr(logging, level.upper(), logging.INFO)
 
     if json_format is None:
-        format_env = os.environ.get("VALENCE_LOG_FORMAT", "").lower()
+        format_env = config.log_format.lower()
         if format_env == "json":
             json_format = True
         elif format_env == "text":
@@ -193,7 +195,7 @@ def configure_logging(
             # Auto-detect: use JSON if not in a terminal
             json_format = not sys.stderr.isatty()
 
-    log_file = os.environ.get("VALENCE_LOG_FILE", log_file)
+    log_file = config.log_file if log_file is None else log_file
 
     # Create formatter
     formatter: logging.Formatter

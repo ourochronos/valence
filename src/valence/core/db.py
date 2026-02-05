@@ -9,7 +9,6 @@ Pool size is configured via environment variables:
 from __future__ import annotations
 
 import logging
-import os
 import threading
 import uuid
 from collections.abc import Generator
@@ -21,33 +20,27 @@ import psycopg2
 from psycopg2 import pool as psycopg2_pool
 from psycopg2.extras import RealDictCursor
 
+from .config import get_config
 from .exceptions import DatabaseException
 
 logger = logging.getLogger(__name__)
 
 
 def get_connection_params() -> dict[str, Any]:
-    """Get database connection parameters from environment."""
-    return {
-        "host": os.environ.get("VKB_DB_HOST", "localhost"),
-        "port": int(os.environ.get("VKB_DB_PORT", "5432")),
-        "dbname": os.environ.get("VKB_DB_NAME", "valence"),
-        "user": os.environ.get("VKB_DB_USER", "valence"),
-        "password": os.environ.get("VKB_DB_PASSWORD", ""),
-    }
+    """Get database connection parameters from config."""
+    config = get_config()
+    return config.connection_params
 
 
 def get_pool_config() -> dict[str, int]:
-    """Get connection pool configuration from environment.
+    """Get connection pool configuration from config.
 
     Environment variables:
         VALENCE_DB_POOL_MIN: Minimum pool size (default: 5)
         VALENCE_DB_POOL_MAX: Maximum pool size (default: 20)
     """
-    return {
-        "minconn": int(os.environ.get("VALENCE_DB_POOL_MIN", "5")),
-        "maxconn": int(os.environ.get("VALENCE_DB_POOL_MAX", "20")),
-    }
+    config = get_config()
+    return config.pool_config
 
 
 class ConnectionPool:

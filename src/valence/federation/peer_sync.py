@@ -15,7 +15,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
@@ -91,7 +90,9 @@ class TrustRegistry:
         if path:
             self._path = Path(path)
         else:
-            self._path = Path(os.environ.get("VALENCE_TRUST_REGISTRY", self.DEFAULT_PATH))
+            from ..core.config import get_config
+            config = get_config()
+            self._path = Path(config.trust_registry_path) if config.trust_registry_path else self.DEFAULT_PATH
         
         self._peers: dict[str, TrustedPeer] = {}
         self._local_did: str | None = None
@@ -628,8 +629,9 @@ def query_federated(
     # Generate embedding
     try:
         from openai import OpenAI
-        import os
-        client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+        from ..core.config import get_config
+        config = get_config()
+        client = OpenAI(api_key=config.openai_api_key)
         response = client.embeddings.create(
             model='text-embedding-3-small',
             input=query_text

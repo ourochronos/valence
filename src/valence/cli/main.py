@@ -38,23 +38,27 @@ for env_path in [Path.cwd() / '.env', Path.home() / '.valence' / '.env']:
 
 
 def get_db_connection():
-    """Get database connection using environment variables."""
+    """Get database connection using config."""
     import psycopg2
     from psycopg2.extras import RealDictCursor
+    from ..core.config import get_config
     
+    config = get_config()
     return psycopg2.connect(
-        host=os.environ.get('VKB_DB_HOST', os.environ.get('PGHOST', 'localhost')),
-        port=int(os.environ.get('VKB_DB_PORT', os.environ.get('PGPORT', '5432'))),
-        dbname=os.environ.get('VKB_DB_NAME', os.environ.get('PGDATABASE', 'valence')),
-        user=os.environ.get('VKB_DB_USER', os.environ.get('PGUSER', 'valence')),
-        password=os.environ.get('VKB_DB_PASSWORD', os.environ.get('PGPASSWORD', '')),
+        host=config.db_host,
+        port=config.db_port,
+        dbname=config.db_name,
+        user=config.db_user,
+        password=config.db_password,
         cursor_factory=RealDictCursor,
     )
 
 
 def get_embedding(text: str) -> list[float] | None:
     """Generate embedding using OpenAI."""
-    api_key = os.environ.get('OPENAI_API_KEY')
+    from ..core.config import get_config
+    config = get_config()
+    api_key = config.openai_api_key
     if not api_key:
         return None
     
@@ -262,15 +266,17 @@ def format_age(dt: datetime) -> str:
 def cmd_init(args: argparse.Namespace) -> int:
     """Initialize valence database."""
     import psycopg2
+    from ..core.config import get_config
     
     print("🔧 Initializing Valence database...")
     
     # Check if we need to create the database
-    db_name = os.environ.get('VKB_DB_NAME', 'valence')
-    db_host = os.environ.get('VKB_DB_HOST', 'localhost')
-    db_port = os.environ.get('VKB_DB_PORT', '5432')
-    db_user = os.environ.get('VKB_DB_USER', 'valence')
-    db_pass = os.environ.get('VKB_DB_PASSWORD', '')
+    config = get_config()
+    db_name = config.db_name
+    db_host = config.db_host
+    db_port = str(config.db_port)
+    db_user = config.db_user
+    db_pass = config.db_password
     
     # First, try to connect to the database
     try:
