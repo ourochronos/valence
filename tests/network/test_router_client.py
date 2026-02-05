@@ -15,7 +15,6 @@ import time
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from valence.network.connection_manager import (
     ConnectionManager,
     ConnectionManagerConfig,
@@ -490,7 +489,7 @@ class TestFailoverHandling:
 
         # No alternatives available
         mock_discovery.discover_routers = AsyncMock(return_value=[])
-        mock_connection_manager.connect_to_router = AsyncMock(side_effect=Exception("Failed"))
+        mock_connection_manager.connect_to_router = AsyncMock(side_effect=OSError("Failed"))
 
         await router_client.handle_router_failure(router_id)
 
