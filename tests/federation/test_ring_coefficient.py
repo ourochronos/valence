@@ -237,6 +237,15 @@ class TestTrustVelocityAnalyzer:
         # Use reference_time for deterministic calculation (fixes #228)
         result = analyzer.analyze_velocity(node_ids["alice"], reference_time=now)
 
+        # Debug: print values to understand CI failure
+        print("\nDEBUG velocity test:")
+        print(f"  current_velocity: {result.current_velocity}")
+        print(f"  max_normal: {MAX_NORMAL_VELOCITY}")
+        print(f"  anomaly_score: {result.anomaly_score}")
+        print(f"  is_anomalous: {result.is_anomalous}")
+        print(f"  historical_mean: {result.historical_mean}")
+        print(f"  historical_std: {result.historical_std}")
+
         assert not result.is_anomalous
         assert result.current_velocity <= MAX_NORMAL_VELOCITY
 
