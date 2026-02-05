@@ -9,14 +9,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
+# Install uv for fast package installation
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+
 WORKDIR /app
 
 # Copy project files
 COPY pyproject.toml .
 COPY src/ src/
 
-# Install package with dev dependencies
-RUN pip install --no-cache-dir -e ".[dev]"
+# Install package with dev dependencies using uv
+RUN ~/.local/bin/uv pip install --no-cache -e ".[dev]" --system
 
 # Copy tests (for test-runner)
 COPY tests/ tests/

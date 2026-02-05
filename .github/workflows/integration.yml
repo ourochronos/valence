@@ -1,13 +1,8 @@
 name: Integration Tests
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - "docs/**"
-      - "*.md"
-      - "!pyproject.toml"
-      - ".github/ISSUE_TEMPLATE/**"
+  # No push trigger - CI workflow handles push/PR integration tests
+  # This workflow is for comprehensive nightly + manual runs only
   schedule:
     # Run nightly at 2 AM UTC
     - cron: '0 2 * * *'
