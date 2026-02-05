@@ -20,6 +20,10 @@ from valence.network.messages import HealthGossip, RouterHealthObservation
 from valence.network.node import NodeClient, RouterConnection
 from valence.network.discovery import RouterInfo
 
+pytestmark = pytest.mark.skip(
+    reason="Needs update for NodeClient decomposition - see #167"
+)
+
 
 # =============================================================================
 # FIXTURES

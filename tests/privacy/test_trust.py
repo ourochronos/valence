@@ -838,6 +838,7 @@ class TestModuleFunctions:
 
 # Integration tests (require database)
 @pytest.mark.integration
+@pytest.mark.skip(reason="Requires PostgreSQL - see #168")
 class TestTrustGraphStoreIntegration:
     """Integration tests that require a real database.
 
