@@ -13,7 +13,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
 from uuid import UUID
 
 from mcp.types import Tool
@@ -792,9 +792,12 @@ def federation_belief_share(
                     "error": f"Belief not found: {belief_id}",
                 }
 
-            # Queue for sync
-            target_ids = [UUID(t) for t in target_nodes] if target_nodes else None
-            queue_belief_for_sync(uuid, target_ids)
+            # Queue for sync to each target (or all active nodes if no targets specified)
+            if target_nodes:
+                for target in target_nodes:
+                    queue_belief_for_sync(uuid, target_node_id=UUID(target))
+            else:
+                queue_belief_for_sync(uuid)
 
         return {
             "success": True,
@@ -1015,6 +1018,9 @@ def federation_corroboration_check(
             }
 
         # If only content provided, check for similar beliefs
+        # content is guaranteed non-None here since we check for both None above
+        assert content is not None
+        
         with get_cursor() as cur:
             # Search for similar beliefs from other nodes
             cur.execute("""
@@ -1082,7 +1088,6 @@ def federation_endorsement_give(
     """Endorse another federation node."""
     try:
         from .models import TrustAttestation
-        from .identity import get_node_did
         from ..server.config import get_settings
 
         uuid = UUID(node_id)
@@ -1156,7 +1161,7 @@ def federation_endorsement_give(
 # =============================================================================
 
 
-FEDERATION_TOOL_HANDLERS = {
+FEDERATION_TOOL_HANDLERS: dict[str, Callable[..., dict[str, Any]]] = {
     "federation_node_discover": federation_node_discover,
     "federation_node_list": federation_node_list,
     "federation_node_get": federation_node_get,

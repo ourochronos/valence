@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import Any, Callable
 from uuid import UUID
 
 from mcp.types import Tool
@@ -847,7 +847,7 @@ def insight_list(session_id: str) -> dict[str, Any]:
 
 
 # Tool name to handler mapping
-VKB_HANDLERS = {
+VKB_HANDLERS: dict[str, Callable[..., dict[str, Any]]] = {
     "session_start": session_start,
     "session_end": session_end,
     "session_get": session_get,

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import Any, Callable
 
 from mcp.types import Tool
 
@@ -880,7 +880,7 @@ def _corroboration_label(count: int) -> str:
 
 
 # Tool name to handler mapping
-SUBSTRATE_HANDLERS = {
+SUBSTRATE_HANDLERS: dict[str, Callable[..., dict[str, Any]]] = {
     "belief_query": belief_query,
     "belief_create": belief_create,
     "belief_supersede": belief_supersede,

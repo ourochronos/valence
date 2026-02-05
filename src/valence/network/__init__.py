@@ -50,7 +50,7 @@ from valence.network.seed import (
     SeedConfig,
     HealthStatus,
     HealthState,
-    HealthMonitor,
+    HealthMonitor as SeedHealthMonitor,  # Renamed to avoid conflict with health_monitor.HealthMonitor
     # Regional routing utilities
     COUNTRY_TO_CONTINENT,
     get_continent,
@@ -150,10 +150,10 @@ __all__ = [
     "SeedNode",
     "RouterRecord",
     "SeedConfig",
-    # Health Monitoring
+    # Health Monitoring (from seed)
     "HealthStatus",
     "HealthState",
-    "HealthMonitor",
+    "SeedHealthMonitor",
     # Regional Routing
     "COUNTRY_TO_CONTINENT",
     "get_continent",

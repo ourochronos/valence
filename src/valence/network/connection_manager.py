@@ -382,7 +382,7 @@ class ConnectionManager:
                     ws = await session.ws_connect(
                         ws_url,
                         heartbeat=30,
-                        timeout=aiohttp.ClientTimeout(total=10),
+                        timeout=aiohttp.ClientWSTimeout(ws_close=10.0),
                     )
                 except Exception:
                     await session.close()

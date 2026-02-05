@@ -28,6 +28,7 @@ from uuid import UUID
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent, Resource, ResourceContents, TextResourceContents
+from pydantic import AnyUrl
 
 from ..core.db import get_cursor, init_schema, DatabaseStats
 from ..core.models import Belief, Entity, Tension
@@ -376,19 +377,19 @@ async def list_resources() -> list[Resource]:
     """List available resources."""
     return [
         Resource(
-            uri="valence://beliefs/recent",
+            uri=AnyUrl("valence://beliefs/recent"),
             name="Recent Beliefs",
             description="Most recently created or modified beliefs",
             mimeType="application/json",
         ),
         Resource(
-            uri="valence://trust/graph",
+            uri=AnyUrl("valence://trust/graph"),
             name="Trust Graph",
             description="Trust relationships between entities and federation nodes",
             mimeType="application/json",
         ),
         Resource(
-            uri="valence://stats",
+            uri=AnyUrl("valence://stats"),
             name="Database Statistics",
             description="Current statistics about the Valence knowledge base",
             mimeType="application/json",
@@ -397,7 +398,7 @@ async def list_resources() -> list[Resource]:
 
 
 @server.read_resource()
-async def read_resource(uri: str) -> ResourceContents:
+async def read_resource(uri: str) -> list[TextResourceContents]:
     """Read a resource by URI."""
     if uri == "valence://beliefs/recent":
         data = get_recent_beliefs()
@@ -409,7 +410,7 @@ async def read_resource(uri: str) -> ResourceContents:
         data = {"error": f"Unknown resource: {uri}"}
 
     return [TextResourceContents(
-        uri=uri,
+        uri=AnyUrl(uri),
         mimeType="application/json",
         text=json.dumps(data, indent=2, default=str),
     )]

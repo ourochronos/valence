@@ -20,6 +20,7 @@ from mcp.types import (
     GetPromptResult,
     Resource,
 )
+from pydantic import AnyUrl
 
 from ..core.exceptions import DatabaseException, ValidationException
 from ..substrate.tools import SUBSTRATE_TOOLS, handle_substrate_tool
@@ -116,13 +117,13 @@ def create_server() -> Server:
         """List available resources."""
         return [
             Resource(
-                uri="valence://instructions",
+                uri=AnyUrl("valence://instructions"),
                 name="Valence Usage Instructions",
                 description="Guidelines for using Valence knowledge tools effectively",
                 mimeType="text/markdown",
             ),
             Resource(
-                uri="valence://tools",
+                uri=AnyUrl("valence://tools"),
                 name="Valence Tool Reference",
                 description="Quick reference for all available tools",
                 mimeType="text/markdown",

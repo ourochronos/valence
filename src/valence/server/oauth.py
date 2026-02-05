@@ -250,8 +250,12 @@ async def _handle_authorize_post(
 
     # Parse form data
     form = await request.form()
-    username = form.get("username", "")
-    password = form.get("password", "")
+    username_raw = form.get("username", "")
+    password_raw = form.get("password", "")
+    
+    # Ensure string types (form.get can return UploadFile for file fields)
+    username = str(username_raw) if username_raw else ""
+    password = str(password_raw) if password_raw else ""
 
     # Validate credentials using constant-time comparison to prevent timing attacks
     if not (secrets.compare_digest(username, settings.oauth_username or "") and

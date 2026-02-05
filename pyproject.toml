@@ -102,3 +102,19 @@ exclude_lines = [
     "if TYPE_CHECKING:",
 ]
 show_missing = true
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = false
+warn_unused_ignores = false
+disallow_untyped_defs = false
+strict_optional = true
+
+[[tool.mypy.overrides]]
+module = [
+    "psycopg2",
+    "psycopg2.*",
+    "asyncpg",
+    "asyncpg.*",
+]
+ignore_missing_imports = true

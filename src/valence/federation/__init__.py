@@ -309,7 +309,7 @@ from .verification import (
     DEFAULT_CACHE_TTL_SECONDS,
     FAILED_VERIFICATION_TTL_SECONDS,
     # Enums
-    VerificationMethod,
+    VerificationMethod as DomainVerifyMethod,  # Renamed to avoid conflict with identity.VerificationMethod
     VerificationStatus,
     # Data classes
     VerificationResult,
@@ -614,7 +614,7 @@ __all__ = [
     "DOMAIN_CLAIM_SERVICE_TYPE",
     "DEFAULT_CACHE_TTL_SECONDS",
     "FAILED_VERIFICATION_TTL_SECONDS",
-    "VerificationMethod",
+    "DomainVerifyMethod",  # Renamed from VerificationMethod to avoid conflict
     "VerificationStatus",
     "VerificationResult",
     "DomainClaim",

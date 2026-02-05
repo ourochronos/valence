@@ -335,7 +335,7 @@ class Capability:
                 token,
                 secret,
                 algorithms=[algorithm],
-                options=options,
+                options=options,  # type: ignore[arg-type]
             )
         except jwt.ExpiredSignatureError as e:
             raise CapabilityExpiredError("Capability has expired") from e
@@ -692,7 +692,7 @@ def requires_capability(
                     result.raise_if_invalid()
                 return None  # type: ignore
             
-            return await func(*args, **kwargs)
+            return await func(*args, **kwargs)  # type: ignore[misc]
         
         return async_wrapper if is_async else sync_wrapper  # type: ignore
     

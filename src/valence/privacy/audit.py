@@ -14,7 +14,7 @@ scrubbing of sensitive data from audit event metadata before logging.
 """
 
 from enum import Enum
-from typing import Optional, Dict, Any, List, Protocol, Tuple, runtime_checkable, Callable
+from typing import Optional, Dict, Any, List, Protocol, Tuple, runtime_checkable, Callable, cast
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from abc import ABC, abstractmethod
@@ -1489,18 +1489,20 @@ class EncryptedAuditBackend:
             
             # Write to backend (skip its chain linking since we handled it)
             # We need to write directly to avoid double-chaining
+            # Cast to Any for internal attribute access (hasattr guards ensure safety)
+            backend_any = cast(Any, self._backend)
             if hasattr(self._backend, "_events"):
                 # InMemoryAuditBackend
-                with self._backend._lock:
-                    self._backend._events.append(encrypted_event)
-                    self._backend._last_hash = encrypted_event.event_hash
+                with backend_any._lock:
+                    backend_any._events.append(encrypted_event)
+                    backend_any._last_hash = encrypted_event.event_hash
             elif hasattr(self._backend, "_log_path"):
                 # FileAuditBackend
-                with self._backend._lock:
-                    self._backend._maybe_rotate()
-                    with open(self._backend._log_path, "a") as f:
+                with backend_any._lock:
+                    backend_any._maybe_rotate()
+                    with open(backend_any._log_path, "a") as f:
                         f.write(encrypted_event.to_json() + "\n")
-                    self._backend._last_hash = encrypted_event.event_hash
+                    backend_any._last_hash = encrypted_event.event_hash
             else:
                 # Generic backend - just call write (may double-chain)
                 self._backend.write(encrypted_event)

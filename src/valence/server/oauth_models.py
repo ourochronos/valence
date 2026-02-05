@@ -267,6 +267,11 @@ def create_access_token(
     """Create a JWT access token."""
     settings = get_settings()
     now = time.time()
+    
+    # Ensure JWT secret is configured
+    jwt_secret = settings.oauth_jwt_secret
+    if jwt_secret is None:
+        raise ValueError("OAuth JWT secret not configured")
 
     payload = {
         "iss": settings.issuer_url,
@@ -279,7 +284,7 @@ def create_access_token(
         "jti": secrets.token_urlsafe(16),
     }
 
-    return jwt.encode(payload, settings.oauth_jwt_secret, algorithm=settings.oauth_jwt_algorithm)
+    return jwt.encode(payload, jwt_secret, algorithm=settings.oauth_jwt_algorithm)
 
 
 def verify_access_token(token: str, expected_audience: str) -> dict[str, Any] | None:
@@ -288,11 +293,17 @@ def verify_access_token(token: str, expected_audience: str) -> dict[str, Any] | 
     Returns the payload if valid, None otherwise.
     """
     settings = get_settings()
+    
+    # Ensure JWT secret is configured
+    jwt_secret = settings.oauth_jwt_secret
+    if jwt_secret is None:
+        logger.warning("JWT secret not configured")
+        return None
 
     try:
         payload = jwt.decode(
             token,
-            settings.oauth_jwt_secret,
+            jwt_secret,
             algorithms=[settings.oauth_jwt_algorithm],
             audience=expected_audience,
             issuer=settings.issuer_url,
