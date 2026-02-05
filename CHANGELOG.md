@@ -5,7 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - 2026-02-04
+
+### Highlights
+- **Complete Privacy Architecture**: 4-phase implementation with consent chains, trust graphs, capabilities, and federation privacy
+- **Network Layer**: Tor-inspired 3-tier topology with seeds, routers, and nodes
+- **Federation**: MLS group encryption, cross-federation consent, gateway nodes
+- **Local Embeddings**: No more OpenAI dependency for basic operation
 
 ### Added
 - **Strip on Forward Field Redaction** (Issue #71)
