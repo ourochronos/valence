@@ -70,13 +70,52 @@ Requirements:
 
 Definition of Done:
 - [ ] Code complete
-- [ ] Tests pass locally
+- [ ] **Tests updated** — if behavior changes (exceptions, signatures, return types), update affected tests
+- [ ] Tests pass locally (`./scripts/check`)
 - [ ] CI green
 - [ ] PR ready for review
 
 Model: [opus/sonnet/haiku]
 Timeout: [seconds]
 ```
+
+## Test Expectations
+
+**Code changes require corresponding test updates.** Don't just make code pass tests — ensure tests reflect the new behavior.
+
+### When to Update Tests
+
+| Code Change | Test Update Required |
+|-------------|---------------------|
+| Change exception type | Update test mocks to raise new type |
+| Change function signature | Update test calls with new args |
+| Change return type/structure | Update test assertions |
+| Add new code path | Add test coverage for it |
+| Remove code path | Remove or update affected tests |
+
+### Example: Exception Tightening
+
+**Bad:** Change `except Exception` → `except ValueError` without updating tests.
+```python
+# Code catches ValueError now
+except ValueError as e:
+    return None
+
+# Test still mocks generic Exception — WILL FAIL
+mock.side_effect = Exception("error")  # ❌
+```
+
+**Good:** Update test mock to match:
+```python
+mock.side_effect = ValueError("error")  # ✅
+```
+
+### Pre-Push Checklist
+
+Before pushing any PR:
+1. `grep -r "side_effect=Exception" tests/` — check for generic exception mocks
+2. Run affected test files directly: `pytest tests/path/to/affected_test.py -v`
+3. If tests fail, fix them before pushing
 
 ## Failure Recovery
 

@@ -15,8 +15,8 @@ import asyncio
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiohttp
 import pytest
-
 from valence.network.seed import (
     HealthState,
     HealthStatus,
@@ -402,7 +402,7 @@ class TestActiveProbing:
         # Mock connection error
         with patch("aiohttp.ClientSession") as mock_session_cls:
             mock_session = MagicMock()
-            mock_session.get = MagicMock(side_effect=Exception("Connection refused"))
+            mock_session.get = MagicMock(side_effect=aiohttp.ClientError("Connection refused"))
             mock_session.__aenter__ = AsyncMock(return_value=mock_session)
             mock_session.__aexit__ = AsyncMock(return_value=None)
             mock_session_cls.return_value = mock_session

@@ -344,7 +344,7 @@ class RouterNode:
                 try:
                     conn = self.connections[node_id]
                     await conn.websocket.send_json(message)
-                except Exception as e:
+                except OSError as e:
                     logger.debug(f"Failed to send back-pressure release to {node_id}: {e}")
 
         self._back_pressure_nodes.clear()
@@ -358,7 +358,7 @@ class RouterNode:
         for node_id, conn in list(self.connections.items()):
             try:
                 await conn.websocket.send_json(message)
-            except Exception as e:
+            except OSError as e:
                 logger.debug(f"Failed to broadcast to {node_id}: {e}")
 
     @property
@@ -475,7 +475,7 @@ class RouterNode:
                 elif msg.type == WSMsgType.CLOSE:
                     break
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - WebSocket handler catches all for cleanup
             logger.exception(f"Error handling WebSocket: {e}")
 
         finally:
@@ -632,7 +632,7 @@ class RouterNode:
                 )
                 self.messages_delivered += 1
                 logger.debug(f"Delivered message {message_id} to {next_hop}")
-            except Exception as e:
+            except OSError as e:
                 logger.warning(f"Failed to deliver to {next_hop}: {e}")
                 # Queue for retry
                 self._queue_message(
@@ -707,7 +707,7 @@ class RouterNode:
                 )
                 delivered += 1
                 self.messages_delivered += 1
-            except Exception as e:
+            except OSError as e:
                 logger.warning(f"Failed to deliver queued message: {e}")
                 break
 
@@ -830,7 +830,7 @@ class RouterNode:
 
         except RegistrationError:
             raise
-        except Exception as e:
+        except (OSError, aiohttp.ClientError, TimeoutError) as e:
             logger.warning(f"Failed to register with seed: {e}")
             return False
 
@@ -852,7 +852,7 @@ class RouterNode:
                 await self._send_heartbeat()
             except asyncio.CancelledError:
                 break
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - background loop must not crash
                 logger.warning(f"Heartbeat error: {e}")
 
     async def _send_heartbeat(self) -> bool:
@@ -928,7 +928,7 @@ class RouterNode:
                         text = await response.text()
                         logger.warning(f"Heartbeat failed ({response.status}): {text}")
                         return False
-        except Exception as e:
+        except (OSError, aiohttp.ClientError, TimeoutError) as e:
             logger.warning(f"Heartbeat error: {e}")
             return False
 
@@ -978,8 +978,8 @@ class RouterNode:
         for node_id, conn in list(self.connections.items()):
             try:
                 await conn.websocket.close()
-            except Exception:
-                pass
+            except OSError:
+                pass  # Cleanup is best-effort
         self.connections.clear()
 
         # Cleanup runner
@@ -1100,7 +1100,7 @@ class RouterNode:
                 f"next={next_hop[:16] if next_hop else 'exit'}..."
             )
 
-        except Exception as e:
+        except (ValueError, TypeError, OSError) as e:
             logger.warning(f"Circuit create failed: {e}")
             await ws.send_json(
                 {
@@ -1161,7 +1161,7 @@ class RouterNode:
                 if hop_state.prev_hop:
                     await self._forward_circuit_relay(circuit_id, outer_payload, hop_state.prev_hop, "backward")
 
-        except Exception as e:
+        except (ValueError, TypeError, OSError) as e:
             logger.warning(f"Circuit relay failed: {e}")
 
     def _peel_onion_layer(
@@ -1255,7 +1255,7 @@ class RouterNode:
                 )
                 logger.debug(f"Queued circuit message for offline node {recipient_id[:16]}...")
 
-        except Exception as e:
+        except OSError as e:
             logger.warning(f"Failed to deliver circuit payload: {e}")
 
     async def _forward_circuit_relay(
@@ -1284,7 +1284,7 @@ class RouterNode:
                     "direction": direction,
                 }
             )
-        except Exception as e:
+        except OSError as e:
             logger.warning(f"Failed to forward circuit relay: {e}")
 
     async def _handle_circuit_destroy(
@@ -1317,8 +1317,8 @@ class RouterNode:
                         "reason": reason,
                     }
                 )
-            except Exception:
-                pass
+            except OSError:
+                pass  # Best-effort propagation
 
         # Remove circuit state
         self._circuit_state.remove_circuit(circuit_id)
@@ -1343,7 +1343,7 @@ class RouterNode:
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - background loop must not crash
                 logger.warning(f"Circuit cleanup error: {e}")
 
     def get_circuit_stats(self) -> dict[str, Any]:

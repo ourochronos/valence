@@ -13,11 +13,11 @@ Tests cover:
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from valence.network.seed import (
     RouterRecord,
     SeedConfig,
@@ -911,13 +911,11 @@ class TestDiscoveryEndpoint:
         seed_node.router_registry[healthy_router.router_id] = healthy_router
 
         request = MagicMock()
-        request.json = AsyncMock(side_effect=Exception("No JSON"))
+        request.json = AsyncMock(side_effect=json.JSONDecodeError("No JSON", "", 0))
 
         response = await seed_node.handle_discover(request)
 
         assert response.status == 200
-        import json
-
         data = json.loads(response.text)
         assert "routers" in data
 

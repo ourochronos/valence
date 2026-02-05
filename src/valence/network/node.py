@@ -734,7 +734,7 @@ class NodeClient:
                     logger.info(f"Recovered state: {len(self.pending_acks)} pending ACKs, {len(self.message_queue)} queued messages")
             except (StaleStateError, StateConflictError) as e:
                 logger.warning(f"State recovery skipped: {e}")
-            except Exception as e:
+            except OSError as e:
                 logger.warning(f"State recovery failed: {e}")
 
         # Configure discovery with seed URLs (Issue #108)
@@ -776,7 +776,7 @@ class NodeClient:
             try:
                 await self._save_state()
                 logger.info("State saved for recovery")
-            except Exception as e:
+            except OSError as e:
                 logger.warning(f"Failed to save state: {e}")
 
         # Cancel background tasks
@@ -973,7 +973,7 @@ class NodeClient:
 
         except asyncio.CancelledError:
             pass
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - receive loop must handle all errors gracefully
             logger.warning(f"Receive loop error for router {router_id[:16]}...: {e}")
 
         finally:
@@ -1043,7 +1043,7 @@ class NodeClient:
             if require_ack and inner_message_id:
                 self._stats["acks_sent"] += 1
 
-        except Exception as e:
+        except (ValueError, TypeError, KeyError) as e:
             logger.warning(f"Failed to process message {relay_message_id}: {e}")
 
     async def _handle_pong(self, data: dict[str, Any], conn: RouterConnection) -> None:
@@ -1087,7 +1087,7 @@ class NodeClient:
             gossip = HealthGossip.from_dict(payload)
             self.health_monitor.handle_gossip(gossip)
             self._stats["gossip_received"] += 1
-        except Exception as e:
+        except (ValueError, TypeError, KeyError) as e:
             logger.warning(f"Failed to process gossip: {e}")
 
     async def _handle_router_failure(self, router_id: str) -> None:
@@ -1103,7 +1103,7 @@ class NodeClient:
                         self._send_via_router,
                         self._select_router,
                     )
-                except Exception as e:
+                except (OSError, TimeoutError, ConnectionError) as e:
                     logger.warning(f"Failed to retry message: {e}")
 
         await self.router_client.handle_router_failure(
@@ -1140,13 +1140,13 @@ class NodeClient:
                     except TimeoutError:
                         if self.health_monitor.track_ping_response(router_id, False):
                             await self._handle_router_failure(router_id)
-                    except Exception as e:
+                    except OSError as e:
                         logger.warning(f"Ping error for router {router_id[:16]}...: {e}")
                         await self._handle_router_failure(router_id)
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - background loop must not crash
                 logger.warning(f"Keepalive loop error: {e}")
 
     async def _connection_maintenance(self) -> None:
@@ -1176,7 +1176,7 @@ class NodeClient:
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - background loop must not crash
                 logger.warning(f"Maintenance loop error: {e}")
 
     async def _queue_processor(self) -> None:
@@ -1197,7 +1197,7 @@ class NodeClient:
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - background loop must not crash
                 logger.warning(f"Queue processor error: {e}")
 
     async def _gossip_loop(self) -> None:
@@ -1219,7 +1219,7 @@ class NodeClient:
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - background loop must not crash
                 logger.warning(f"Gossip loop error: {e}")
 
     async def _broadcast_gossip(self, gossip: HealthGossip) -> None:
@@ -1233,7 +1233,7 @@ class NodeClient:
             try:
                 await conn.websocket.send_json({"type": "gossip", "payload": gossip_data})
                 self._stats["gossip_sent"] += 1
-            except Exception as e:
+            except OSError as e:
                 logger.debug(f"Failed to send gossip via {router_id[:16]}...: {e}")
 
     async def _batch_flush_loop(self) -> None:
@@ -1260,7 +1260,7 @@ class NodeClient:
             except asyncio.CancelledError:
                 await self.message_handler.flush_batch()
                 break
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - background loop must not crash
                 logger.warning(f"Batch flush loop error: {e}")
 
     async def _constant_rate_loop(self) -> None:
@@ -1293,14 +1293,14 @@ class NodeClient:
                             router_selector=self._select_router,
                             send_via_router=self._send_via_router,
                         )
-                    except Exception as e:
+                    except (OSError, TimeoutError) as e:
                         logger.warning(f"Constant-rate send failed: {e}")
                 else:
                     await self._send_padding_message()
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - background loop must not crash
                 logger.warning(f"Constant-rate loop error: {e}")
 
     async def _send_padding_message(self) -> None:
@@ -1328,7 +1328,7 @@ class NodeClient:
                 is_cover_traffic=True,
             )
             self._stats["constant_rate_padding_sent"] += 1
-        except Exception as e:
+        except OSError as e:
             logger.debug(f"Failed to send padding message: {e}")
 
     # -------------------------------------------------------------------------
@@ -1368,12 +1368,12 @@ class NodeClient:
             temp_path.write_text(state_json)
             temp_path.rename(state_path)
             self._last_state_save = time.time()
-        except Exception as e:
+        except OSError as e:
             if temp_path.exists():
                 try:
                     temp_path.unlink()
-                except Exception:
-                    pass
+                except OSError:
+                    pass  # Cleanup is best-effort
             raise OSError(f"Failed to save state: {e}") from e
 
     async def _load_state(self) -> ConnectionState | None:
@@ -1389,7 +1389,7 @@ class NodeClient:
         try:
             state_json = state_path.read_text()
             state = ConnectionState.from_json(state_json)
-        except Exception as e:
+        except (OSError, ValueError, TypeError, KeyError) as e:
             logger.warning(f"Failed to parse state file: {e}")
             return None
 
@@ -1418,7 +1418,7 @@ class NodeClient:
                 age = time.time() - ack.sent_at
                 if age < (ack.timeout_ms / 1000) * 2:
                     self.pending_acks[ack.message_id] = ack
-            except Exception as e:
+            except (ValueError, TypeError, KeyError) as e:
                 logger.warning(f"Failed to recover pending ACK: {e}")
 
         # Restore message queue
@@ -1428,7 +1428,7 @@ class NodeClient:
                 age = time.time() - msg.queued_at
                 if age < self.MAX_QUEUE_AGE:
                     self.message_queue.append(msg)
-            except Exception as e:
+            except (ValueError, TypeError, KeyError) as e:
                 logger.warning(f"Failed to recover queued message: {e}")
 
         # Restore seen messages
@@ -1440,7 +1440,7 @@ class NodeClient:
                 fs = FailoverState.from_dict(fs_data)
                 if fs.is_in_cooldown():
                     self.failover_states[router_id] = fs
-            except Exception as e:
+            except (ValueError, TypeError, KeyError) as e:
                 logger.warning(f"Failed to recover failover state: {e}")
 
         # Restore statistics
@@ -1453,14 +1453,14 @@ class NodeClient:
         if self.on_state_recovered:
             try:
                 self.on_state_recovered(state)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - callback can raise any exception
                 logger.warning(f"on_state_recovered callback error: {e}")
 
         if self.state_file:
             try:
                 Path(self.state_file).unlink()
-            except Exception:
-                pass
+            except OSError:
+                pass  # State file cleanup is best-effort
 
         return True
 
@@ -1477,7 +1477,7 @@ class NodeClient:
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - background loop must not crash
                 logger.warning(f"State persistence error: {e}")
 
     def delete_state_file(self) -> bool:

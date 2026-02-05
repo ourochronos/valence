@@ -267,7 +267,7 @@ class HealthMonitor:
                     state.warnings.append("probe_timeout")
             logger.debug(f"Probe timeout: {router.router_id[:20]}...")
 
-        except Exception as e:
+        except (OSError, aiohttp.ClientError) as e:
             if router.router_id in self.health_states:
                 state = self.health_states[router.router_id]
                 if "probe_failed" not in state.warnings:
@@ -420,7 +420,7 @@ class RateLimiter:
             parts = ip.split(".")
             if len(parts) == 4:
                 return f"{parts[0]}.{parts[1]}.{parts[2]}.0/24"
-        except Exception:
+        except (ValueError, IndexError):
             pass
         return ip  # Return original if not a valid IPv4
 
@@ -1590,7 +1590,7 @@ class SeedRevocationManager:
             return False, "signature_verification_failed"
         except (ValueError, TypeError) as e:
             return False, f"invalid_key_or_signature_format:{e}"
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - catch-all for unexpected crypto errors
             return False, f"verification_error:{e}"
 
     def load_revocation_list_from_file(self, file_path: str) -> tuple[int, list[str]]:
@@ -1617,7 +1617,7 @@ class SeedRevocationManager:
         except json.JSONDecodeError as e:
             errors.append(f"invalid_json:{e}")
             return 0, errors
-        except Exception as e:
+        except OSError as e:
             errors.append(f"read_error:{e}")
             return 0, errors
 
@@ -1626,7 +1626,7 @@ class SeedRevocationManager:
 
         try:
             revocation_list = SeedRevocationList.from_dict(data)
-        except Exception as e:
+        except (ValueError, TypeError, KeyError) as e:
             errors.append(f"parse_error:{e}")
             return 0, errors
 
@@ -1681,7 +1681,7 @@ class SeedRevocationManager:
             return True, None
         except InvalidSignature:
             return False, "signature_verification_failed"
-        except Exception as e:
+        except (ValueError, TypeError) as e:
             return False, f"verification_error:{e}"
 
     async def start(self) -> None:
@@ -1697,7 +1697,7 @@ class SeedRevocationManager:
                 loaded, errors = self.load_revocation_list_from_file(self.config.seed_revocation_list_path)
                 if errors:
                     logger.warning(f"Revocation list load errors: {errors}")
-            except Exception as e:
+            except OSError as e:
                 logger.error(f"Failed to load revocation list: {e}")
 
         # Start file check loop if path is configured
@@ -1736,7 +1736,7 @@ class SeedRevocationManager:
                     self._revocation_list_mtime = mtime
             except FileNotFoundError:
                 pass  # File doesn't exist yet
-            except Exception as e:
+            except OSError as e:
                 logger.error(f"Error checking revocation list file: {e}")
 
     def get_stats(self) -> dict[str, Any]:
@@ -1880,7 +1880,7 @@ class SeedPeerManager:
         while self._running:
             try:
                 await self._gossip_round()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - gossip loop must not crash
                 logger.error(f"Gossip round failed: {e}")
 
             await asyncio.sleep(self.gossip_interval)
@@ -2007,7 +2007,7 @@ class SeedPeerManager:
             logger.warning(f"Gossip exchange with {peer_url} timed out")
             self._update_peer_state(peer_url, success=False, error="timeout")
             return False
-        except Exception as e:
+        except (OSError, aiohttp.ClientError) as e:
             logger.warning(f"Gossip exchange with {peer_url} failed: {e}")
             self._update_peer_state(peer_url, success=False, error=str(e))
             return False
@@ -2072,7 +2072,7 @@ class SeedPeerManager:
                             f"Updated router {router_id[:20]}... from gossip (peer={source_peer}, delta={last_seen - existing_last_seen:.0f}s)"
                         )
 
-            except Exception as e:
+            except (ValueError, TypeError, KeyError) as e:
                 logger.warning(f"Failed to merge router from gossip: {e}")
                 continue
 
@@ -2144,7 +2144,7 @@ class SeedPeerManager:
         """
         try:
             data = await request.json()
-        except Exception as e:
+        except (ValueError, json.JSONDecodeError) as e:
             return web.json_response(
                 {"status": "error", "reason": "invalid_json", "detail": str(e)},
                 status=400,
@@ -2352,7 +2352,7 @@ class SeedNode:
 
             # Return /16 subnet (first two octets)
             return f"{parts[0]}.{parts[1]}"
-        except Exception:
+        except (ValueError, IndexError):
             return None
 
     def _is_healthy(self, router: RouterRecord, now: float) -> bool:
@@ -2649,7 +2649,7 @@ class SeedNode:
         except (ValueError, InvalidSignature) as e:
             logger.warning(f"Signature verification failed for {router_id[:20]}...: {e}")
             return False
-        except Exception as e:
+        except (TypeError, AttributeError) as e:
             logger.error(f"Unexpected error verifying signature: {e}")
             return False
 
@@ -2714,7 +2714,7 @@ class SeedNode:
                 logger.warning(f"PoW insufficient for {router_id[:20]}...: got {leading_zeros} bits, need {required_difficulty}")
                 return False
 
-        except Exception as e:
+        except (ValueError, TypeError, KeyError) as e:
             logger.error(f"PoW verification error: {e}")
             return False
 
@@ -2759,7 +2759,7 @@ class SeedNode:
         except TimeoutError:
             logger.warning(f"Endpoint probe timeout for {endpoint}")
             return False
-        except Exception as e:
+        except (OSError, aiohttp.ClientError) as e:
             logger.warning(f"Endpoint probe failed for {endpoint}: {e}")
             return False
 
@@ -2806,7 +2806,7 @@ class SeedNode:
         """
         try:
             data = await request.json()
-        except Exception:
+        except (ValueError, json.JSONDecodeError):
             data = {}
 
         requested_count = data.get("requested_count", 5)
@@ -2853,7 +2853,7 @@ class SeedNode:
         """
         try:
             data = await request.json()
-        except Exception as e:
+        except (ValueError, json.JSONDecodeError) as e:
             return web.json_response(
                 {"status": "rejected", "reason": "invalid_json", "detail": str(e)},
                 status=400,
@@ -3001,7 +3001,7 @@ class SeedNode:
         """
         try:
             data = await request.json()
-        except Exception as e:
+        except (ValueError, json.JSONDecodeError) as e:
             return web.json_response(
                 {"status": "error", "reason": "invalid_json", "detail": str(e)},
                 status=400,
@@ -3181,7 +3181,7 @@ class SeedNode:
 
         try:
             data = await request.json()
-        except Exception as e:
+        except (ValueError, json.JSONDecodeError) as e:
             return web.json_response(
                 {"status": "error", "reason": "invalid_json", "detail": str(e)},
                 status=400,
@@ -3349,7 +3349,7 @@ class SeedNode:
 
         try:
             data = await request.json()
-        except Exception as e:
+        except (ValueError, json.JSONDecodeError) as e:
             return web.json_response(
                 {"status": "error", "reason": "invalid_json", "detail": str(e)},
                 status=400,

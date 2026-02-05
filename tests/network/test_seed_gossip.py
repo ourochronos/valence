@@ -17,7 +17,6 @@ import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from valence.network.seed import (
     RouterRecord,
     SeedConfig,
@@ -499,7 +498,7 @@ class TestGossipExchangeEndpoint:
     async def test_handle_gossip_exchange_invalid_json(self, peer_manager):
         """Invalid JSON should return 400 error."""
         request = MagicMock()
-        request.json = AsyncMock(side_effect=Exception("Invalid JSON"))
+        request.json = AsyncMock(side_effect=json.JSONDecodeError("Invalid JSON", "", 0))
 
         response = await peer_manager.handle_gossip_exchange(request)
 
