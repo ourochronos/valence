@@ -17,7 +17,7 @@ import ipaddress
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Optional, Set, TYPE_CHECKING
 
 import aiohttp
 from aiohttp import WSMsgType
@@ -63,8 +63,8 @@ class ConnectionManager:
         node_id: str,
         discovery: "DiscoveryClient",
         config: Optional[ConnectionManagerConfig] = None,
-        on_connection_established: Optional[callable] = None,
-        on_connection_lost: Optional[callable] = None,
+        on_connection_established: Optional[Callable[..., Any]] = None,
+        on_connection_lost: Optional[Callable[..., Any]] = None,
     ):
         """
         Initialize the ConnectionManager.

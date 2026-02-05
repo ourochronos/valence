@@ -560,16 +560,16 @@ class CanaryRegistry:
         
         for leak_data in state.get("leaks", []):
             token_or_none = registry._tokens.get(leak_data["token_id"])
-            token: CanaryToken
+            leak_token: CanaryToken
             if token_or_none is None:
-                token = CanaryToken(
+                leak_token = CanaryToken(
                     token_id=leak_data["token_id"],
                     signature="",
                 )
             else:
-                token = token_or_none
+                leak_token = token_or_none
             report = LeakReport(
-                token=token,
+                token=leak_token,
                 detected_at=datetime.fromisoformat(leak_data["detected_at"]),
                 source=leak_data["source"],
                 context=leak_data.get("context"),

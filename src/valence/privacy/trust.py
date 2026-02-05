@@ -1452,15 +1452,15 @@ class TrustService:
                 domain_by_target: dict[str, TrustEdge4D] = {e.target_did: e for e in domain_edge_list}
                 global_by_target: dict[str, TrustEdge4D] = {e.target_did: e for e in global_edge_list}
 
-                result: list[TrustEdge4D] = []
+                db_result: list[TrustEdge4D] = []
                 all_targets = set(domain_by_target.keys()) | set(global_by_target.keys())
                 for target in all_targets:
                     if target in domain_by_target:
-                        result.append(domain_by_target[target])
+                        db_result.append(domain_by_target[target])
                     elif target in global_by_target:
-                        result.append(global_by_target[target])
+                        db_result.append(global_by_target[target])
 
-                return result
+                return db_result
             else:
                 # Return all edges (no domain filter)
                 return self._store.get_edges_from(source_did, None, include_expired=False)

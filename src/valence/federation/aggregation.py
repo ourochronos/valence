@@ -1021,7 +1021,7 @@ class FederationAggregator:
                 belief_a = self._find_belief(contributions, conflict.belief_a_id)
                 belief_b = self._find_belief(contributions, conflict.belief_b_id)
                 
-                if belief_a and belief_b:
+                if belief_a and belief_b and conflict.belief_a_id and conflict.belief_b_id:
                     if belief_a.signed_at < belief_b.signed_at:
                         beliefs_to_exclude.add(conflict.belief_a_id)
                     else:
@@ -1031,20 +1031,20 @@ class FederationAggregator:
         
         elif resolution == ConflictResolution.EXCLUDE_CONFLICTING:
             # Exclude all conflicting beliefs
-            beliefs_to_exclude: set[UUID] = set()
+            exclude_set: set[UUID] = set()
             
             for conflict in conflicts:
                 if conflict.conflict_type != ConflictType.NONE:
                     if conflict.belief_a_id:
-                        beliefs_to_exclude.add(conflict.belief_a_id)
+                        exclude_set.add(conflict.belief_a_id)
                     if conflict.belief_b_id:
-                        beliefs_to_exclude.add(conflict.belief_b_id)
+                        exclude_set.add(conflict.belief_b_id)
             
-            return self._filter_beliefs(contributions, beliefs_to_exclude)
+            return self._filter_beliefs(contributions, exclude_set)
         
         elif resolution == ConflictResolution.CORROBORATION:
             # Keep beliefs that have more corroboration (proxy: federation trust)
-            beliefs_to_exclude: set[UUID] = set()
+            corr_exclude: set[UUID] = set()
             
             for conflict in conflicts:
                 if conflict.conflict_type == ConflictType.NONE:
@@ -1053,13 +1053,13 @@ class FederationAggregator:
                 contrib_a = self._find_contribution(contributions, conflict.federation_a_id)
                 contrib_b = self._find_contribution(contributions, conflict.federation_b_id)
                 
-                if contrib_a and contrib_b:
+                if contrib_a and contrib_b and conflict.belief_a_id and conflict.belief_b_id:
                     if contrib_a.trust_score < contrib_b.trust_score:
-                        beliefs_to_exclude.add(conflict.belief_a_id)
+                        corr_exclude.add(conflict.belief_a_id)
                     else:
-                        beliefs_to_exclude.add(conflict.belief_b_id)
+                        corr_exclude.add(conflict.belief_b_id)
             
-            return self._filter_beliefs(contributions, beliefs_to_exclude)
+            return self._filter_beliefs(contributions, corr_exclude)
         
         # FLAG_FOR_REVIEW or default: return as-is
         return contributions

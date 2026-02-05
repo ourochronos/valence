@@ -100,7 +100,7 @@ def base58_decode(string: str) -> bytes:
         num = num * 58 + BASE58_ALPHABET.index(char)
 
     # Convert to bytes
-    result = []
+    result: list[int] = []
     while num > 0:
         num, remainder = divmod(num, 256)
         result.insert(0, remainder)
@@ -226,6 +226,7 @@ class DID:
     def full(self) -> str:
         """Get full DID string."""
         if self.method == DIDMethod.USER:
+            assert self.node_method is not None, "User DID must have node_method"
             return f"did:vkb:user:{self.node_method.value}:{self.node_identifier}:{self.username}"
         return f"did:vkb:{self.method.value}:{self.identifier}"
 
@@ -233,6 +234,7 @@ class DID:
     def node_did(self) -> str | None:
         """Get the node DID for a user DID."""
         if self.method == DIDMethod.USER:
+            assert self.node_method is not None, "User DID must have node_method"
             return f"did:vkb:{self.node_method.value}:{self.node_identifier}"
         return None
 
@@ -466,7 +468,7 @@ class DIDDocument:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary (JSON-LD format)."""
-        doc = {
+        doc: dict[str, Any] = {
             "@context": [
                 "https://www.w3.org/ns/did/v1",
                 "https://valence.dev/ns/vfp/v1",
@@ -596,7 +598,7 @@ def create_did_document(
         ))
 
     # Build profile
-    profile = {}
+    profile: dict[str, Any] = {}
     if name:
         profile["name"] = name
     if domains:

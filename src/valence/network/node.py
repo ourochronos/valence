@@ -38,7 +38,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Union
 
 import aiohttp
 from aiohttp import WSMsgType
@@ -487,7 +487,7 @@ class NodeClient:
     )
     
     # Callbacks
-    on_message: Optional[Callable[[str, bytes], None]] = None
+    on_message: Optional[Callable[[str, bytes], Union[None, Awaitable[None]]]] = None
     on_ack_timeout: Optional[Callable[[str, str], None]] = None
     on_state_recovered: Optional[Callable[[ConnectionState], None]] = None
     
@@ -674,6 +674,34 @@ class NodeClient:
         # Share state references for backward compatibility
         self._connection_manager.failover_states = self.failover_states
     
+    # -------------------------------------------------------------------------
+    # COMPONENT ACCESSORS (assert non-None after __post_init__)
+    # -------------------------------------------------------------------------
+    
+    @property
+    def connection_manager(self) -> ConnectionManager:
+        """Get connection manager, asserting it's initialized."""
+        assert self._connection_manager is not None, "Components not initialized"
+        return self._connection_manager
+    
+    @property
+    def message_handler(self) -> MessageHandler:
+        """Get message handler, asserting it's initialized."""
+        assert self._message_handler is not None, "Components not initialized"
+        return self._message_handler
+    
+    @property
+    def router_client(self) -> RouterClient:
+        """Get router client, asserting it's initialized."""
+        assert self._router_client is not None, "Components not initialized"
+        return self._router_client
+    
+    @property
+    def health_monitor(self) -> HealthMonitor:
+        """Get health monitor, asserting it's initialized."""
+        assert self._health_monitor is not None, "Components not initialized"
+        return self._health_monitor
+    
     def _on_connection_established(self, router_id: str, conn: RouterConnection) -> None:
         """Callback when a connection is established."""
         self.connections[router_id] = conn
@@ -731,7 +759,7 @@ class NodeClient:
             logger.info(f"Configured {len(self.seed_urls)} seed URLs for discovery")
         
         # Establish connections
-        await self._connection_manager.ensure_connections()
+        await self.connection_manager.ensure_connections()
         
         # Start background tasks
         self._tasks.append(asyncio.create_task(self._connection_maintenance()))
@@ -776,7 +804,7 @@ class NodeClient:
         self._tasks.clear()
         
         # Close all connections
-        await self._connection_manager.close_all()
+        await self.connection_manager.close_all()
         self.connections.clear()
         
         logger.info("Node stopped")
@@ -804,7 +832,7 @@ class NodeClient:
         Returns:
             Message ID
         """
-        return await self._message_handler.send_message(
+        return await self.message_handler.send_message(
             recipient_id=recipient_id,
             recipient_public_key=recipient_public_key,
             content=content,
@@ -862,7 +890,7 @@ class NodeClient:
     
     def _select_router(self, exclude_back_pressured: bool = True) -> Optional[RouterInfo]:
         """Select the best router based on health metrics."""
-        return self._router_client.select_router(exclude_back_pressured)
+        return self.router_client.select_router(exclude_back_pressured)
     
     # -------------------------------------------------------------------------
     # MESSAGE SENDING
@@ -1002,13 +1030,13 @@ class NodeClient:
                     content_data = json.loads(content)
                     if content_data.get("type") == "ack":
                         ack = AckMessage.from_dict(content_data)
-                        self._message_handler.handle_e2e_ack(ack)
+                        self.message_handler.handle_e2e_ack(ack)
                         return
                 except (ValueError, TypeError):
                     pass
             
             # Idempotent delivery
-            if inner_message_id and self._message_handler.is_duplicate_message(inner_message_id):
+            if inner_message_id and self.message_handler.is_duplicate_message(inner_message_id):
                 self._stats["messages_deduplicated"] += 1
                 return
             
@@ -1018,7 +1046,9 @@ class NodeClient:
                     content_bytes = content.encode()
                 else:
                     content_bytes = content if isinstance(content, bytes) else str(content).encode()
-                await self.on_message(sender_id, content_bytes)
+                result = self.on_message(sender_id, content_bytes)
+                if result is not None:
+                    await result
             
             if require_ack and inner_message_id:
                 self._stats["acks_sent"] += 1
@@ -1031,7 +1061,7 @@ class NodeClient:
         sent_at = data.get("sent_at")
         if sent_at:
             conn.ping_latency_ms = (time.time() - sent_at) * 1000
-            self._health_monitor.update_observation(conn.router.router_id, conn)
+            self.health_monitor.update_observation(conn.router.router_id, conn)
     
     async def _handle_ack(self, data: Dict[str, Any], conn: RouterConnection) -> None:
         """Handle acknowledgment for a sent message."""
@@ -1045,13 +1075,14 @@ class NodeClient:
         else:
             conn.ack_failure += 1
         
-        self._health_monitor.update_observation(conn.router.router_id, conn)
-        self._health_monitor.record_ack_outcome(conn.router.router_id, success)
-        self._message_handler.handle_ack(message_id, success)
+        self.health_monitor.update_observation(conn.router.router_id, conn)
+        self.health_monitor.record_ack_outcome(conn.router.router_id, success)
+        if message_id is not None:
+            self.message_handler.handle_ack(message_id, success)
     
     def _handle_back_pressure(self, data: Dict[str, Any], conn: RouterConnection) -> None:
         """Handle back-pressure signal from router."""
-        self._router_client.handle_back_pressure(
+        self.router_client.handle_back_pressure(
             conn=conn,
             active=data.get("active", True),
             load_pct=data.get("load_pct", 0),
@@ -1064,14 +1095,14 @@ class NodeClient:
         payload = data.get("payload", {})
         try:
             gossip = HealthGossip.from_dict(payload)
-            self._health_monitor.handle_gossip(gossip)
+            self.health_monitor.handle_gossip(gossip)
             self._stats["gossip_received"] += 1
         except Exception as e:
             logger.warning(f"Failed to process gossip: {e}")
     
     async def _handle_router_failure(self, router_id: str) -> None:
         """Handle router failure with intelligent failover."""
-        self._health_monitor.record_failure_event(router_id, "connection")
+        self.health_monitor.record_failure_event(router_id, "connection")
         
         async def retry_messages():
             pending_for_router = [
@@ -1080,7 +1111,7 @@ class NodeClient:
             ]
             for pending in pending_for_router:
                 try:
-                    await self._message_handler._retry_message(
+                    await self.message_handler._retry_message(
                         pending.message_id,
                         self._send_via_router,
                         self._select_router,
@@ -1088,7 +1119,7 @@ class NodeClient:
                 except Exception as e:
                     logger.warning(f"Failed to retry message: {e}")
         
-        await self._router_client.handle_router_failure(
+        await self.router_client.handle_router_failure(
             router_id=router_id,
             on_retry_messages=retry_messages,
         )
@@ -1118,9 +1149,9 @@ class NodeClient:
                             conn.websocket.send_json({"type": "ping", "sent_at": sent_at}),
                             timeout=self.ping_timeout,
                         )
-                        self._health_monitor.track_ping_response(router_id, True)
+                        self.health_monitor.track_ping_response(router_id, True)
                     except asyncio.TimeoutError:
-                        if self._health_monitor.track_ping_response(router_id, False):
+                        if self.health_monitor.track_ping_response(router_id, False):
                             await self._handle_router_failure(router_id)
                     except Exception as e:
                         logger.warning(f"Ping error for router {router_id[:16]}...: {e}")
@@ -1147,13 +1178,13 @@ class NodeClient:
                 
                 # Ensure we have enough connections
                 if len(self.connections) < self.min_connections:
-                    await self._connection_manager.ensure_connections()
+                    await self.connection_manager.ensure_connections()
                 
                 # Check router rotation
                 if self._router_client:
-                    router_to_rotate = await self._router_client.check_rotation_needed()
+                    router_to_rotate = await self.router_client.check_rotation_needed()
                     if router_to_rotate:
-                        await self._router_client.rotate_router(router_to_rotate, "periodic")
+                        await self.router_client.rotate_router(router_to_rotate, "periodic")
                         self._stats["routers_rotated"] += 1
             
             except asyncio.CancelledError:
@@ -1170,7 +1201,7 @@ class NodeClient:
                     break
                 
                 if self.message_queue and self.connections:
-                    count = await self._message_handler.process_queue(
+                    count = await self.message_handler.process_queue(
                         self._select_router,
                         self._send_via_router,
                     )
@@ -1192,11 +1223,11 @@ class NodeClient:
                 
                 # Update observations
                 for router_id, conn in self.connections.items():
-                    self._health_monitor.update_observation(router_id, conn)
+                    self.health_monitor.update_observation(router_id, conn)
                 
                 # Create and broadcast gossip
-                if self._health_monitor._own_observations:
-                    gossip = self._health_monitor.create_gossip_message()
+                if self.health_monitor._own_observations:
+                    gossip = self.health_monitor.create_gossip_message()
                     await self._broadcast_gossip(gossip)
             
             except asyncio.CancelledError:
@@ -1226,21 +1257,21 @@ class NodeClient:
                 
                 try:
                     await asyncio.wait_for(
-                        self._message_handler._pending_batch_event.wait(),
+                        self.message_handler._pending_batch_event.wait(),
                         timeout=batch_interval,
                     )
-                    self._message_handler._pending_batch_event.clear()
+                    self.message_handler._pending_batch_event.clear()
                 except asyncio.TimeoutError:
                     pass
                 
                 if not self._running:
                     break
                 
-                await self._message_handler.flush_batch()
+                await self.message_handler.flush_batch()
                 self._stats["batch_flushes"] += 1
             
             except asyncio.CancelledError:
-                await self._message_handler.flush_batch()
+                await self.message_handler.flush_batch()
                 break
             except Exception as e:
                 logger.warning(f"Batch flush loop error: {e}")
@@ -1259,13 +1290,13 @@ class NodeClient:
                 
                 # Try to get a real message from batch
                 message_to_send = None
-                async with self._message_handler._batch_lock:
-                    if self._message_handler._message_batch:
-                        message_to_send = self._message_handler._message_batch.pop(0)
+                async with self.message_handler._batch_lock:
+                    if self.message_handler._message_batch:
+                        message_to_send = self.message_handler._message_batch.pop(0)
                 
                 if message_to_send:
                     try:
-                        await self._message_handler._send_message_direct(
+                        await self.message_handler._send_message_direct(
                             message_id=message_to_send["message_id"],
                             recipient_id=message_to_send["recipient_id"],
                             recipient_public_key=message_to_send["recipient_public_key"],
@@ -1340,11 +1371,12 @@ class NodeClient:
         """Save current connection state to disk."""
         if not self.state_file:
             return
+        state_file = self.state_file  # For type narrowing
         
         state = self._get_connection_state()
         state_json = state.to_json()
         
-        state_path = Path(self.state_file)
+        state_path = Path(state_file)
         temp_path = state_path.with_suffix('.tmp')
         
         try:
@@ -1364,8 +1396,9 @@ class NodeClient:
         """Load saved connection state from disk."""
         if not self.state_file:
             return None
+        state_file = self.state_file  # For type narrowing
         
-        state_path = Path(self.state_file)
+        state_path = Path(state_file)
         if not state_path.exists():
             return None
         
@@ -1439,10 +1472,11 @@ class NodeClient:
             except Exception as e:
                 logger.warning(f"on_state_recovered callback error: {e}")
         
-        try:
-            Path(self.state_file).unlink()
-        except Exception:
-            pass
+        if self.state_file:
+            try:
+                Path(self.state_file).unlink()
+            except Exception:
+                pass
         
         return True
     
@@ -1466,8 +1500,9 @@ class NodeClient:
         """Delete the state file if it exists."""
         if not self.state_file:
             return False
+        state_file = self.state_file  # For type narrowing
         
-        state_path = Path(self.state_file)
+        state_path = Path(state_file)
         if state_path.exists():
             state_path.unlink()
             return True
@@ -1479,39 +1514,39 @@ class NodeClient:
     
     def clear_router_cooldown(self, router_id: str) -> bool:
         """Manually clear cooldown for a router."""
-        return self._connection_manager.clear_router_cooldown(router_id)
+        return self.connection_manager.clear_router_cooldown(router_id)
     
     def get_failover_states(self) -> Dict[str, Dict[str, Any]]:
         """Get current failover states for all routers."""
-        return self._connection_manager.get_failover_states()
+        return self.connection_manager.get_failover_states()
     
     def get_health_observations(self) -> Dict[str, Any]:
         """Get current health observation state."""
-        return self._health_monitor.get_health_observations()
+        return self.health_monitor.get_health_observations()
     
     def is_router_flagged(self, router_id: str) -> bool:
         """Check if a router has been flagged for misbehavior."""
-        return self._health_monitor.is_router_flagged(router_id)
+        return self.health_monitor.is_router_flagged(router_id)
     
     def get_flagged_routers(self) -> Dict[str, Dict[str, Any]]:
         """Get all flagged routers with their reports."""
-        return self._health_monitor.get_flagged_routers()
+        return self.health_monitor.get_flagged_routers()
     
     def clear_router_flag(self, router_id: str) -> bool:
         """Clear the misbehavior flag for a router."""
-        return self._health_monitor.clear_router_flag(router_id)
+        return self.health_monitor.clear_router_flag(router_id)
     
     def get_misbehavior_detection_stats(self) -> Dict[str, Any]:
         """Get statistics for misbehavior detection."""
-        return self._health_monitor.get_misbehavior_detection_stats()
+        return self.health_monitor.get_misbehavior_detection_stats()
     
     def get_anomaly_alerts(self) -> List[Dict[str, Any]]:
         """Get recent anomaly alerts."""
-        return self._health_monitor.get_anomaly_alerts()
+        return self.health_monitor.get_anomaly_alerts()
     
     def clear_anomaly_alerts(self) -> int:
         """Clear anomaly alerts."""
-        return self._health_monitor.clear_anomaly_alerts()
+        return self.health_monitor.clear_anomaly_alerts()
     
     def set_privacy_level(self, level: PrivacyLevel) -> None:
         """Set the traffic analysis mitigation privacy level."""

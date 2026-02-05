@@ -28,9 +28,12 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import aiohttp
+
+if TYPE_CHECKING:
+    from .messages import MisbehaviorReport
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.exceptions import InvalidSignature
 
@@ -182,7 +185,7 @@ class RouterInfo:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
-        result = {
+        result: Dict[str, Any] = {
             "router_id": self.router_id,
             "endpoints": self.endpoints,
             "capacity": self.capacity,
@@ -512,7 +515,7 @@ class DiscoveryClient:
         exclude_subnets = exclude_subnets or set()
         exclude_asns = exclude_asns or set()
         
-        selected = []
+        selected: List[RouterInfo] = []
         used_subnets = set(exclude_subnets)
         used_asns = set(exclude_asns)
         
@@ -1028,7 +1031,7 @@ class DiscoveryClient:
             })
         
         # Sort by health score
-        report.sort(key=lambda x: x["health_score"], reverse=True)
+        report.sort(key=lambda x: float(x["health_score"]), reverse=True)
         return report
     
     def reset_seed_health(self, seed_url: Optional[str] = None) -> None:

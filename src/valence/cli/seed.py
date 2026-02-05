@@ -31,7 +31,7 @@ import json
 import logging
 import signal
 import sys
-from typing import Optional
+from typing import Any, Optional
 
 import aiohttp
 
@@ -43,11 +43,11 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 
-def get_config_from_env() -> dict:
+def get_config_from_env() -> dict[str, Any]:
     """Get seed node configuration from core config."""
     from ..core.config import get_config
     core_config = get_config()
-    config = {}
+    config: dict[str, Any] = {}
     
     if core_config.seed_host:
         config["host"] = core_config.seed_host

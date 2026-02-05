@@ -249,6 +249,7 @@ class RouterNode:
     @property
     def router_id(self) -> str:
         """Get the router's public identity (hex-encoded Ed25519 public key)."""
+        assert self._router_id is not None, "Router ID not initialized"
         return self._router_id
     
     @property
@@ -377,6 +378,7 @@ class RouterNode:
         Returns:
             Hex-encoded signature
         """
+        assert self._private_key is not None, "Private key not set"
         message = json.dumps(data, sort_keys=True, separators=(',', ':')).encode()
         signature = self._private_key.sign(message)
         return signature.hex()
@@ -432,7 +434,7 @@ class RouterNode:
             if nonce > 10_000_000:
                 raise RuntimeError(f"PoW generation exceeded limit at difficulty {difficulty}")
 
-    async def handle_websocket(self, request: web.Request) -> web.WebSocketResponse:
+    async def handle_websocket(self, request: web.Request) -> web.WebSocketResponse | web.Response:
         """Handle incoming WebSocket connections from nodes."""
         if len(self.connections) >= self.max_connections:
             logger.warning("Max connections reached, rejecting new connection")
@@ -614,6 +616,11 @@ class RouterNode:
         if not all([message_id, next_hop, payload]):
             logger.warning("Relay message missing required fields")
             return
+        
+        # Type assertions for mypy (we've verified these are not None above)
+        assert message_id is not None
+        assert next_hop is not None
+        assert payload is not None
 
         if ttl <= 0:
             logger.debug(f"Dropping expired message {message_id}")
