@@ -30,6 +30,7 @@ from typing import Any
 
 import psycopg2
 from psycopg2 import pool as psycopg2_pool
+from psycopg2 import sql
 from psycopg2.extras import RealDictCursor
 
 from .config import get_config
@@ -732,8 +733,12 @@ def count_rows(table_name: str) -> int:
         if not cur.fetchone():
             raise ValueError(f"Table does not exist: {table_name}")
 
-        # Safe to interpolate because we validated against allowlist
-        cur.execute(f"SELECT COUNT(*) as count FROM {table_name}")  # nosec B608
+        # Use sql.Identifier for safe table name interpolation (defense in depth)
+        cur.execute(
+            sql.SQL("SELECT COUNT(*) as count FROM {}").format(
+                sql.Identifier(table_name)
+            )
+        )
         row = cur.fetchone()
         return row["count"] if row else 0
 
@@ -767,8 +772,11 @@ async def async_count_rows(table_name: str) -> int:
         if not exists:
             raise ValueError(f"Table does not exist: {table_name}")
 
-        # Safe to interpolate because we validated against allowlist
-        count = await conn.fetchval(f"SELECT COUNT(*) FROM {table_name}")  # nosec B608
+        # Use quoted identifier for safe table name interpolation (defense in depth)
+        # asyncpg doesn't have psycopg2's sql.Identifier, so we use double-quoted
+        # identifiers. The allowlist validation above ensures no injection is possible.
+        safe_table = table_name.replace('"', '""')  # Escape any quotes (defensive)
+        count = await conn.fetchval(f'SELECT COUNT(*) FROM "{safe_table}"')
         return count or 0
 
 

@@ -102,3 +102,39 @@ class TestSQLInjectionPrevention:
         # The cursor should never have been used
         mock_cursor.execute.assert_not_called()
         assert "not in allowlist" in str(exc_info.value)
+
+    @patch("valence.core.db.get_cursor")
+    def test_count_rows_uses_sql_identifier(self, mock_get_cursor):
+        """count_rows should use sql.Identifier for safe table name interpolation.
+
+        Issue #172: Use psycopg2's sql.Identifier for defense in depth,
+        even though the allowlist provides primary protection.
+        """
+        from psycopg2 import sql
+
+        mock_cursor = MagicMock()
+        mock_ctx = MagicMock()
+        mock_ctx.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_ctx.__exit__ = MagicMock(return_value=False)
+        mock_get_cursor.return_value = mock_ctx
+
+        # Mock the table existence check
+        mock_cursor.fetchone.side_effect = [
+            {"table_name": "beliefs"},  # First call: table exists
+            {"count": 42},  # Second call: the count result
+        ]
+
+        result = count_rows("beliefs")
+
+        # Verify count_rows called execute twice
+        assert mock_cursor.execute.call_count == 2
+
+        # Second execute call should use sql.SQL/sql.Identifier (composed SQL)
+        second_call_args = mock_cursor.execute.call_args_list[1][0]
+        query = second_call_args[0]
+
+        # sql.Composed or sql.SQL objects are used with sql.Identifier
+        assert isinstance(query, (sql.SQL, sql.Composed)), \
+            f"Expected sql.SQL or sql.Composed, got {type(query)}"
+
+        assert result == 42
