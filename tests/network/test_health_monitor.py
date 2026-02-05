@@ -16,7 +16,6 @@ import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from valence.network.seed import (
     HealthState,
     HealthStatus,
@@ -311,9 +310,7 @@ class TestStatusTransitions:
         assert state.status in (HealthStatus.WARNING, HealthStatus.DEGRADED)
 
     @pytest.mark.asyncio
-    async def test_heartbeat_checker_removes_expired_routers(
-        self, seed_node, healthy_router
-    ):
+    async def test_heartbeat_checker_removes_expired_routers(self, seed_node, healthy_router):
         """Heartbeat checker should remove routers after 6+ missed heartbeats."""
         # Register router
         seed_node.router_registry[healthy_router.router_id] = healthy_router
@@ -449,7 +446,8 @@ class TestActiveProbing:
         assert "high_latency" in state.warnings
         assert state.probe_latency_ms >= 50
 
-    def test_probe_router_no_endpoints(self, health_monitor):
+    @pytest.mark.asyncio
+    async def test_probe_router_no_endpoints(self, health_monitor):
         """Probe should handle router with no endpoints gracefully."""
         router = RouterRecord(
             router_id="no-endpoints",
@@ -463,9 +461,7 @@ class TestActiveProbing:
         )
 
         # Should not raise
-        asyncio.get_event_loop().run_until_complete(
-            health_monitor._probe_router(router)
-        )
+        await health_monitor._probe_router(router)
 
 
 # =============================================================================
@@ -542,12 +538,8 @@ class TestDiscoveryIntegration:
             health_monitor.record_heartbeat(router.router_id)
 
         # Make some routers unhealthy
-        health_monitor.health_states[multiple_routers[1].router_id].status = (
-            HealthStatus.DEGRADED
-        )
-        health_monitor.health_states[multiple_routers[3].router_id].status = (
-            HealthStatus.UNHEALTHY
-        )
+        health_monitor.health_states[multiple_routers[1].router_id].status = HealthStatus.DEGRADED
+        health_monitor.health_states[multiple_routers[3].router_id].status = HealthStatus.UNHEALTHY
 
         # Select routers
         selected = seed_node.select_routers(count=10)
@@ -569,12 +561,8 @@ class TestDiscoveryIntegration:
             health_monitor.record_heartbeat(router.router_id)
 
         # Make some routers unhealthy
-        health_monitor.health_states[multiple_routers[1].router_id].status = (
-            HealthStatus.DEGRADED
-        )
-        health_monitor.health_states[multiple_routers[3].router_id].status = (
-            HealthStatus.UNHEALTHY
-        )
+        health_monitor.health_states[multiple_routers[1].router_id].status = HealthStatus.DEGRADED
+        health_monitor.health_states[multiple_routers[3].router_id].status = HealthStatus.UNHEALTHY
 
         # Select routers with include_unhealthy=True
         selected = seed_node.select_routers(count=10, include_unhealthy=True)
@@ -708,9 +696,7 @@ class TestHeartbeatEndpointIntegration:
     """Tests for heartbeat endpoint with health monitor."""
 
     @pytest.mark.asyncio
-    async def test_heartbeat_records_with_health_monitor(
-        self, seed_node, healthy_router
-    ):
+    async def test_heartbeat_records_with_health_monitor(self, seed_node, healthy_router):
         """Heartbeat endpoint should record with health monitor."""
         seed_node.router_registry[healthy_router.router_id] = healthy_router
 
@@ -747,9 +733,7 @@ class TestStatusEndpointIntegration:
             health_monitor.record_heartbeat(router.router_id)
 
         # Make one router degraded
-        health_monitor.health_states[multiple_routers[0].router_id].status = (
-            HealthStatus.DEGRADED
-        )
+        health_monitor.health_states[multiple_routers[0].router_id].status = HealthStatus.DEGRADED
 
         seed_node._running = True
 
