@@ -88,6 +88,12 @@ class ServerSettings(BaseSettings):
     # Rate limiting (requests per minute per client)
     rate_limit_rpm: int = Field(default=60, description="Rate limit per minute")
 
+    # Cache settings (Issue #147)
+    cache_max_size: int = Field(
+        default=1000,
+        description="Maximum size for in-memory LRU caches (router_cache, failure_events, etc.)",
+    )
+
     # Server name for MCP
     server_name: str = Field(default="valence", description="MCP server name")
     server_version: str = Field(default="1.0.0", description="Server version")
@@ -238,4 +244,13 @@ def get_settings() -> ServerSettings:
     global _settings
     if _settings is None:
         _settings = ServerSettings()
+        # Register with core config layer so federation can access without importing server
+        from ..core.config import set_federation_config
+        set_federation_config(_settings)
     return _settings
+
+
+def clear_settings_cache() -> None:
+    """Clear the settings cache. Useful for testing."""
+    global _settings
+    _settings = None

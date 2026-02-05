@@ -16,9 +16,8 @@ import time
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any
-
 from pathlib import Path
+from typing import Any
 
 import yaml
 from starlette.applications import Starlette
@@ -28,38 +27,39 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.routing import Route
 
-from .auth import verify_token, get_token_store
+from .auth import get_token_store, verify_token
+from .compliance_endpoints import (
+    delete_user_data_endpoint,
+    get_deletion_verification_endpoint,
+)
 from .config import get_settings
+from .corroboration_endpoints import (
+    belief_corroboration_endpoint,
+    most_corroborated_beliefs_endpoint,
+)
+from .federation_endpoints import (
+    federation_status,
+    vfp_node_metadata,
+    vfp_trust_anchors,
+)
+from .metrics import MetricsMiddleware, metrics_endpoint
+from .notification_endpoints import (
+    acknowledge_notification_endpoint,
+    list_notifications_endpoint,
+)
 from .oauth import (
-    authorize,
     authorization_server_metadata,
+    authorize,
     protected_resource_metadata,
     register_client,
     token,
 )
 from .oauth_models import get_client_store, get_code_store, get_refresh_store, verify_access_token
-from .federation_endpoints import (
-    vfp_node_metadata,
-    vfp_trust_anchors,
-    federation_status,
-)
-from .corroboration_endpoints import (
-    belief_corroboration_endpoint,
-    most_corroborated_beliefs_endpoint,
-)
-from .compliance_endpoints import (
-    delete_user_data_endpoint,
-    get_deletion_verification_endpoint,
-)
 from .sharing_endpoints import (
-    share_belief_endpoint,
-    list_shares_endpoint,
     get_share_endpoint,
+    list_shares_endpoint,
     revoke_share_endpoint,
-)
-from .notification_endpoints import (
-    list_notifications_endpoint,
-    acknowledge_notification_endpoint,
+    share_belief_endpoint,
 )
 
 logger = logging.getLogger(__name__)
@@ -264,7 +264,10 @@ async def _handle_rpc_request(request: dict[str, Any]) -> dict[str, Any] | None:
     if request.get("jsonrpc") != "2.0":
         return {
             "jsonrpc": "2.0",
-            "error": {"code": -32600, "message": "Invalid request: missing or wrong jsonrpc version"},
+            "error": {
+                "code": -32600,
+                "message": "Invalid request: missing or wrong jsonrpc version",
+            },
             "id": request.get("id"),
         }
 
@@ -674,7 +677,7 @@ async def openapi_spec_endpoint(request: Request) -> JSONResponse:
 async def swagger_ui_endpoint(request: Request) -> HTMLResponse:
     """Serve Swagger UI for interactive API documentation."""
     settings = get_settings()
-    
+
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -769,6 +772,7 @@ async def info_endpoint(request: Request) -> JSONResponse:
             "beliefs": "/api/v1/beliefs",
             "openapi": "/api/v1/openapi.json",
             "docs": "/api/v1/docs",
+            "metrics": "/metrics",
         },
         "authentication": {
             "methods": ["bearer"],
@@ -834,8 +838,14 @@ def create_app() -> Starlette:
         Route(f"{API_V1}/openapi.json", openapi_spec_endpoint, methods=["GET"]),
         Route(f"{API_V1}/docs", swagger_ui_endpoint, methods=["GET"]),
         # OAuth 2.1 endpoints (well-known paths per RFC, no version prefix)
-        Route("/.well-known/oauth-protected-resource", protected_resource_metadata, methods=["GET"]),
-        Route("/.well-known/oauth-authorization-server", authorization_server_metadata, methods=["GET"]),
+        Route(
+            "/.well-known/oauth-protected-resource", protected_resource_metadata, methods=["GET"]
+        ),
+        Route(
+            "/.well-known/oauth-authorization-server",
+            authorization_server_metadata,
+            methods=["GET"],
+        ),
         Route(f"{API_V1}/oauth/register", register_client, methods=["POST"]),
         Route(f"{API_V1}/oauth/authorize", authorize, methods=["GET", "POST"]),
         Route(f"{API_V1}/oauth/token", token, methods=["POST"]),
@@ -845,11 +855,23 @@ def create_app() -> Starlette:
         # Federation API endpoints (versioned)
         Route(f"{API_V1}/federation/status", federation_status, methods=["GET"]),
         # Corroboration endpoints (versioned)
-        Route(f"{API_V1}/beliefs/{{belief_id}}/corroboration", belief_corroboration_endpoint, methods=["GET"]),
-        Route(f"{API_V1}/beliefs/most-corroborated", most_corroborated_beliefs_endpoint, methods=["GET"]),
+        Route(
+            f"{API_V1}/beliefs/{{belief_id}}/corroboration",
+            belief_corroboration_endpoint,
+            methods=["GET"],
+        ),
+        Route(
+            f"{API_V1}/beliefs/most-corroborated",
+            most_corroborated_beliefs_endpoint,
+            methods=["GET"],
+        ),
         # Compliance endpoints (Issue #25: GDPR deletion)
         Route(f"{API_V1}/users/{{id}}/data", delete_user_data_endpoint, methods=["DELETE"]),
-        Route(f"{API_V1}/tombstones/{{id}}/verification", get_deletion_verification_endpoint, methods=["GET"]),
+        Route(
+            f"{API_V1}/tombstones/{{id}}/verification",
+            get_deletion_verification_endpoint,
+            methods=["GET"],
+        ),
         # Sharing endpoints (Issue #50: share() API, Issue #54: revoke API)
         Route(f"{API_V1}/share", share_belief_endpoint, methods=["POST"]),
         Route(f"{API_V1}/shares", list_shares_endpoint, methods=["GET"]),
@@ -857,7 +879,14 @@ def create_app() -> Starlette:
         Route(f"{API_V1}/shares/{{id}}/revoke", revoke_share_endpoint, methods=["POST"]),
         # Notification endpoints (Issue #55: revocation propagation)
         Route(f"{API_V1}/notifications", list_notifications_endpoint, methods=["GET"]),
-        Route(f"{API_V1}/notifications/{{id}}/acknowledge", acknowledge_notification_endpoint, methods=["POST"]),
+        Route(
+            f"{API_V1}/notifications/{{id}}/acknowledge",
+            acknowledge_notification_endpoint,
+            methods=["POST"],
+        ),
+        # Prometheus metrics endpoint (Issue #138)
+        Route("/metrics", metrics_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/metrics", metrics_endpoint, methods=["GET"]),
     ]
 
     # Define middleware
@@ -869,6 +898,7 @@ def create_app() -> Starlette:
             allow_headers=["Authorization", "Content-Type", "Mcp-Session-Id"],
             expose_headers=["Mcp-Session-Id"],
         ),
+        Middleware(MetricsMiddleware),
     ]
 
     return Starlette(

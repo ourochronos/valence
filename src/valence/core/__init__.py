@@ -1,5 +1,19 @@
 """Valence Core - Shared primitives for the knowledge substrate."""
 
+from .lru_cache import (
+    LRUDict,
+    BoundedList,
+    get_cache_max_size,
+    DEFAULT_CACHE_MAX_SIZE,
+)
+from .config import (
+    FederationConfig,
+    FederationConfigProtocol,
+    get_federation_config,
+    get_federation_config_or_none,
+    set_federation_config,
+    clear_federation_config,
+)
 from .confidence import ConfidenceDimension, DimensionalConfidence
 from .db import (
     close_pool,
@@ -24,26 +38,19 @@ from .external_sources import (
     DOIPrefix,
     DOIStatus,
     DOIVerificationResult,
-    # Constants
     ExternalSourceConstants,
-    # Models
     ExternalSourceVerification,
-    # Service
     ExternalSourceVerificationService,
     L4SourceRequirements,
-    # Results
     LivenessCheckResult,
-    # Enums
     SourceCategory,
     SourceLivenessStatus,
     SourceReliabilityScore,
     SourceVerificationStatus,
-    # Registry
     TrustedDomain,
     TrustedSourceRegistry,
     check_belief_l4_readiness,
     get_registry,
-    # Functions
     verify_external_source,
 )
 from .health import (
@@ -86,7 +93,6 @@ from .verification import (
     DisputeOutcome,
     DisputeStatus,
     DisputeType,
-    # Models
     Evidence,
     EvidenceContribution,
     EvidenceType,
@@ -94,19 +100,28 @@ from .verification import (
     Stake,
     StakeType,
     Verification,
-    # Enums
     VerificationResult,
-    # Service
     VerificationService,
     VerificationStatus,
     calculate_bounty,
     calculate_max_stake,
-    # Functions
     calculate_min_stake,
     create_evidence,
 )
 
 __all__ = [
+    # LRU Cache (Issue #147)
+    "LRUDict",
+    "BoundedList",
+    "get_cache_max_size",
+    "DEFAULT_CACHE_MAX_SIZE",
+    # Config (Issue #135)
+    "FederationConfig",
+    "FederationConfigProtocol",
+    "get_federation_config",
+    "get_federation_config_or_none",
+    "set_federation_config",
+    "clear_federation_config",
     # Models
     "Belief",
     "Entity",

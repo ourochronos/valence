@@ -26,6 +26,20 @@ from ..privacy.sharing import (
     SharingService,
 )
 from ..privacy.types import SharePolicy, ShareLevel
+from .errors import (
+    missing_field_error,
+    invalid_json_error,
+    validation_error,
+    not_found_error,
+    forbidden_error,
+    internal_error,
+    service_unavailable_error,
+    conflict_error,
+    NOT_FOUND_SHARE,
+    FORBIDDEN_NOT_OWNER,
+    VALIDATION_INVALID_VALUE,
+    CONFLICT_ALREADY_REVOKED,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,33 +80,21 @@ async def share_belief_endpoint(request: Request) -> JSONResponse:
     """
     service = get_sharing_service()
     if service is None:
-        return JSONResponse(
-            {"error": "Sharing service not initialized"},
-            status_code=503,
-        )
+        return service_unavailable_error("Sharing service")
     
     try:
         body = await request.json()
     except json.JSONDecodeError:
-        return JSONResponse(
-            {"error": "Invalid JSON body"},
-            status_code=400,
-        )
+        return invalid_json_error()
     
     # Validate required fields
     belief_id = body.get("belief_id")
     if not belief_id:
-        return JSONResponse(
-            {"error": "belief_id is required"},
-            status_code=400,
-        )
+        return missing_field_error("belief_id")
     
     recipient_did = body.get("recipient_did")
     if not recipient_did:
-        return JSONResponse(
-            {"error": "recipient_did is required"},
-            status_code=400,
-        )
+        return missing_field_error("recipient_did")
     
     # Parse optional policy
     policy = None
@@ -100,10 +102,7 @@ async def share_belief_endpoint(request: Request) -> JSONResponse:
         try:
             policy = SharePolicy.from_dict(body["policy"])
         except (KeyError, ValueError) as e:
-            return JSONResponse(
-                {"error": f"Invalid policy: {e}"},
-                status_code=400,
-            )
+            return validation_error(f"Invalid policy: {e}", code=VALIDATION_INVALID_VALUE)
     
     # Create share request
     share_request = ShareRequest(
@@ -131,16 +130,10 @@ async def share_belief_endpoint(request: Request) -> JSONResponse:
         )
         
     except ValueError as e:
-        return JSONResponse(
-            {"error": str(e), "success": False},
-            status_code=400,
-        )
+        return validation_error(str(e), code=VALIDATION_INVALID_VALUE)
     except Exception as e:
         logger.exception(f"Error sharing belief: {e}")
-        return JSONResponse(
-            {"error": "Internal server error", "success": False},
-            status_code=500,
-        )
+        return internal_error()
 
 
 async def list_shares_endpoint(request: Request) -> JSONResponse:
@@ -158,10 +151,7 @@ async def list_shares_endpoint(request: Request) -> JSONResponse:
     """
     service = get_sharing_service()
     if service is None:
-        return JSONResponse(
-            {"error": "Sharing service not initialized"},
-            status_code=503,
-        )
+        return service_unavailable_error("Sharing service")
     
     sharer_did = request.query_params.get("sharer_did")
     recipient_did = request.query_params.get("recipient_did")
@@ -195,10 +185,7 @@ async def list_shares_endpoint(request: Request) -> JSONResponse:
         
     except Exception as e:
         logger.exception(f"Error listing shares: {e}")
-        return JSONResponse(
-            {"error": "Internal server error", "success": False},
-            status_code=500,
-        )
+        return internal_error()
 
 
 async def get_share_endpoint(request: Request) -> JSONResponse:
@@ -214,26 +201,17 @@ async def get_share_endpoint(request: Request) -> JSONResponse:
     """
     service = get_sharing_service()
     if service is None:
-        return JSONResponse(
-            {"error": "Sharing service not initialized"},
-            status_code=503,
-        )
+        return service_unavailable_error("Sharing service")
     
     share_id = request.path_params.get("id")
     if not share_id:
-        return JSONResponse(
-            {"error": "Share ID is required"},
-            status_code=400,
-        )
+        return missing_field_error("Share ID")
     
     try:
         share = await service.get_share(share_id)
         
         if share is None:
-            return JSONResponse(
-                {"error": "Share not found"},
-                status_code=404,
-            )
+            return not_found_error("Share", code=NOT_FOUND_SHARE)
         
         return JSONResponse(
             {
@@ -245,10 +223,7 @@ async def get_share_endpoint(request: Request) -> JSONResponse:
         
     except Exception as e:
         logger.exception(f"Error getting share: {e}")
-        return JSONResponse(
-            {"error": "Internal server error", "success": False},
-            status_code=500,
-        )
+        return internal_error()
 
 
 async def revoke_share_endpoint(request: Request) -> JSONResponse:
@@ -271,17 +246,11 @@ async def revoke_share_endpoint(request: Request) -> JSONResponse:
     """
     service = get_sharing_service()
     if service is None:
-        return JSONResponse(
-            {"error": "Sharing service not initialized"},
-            status_code=503,
-        )
+        return service_unavailable_error("Sharing service")
     
     share_id = request.path_params.get("id")
     if not share_id:
-        return JSONResponse(
-            {"error": "Share ID is required"},
-            status_code=400,
-        )
+        return missing_field_error("Share ID")
     
     # Parse optional reason from body
     reason = None
@@ -320,25 +289,15 @@ async def revoke_share_endpoint(request: Request) -> JSONResponse:
         # Share not found, consent chain not found, or already revoked
         error_msg = str(e)
         if "not found" in error_msg.lower():
-            return JSONResponse(
-                {"error": error_msg, "success": False},
-                status_code=404,
-            )
-        return JSONResponse(
-            {"error": error_msg, "success": False},
-            status_code=400,
-        )
+            return not_found_error("Share", code=NOT_FOUND_SHARE)
+        if "already revoked" in error_msg.lower():
+            return conflict_error(error_msg, code=CONFLICT_ALREADY_REVOKED)
+        return validation_error(error_msg, code=VALIDATION_INVALID_VALUE)
     except PermissionError as e:
-        return JSONResponse(
-            {"error": str(e), "success": False},
-            status_code=403,
-        )
+        return forbidden_error(str(e), code=FORBIDDEN_NOT_OWNER)
     except Exception as e:
         logger.exception(f"Error revoking share: {e}")
-        return JSONResponse(
-            {"error": "Internal server error", "success": False},
-            status_code=500,
-        )
+        return internal_error()
 
 
 def _share_to_dict(share: Share) -> dict[str, Any]:
