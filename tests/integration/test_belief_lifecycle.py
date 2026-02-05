@@ -354,9 +354,9 @@ class TestBeliefEntityLinks:
             # Create link
             cur.execute(
                 """
-                INSERT INTO belief_entities (belief_id, entity_id, relationship_type)
-                VALUES (%s, %s, 'about')
-                RETURNING id
+                INSERT INTO belief_entities (belief_id, entity_id, role)
+                VALUES (%s, %s, 'subject')
+                RETURNING belief_id, entity_id
             """,
                 (belief_id, entity_id),
             )
@@ -376,8 +376,8 @@ class TestBeliefEntityLinks:
 
             cur.execute(
                 """
-                INSERT INTO belief_entities (belief_id, entity_id, relationship_type)
-                VALUES (%s, %s, 'about')
+                INSERT INTO belief_entities (belief_id, entity_id, role)
+                VALUES (%s, %s, 'subject')
             """,
                 (belief_id, entity_id),
             )

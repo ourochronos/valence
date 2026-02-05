@@ -105,7 +105,7 @@ class TestFederationNodes:
             )
 
             result = cur.fetchone()
-            assert result["status"] == "inactive"
+            assert result["status"] == "suspended"
 
 
 class TestTransitiveTrust:

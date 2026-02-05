@@ -98,7 +98,7 @@ class TestPeerRegistration:
 
             result = cur.fetchone()
             assert result is not None
-            assert result["status"] == "pending"
+            assert result["status"] == "discovered"
 
     def test_activate_federation_node(self, db_conn):
         """Test activating a registered node after verification."""
@@ -119,16 +119,16 @@ class TestPeerRegistration:
             cur.execute(
                 """
                 UPDATE federation_nodes
-                SET status = 'active', verified_at = NOW()
+                SET status = 'active', last_seen_at = NOW()
                 WHERE id = %s
-                RETURNING status, verified_at
+                RETURNING status, last_seen_at
             """,
                 (node_id,),
             )
 
             result = cur.fetchone()
             assert result["status"] == "active"
-            assert result["verified_at"] is not None
+            assert result["last_seen_at"] is not None
 
 
 class TestBeliefSync:
