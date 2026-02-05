@@ -8,21 +8,17 @@ Tests cover:
 
 from __future__ import annotations
 
-import json
-from unittest.mock import MagicMock, patch, AsyncMock
-from uuid import uuid4, UUID
+from unittest.mock import MagicMock, patch
+from uuid import UUID, uuid4
 
 import pytest
-from starlette.testclient import TestClient
 from starlette.applications import Starlette
 from starlette.routing import Route
-from starlette.responses import JSONResponse
-
+from starlette.testclient import TestClient
 from valence.server.corroboration_endpoints import (
     belief_corroboration_endpoint,
     most_corroborated_beliefs_endpoint,
 )
-
 
 # =============================================================================
 # FIXTURES
@@ -32,6 +28,7 @@ from valence.server.corroboration_endpoints import (
 @pytest.fixture
 def mock_corroboration_info():
     """Create mock corroboration info."""
+
     def _factory(
         belief_id: UUID | None = None,
         count: int = 3,
@@ -42,10 +39,9 @@ def mock_corroboration_info():
             belief_id=belief_id or uuid4(),
             corroboration_count=count,
             confidence_corroboration=confidence,
-            sources=sources or [
-                {"source_did": "did:vkb:web:example.com", "similarity": 0.95}
-            ]
+            sources=sources or [{"source_did": "did:vkb:web:example.com", "similarity": 0.95}],
         )
+
     return _factory
 
 
@@ -53,16 +49,8 @@ def mock_corroboration_info():
 def app():
     """Create test Starlette app with corroboration endpoints."""
     routes = [
-        Route(
-            "/beliefs/{belief_id}/corroboration",
-            belief_corroboration_endpoint,
-            methods=["GET"]
-        ),
-        Route(
-            "/beliefs/most-corroborated",
-            most_corroborated_beliefs_endpoint,
-            methods=["GET"]
-        ),
+        Route("/beliefs/{belief_id}/corroboration", belief_corroboration_endpoint, methods=["GET"]),
+        Route("/beliefs/most-corroborated", most_corroborated_beliefs_endpoint, methods=["GET"]),
     ]
     return Starlette(routes=routes)
 
@@ -84,19 +72,19 @@ class TestBeliefCorroborationEndpoint:
     def test_corroboration_success(self, client, mock_corroboration_info):
         """Test successful corroboration retrieval."""
         belief_id = uuid4()
-        
+
         with patch("valence.core.corroboration.get_corroboration") as mock_get:
             mock_get.return_value = mock_corroboration_info(
                 belief_id=belief_id,
                 count=3,
                 confidence=0.47,
             )
-            
+
             response = client.get(f"/beliefs/{belief_id}/corroboration")
 
         assert response.status_code == 200
         data = response.json()
-        
+
         assert data["success"] is True
         assert data["belief_id"] == str(belief_id)
         assert data["corroboration_count"] == 3
@@ -107,7 +95,7 @@ class TestBeliefCorroborationEndpoint:
     def test_corroboration_uncorroborated(self, client, mock_corroboration_info):
         """Test uncorroborated belief."""
         belief_id = uuid4()
-        
+
         with patch("valence.core.corroboration.get_corroboration") as mock_get:
             mock_get.return_value = mock_corroboration_info(
                 belief_id=belief_id,
@@ -115,22 +103,22 @@ class TestBeliefCorroborationEndpoint:
                 confidence=0.0,
                 sources=[],
             )
-            
+
             response = client.get(f"/beliefs/{belief_id}/corroboration")
 
         assert response.status_code == 200
         data = response.json()
-        
+
         assert data["corroboration_count"] == 0
         assert data["confidence_label"] == "uncorroborated"
 
     def test_corroboration_single(self, client, mock_corroboration_info):
         """Test single corroboration."""
         belief_id = uuid4()
-        
+
         with patch("valence.core.corroboration.get_corroboration") as mock_get:
             mock_get.return_value = mock_corroboration_info(count=1)
-            
+
             response = client.get(f"/beliefs/{belief_id}/corroboration")
 
         data = response.json()
@@ -139,10 +127,10 @@ class TestBeliefCorroborationEndpoint:
     def test_corroboration_well_corroborated(self, client, mock_corroboration_info):
         """Test well corroborated belief."""
         belief_id = uuid4()
-        
+
         with patch("valence.core.corroboration.get_corroboration") as mock_get:
             mock_get.return_value = mock_corroboration_info(count=5)
-            
+
             response = client.get(f"/beliefs/{belief_id}/corroboration")
 
         data = response.json()
@@ -151,10 +139,10 @@ class TestBeliefCorroborationEndpoint:
     def test_corroboration_highly_corroborated(self, client, mock_corroboration_info):
         """Test highly corroborated belief."""
         belief_id = uuid4()
-        
+
         with patch("valence.core.corroboration.get_corroboration") as mock_get:
             mock_get.return_value = mock_corroboration_info(count=10)
-            
+
             response = client.get(f"/beliefs/{belief_id}/corroboration")
 
         data = response.json()
@@ -163,16 +151,16 @@ class TestBeliefCorroborationEndpoint:
     def test_corroboration_not_found(self, client):
         """Test 404 when belief not found."""
         belief_id = uuid4()
-        
+
         with patch("valence.core.corroboration.get_corroboration") as mock_get:
             mock_get.return_value = None
-            
+
             response = client.get(f"/beliefs/{belief_id}/corroboration")
 
         assert response.status_code == 404
         data = response.json()
         assert data["success"] is False
-        assert "not found" in data["error"].lower()
+        assert "not found" in data["error"]["message"].lower()
 
     def test_corroboration_invalid_uuid(self, client):
         """Test 400 for invalid UUID format."""
@@ -181,15 +169,15 @@ class TestBeliefCorroborationEndpoint:
         assert response.status_code == 400
         data = response.json()
         assert data["success"] is False
-        assert "Invalid" in data["error"]
+        assert "Invalid" in data["error"]["message"]
 
     def test_corroboration_internal_error(self, client):
         """Test 500 on internal error."""
         belief_id = uuid4()
-        
+
         with patch("valence.core.corroboration.get_corroboration") as mock_get:
             mock_get.side_effect = Exception("Database connection failed")
-            
+
             response = client.get(f"/beliefs/{belief_id}/corroboration")
 
         assert response.status_code == 500
@@ -227,15 +215,15 @@ class TestMostCorroboratedBeliefsEndpoint:
                 "created_at": "2024-01-15T11:00:00",
             },
         ]
-        
+
         with patch("valence.core.corroboration.get_most_corroborated_beliefs") as mock_get:
             mock_get.return_value = mock_beliefs
-            
+
             response = client.get("/beliefs/most-corroborated")
 
         assert response.status_code == 200
         data = response.json()
-        
+
         assert data["success"] is True
         assert len(data["beliefs"]) == 2
         assert data["total_count"] == 2
@@ -246,7 +234,7 @@ class TestMostCorroboratedBeliefsEndpoint:
         """Test with custom limit."""
         with patch("valence.core.corroboration.get_most_corroborated_beliefs") as mock_get:
             mock_get.return_value = []
-            
+
             response = client.get("/beliefs/most-corroborated?limit=5")
 
         assert response.status_code == 200
@@ -259,7 +247,7 @@ class TestMostCorroboratedBeliefsEndpoint:
         """Test with minimum corroboration count."""
         with patch("valence.core.corroboration.get_most_corroborated_beliefs") as mock_get:
             mock_get.return_value = []
-            
+
             response = client.get("/beliefs/most-corroborated?min_count=3")
 
         assert response.status_code == 200
@@ -271,7 +259,7 @@ class TestMostCorroboratedBeliefsEndpoint:
         """Test with domain filter."""
         with patch("valence.core.corroboration.get_most_corroborated_beliefs") as mock_get:
             mock_get.return_value = []
-            
+
             response = client.get("/beliefs/most-corroborated?domain=tech")
 
         assert response.status_code == 200
@@ -283,7 +271,7 @@ class TestMostCorroboratedBeliefsEndpoint:
         """Test when no corroborated beliefs exist."""
         with patch("valence.core.corroboration.get_most_corroborated_beliefs") as mock_get:
             mock_get.return_value = []
-            
+
             response = client.get("/beliefs/most-corroborated")
 
         assert response.status_code == 200
@@ -296,7 +284,7 @@ class TestMostCorroboratedBeliefsEndpoint:
         """Test 500 on internal error."""
         with patch("valence.core.corroboration.get_most_corroborated_beliefs") as mock_get:
             mock_get.side_effect = Exception("Database error")
-            
+
             response = client.get("/beliefs/most-corroborated")
 
         assert response.status_code == 500
@@ -312,25 +300,28 @@ class TestMostCorroboratedBeliefsEndpoint:
 class TestConfidenceLabelLogic:
     """Test the confidence labeling logic via endpoint."""
 
-    @pytest.mark.parametrize("count,expected_label", [
-        (0, "uncorroborated"),
-        (1, "single corroboration"),
-        (2, "moderately corroborated"),
-        (3, "moderately corroborated"),
-        (4, "well corroborated"),
-        (5, "well corroborated"),
-        (6, "well corroborated"),
-        (7, "highly corroborated"),
-        (10, "highly corroborated"),
-        (100, "highly corroborated"),
-    ])
+    @pytest.mark.parametrize(
+        "count,expected_label",
+        [
+            (0, "uncorroborated"),
+            (1, "single corroboration"),
+            (2, "moderately corroborated"),
+            (3, "moderately corroborated"),
+            (4, "well corroborated"),
+            (5, "well corroborated"),
+            (6, "well corroborated"),
+            (7, "highly corroborated"),
+            (10, "highly corroborated"),
+            (100, "highly corroborated"),
+        ],
+    )
     def test_confidence_labels(self, client, mock_corroboration_info, count, expected_label):
         """Test all confidence label thresholds."""
         belief_id = uuid4()
-        
+
         with patch("valence.core.corroboration.get_corroboration") as mock_get:
             mock_get.return_value = mock_corroboration_info(count=count)
-            
+
             response = client.get(f"/beliefs/{belief_id}/corroboration")
 
         data = response.json()

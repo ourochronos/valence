@@ -11,47 +11,45 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import Any
-from unittest.mock import patch, MagicMock, AsyncMock
-from uuid import UUID, uuid4
+from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
 import pytest
 from starlette.requests import Request
-from starlette.testclient import TestClient
-
-from valence.server.compliance_endpoints import (
-    delete_user_data_endpoint,
-    get_deletion_verification_endpoint,
-)
 from valence.compliance.deletion import (
     DeletionReason,
     DeletionResult,
     Tombstone,
 )
-
+from valence.server.compliance_endpoints import (
+    delete_user_data_endpoint,
+    get_deletion_verification_endpoint,
+)
 
 # ============================================================================
 # Test Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def mock_request():
     """Create a mock Starlette request."""
+
     def _make_request(
         path_params: dict[str, str] | None = None,
         query_params: dict[str, str] | None = None,
     ) -> MagicMock:
         request = MagicMock(spec=Request)
         request.path_params = path_params or {}
-        
+
         # Mock query_params as a dict-like object with .get()
         qp = query_params or {}
         mock_qp = MagicMock()
         mock_qp.get = lambda key, default=None: qp.get(key, default)
         request.query_params = mock_qp
-        
+
         return request
-    
+
     return _make_request
 
 
@@ -91,6 +89,7 @@ def mock_tombstone():
 # Test delete_user_data_endpoint
 # ============================================================================
 
+
 class TestDeleteUserDataEndpoint:
     """Test DELETE /api/v1/users/{id}/data endpoint."""
 
@@ -101,12 +100,12 @@ class TestDeleteUserDataEndpoint:
             path_params={"id": "user123"},
             query_params={"reason": "user_request"},
         )
-        
+
         with patch("valence.server.compliance_endpoints.delete_user_data") as mock_delete:
             mock_delete.return_value = mock_deletion_result
-            
+
             response = await delete_user_data_endpoint(request)
-        
+
         assert response.status_code == 200
         body = json.loads(response.body)
         assert body["success"] is True
@@ -118,13 +117,13 @@ class TestDeleteUserDataEndpoint:
     async def test_delete_missing_user_id(self, mock_request):
         """Missing user ID returns 400."""
         request = mock_request(path_params={})
-        
+
         response = await delete_user_data_endpoint(request)
-        
+
         assert response.status_code == 400
         body = json.loads(response.body)
         assert "error" in body
-        assert "User ID is required" in body["error"]
+        assert "User ID is required" in body["error"]["message"]
 
     @pytest.mark.asyncio
     async def test_delete_invalid_reason(self, mock_request):
@@ -133,16 +132,15 @@ class TestDeleteUserDataEndpoint:
             path_params={"id": "user123"},
             query_params={"reason": "invalid_reason"},
         )
-        
+
         response = await delete_user_data_endpoint(request)
-        
+
         assert response.status_code == 400
         body = json.loads(response.body)
         assert "error" in body
-        assert "Invalid reason" in body["error"]
-        assert "valid_reasons" in body
-        # Should list all valid reasons
-        assert "user_request" in body["valid_reasons"]
+        assert "Invalid reason" in body["error"]["message"]
+        # Valid reasons are now in the error message
+        assert "user_request" in body["error"]["message"]
 
     @pytest.mark.asyncio
     async def test_delete_default_reason(self, mock_request, mock_deletion_result):
@@ -151,12 +149,12 @@ class TestDeleteUserDataEndpoint:
             path_params={"id": "user123"},
             query_params={},  # No reason specified
         )
-        
+
         with patch("valence.server.compliance_endpoints.delete_user_data") as mock_delete:
             mock_delete.return_value = mock_deletion_result
-            
+
             response = await delete_user_data_endpoint(request)
-        
+
         assert response.status_code == 200
         # Verify default reason was used
         mock_delete.assert_called_once()
@@ -173,12 +171,12 @@ class TestDeleteUserDataEndpoint:
                 "legal_basis": "Court order #12345",
             },
         )
-        
+
         with patch("valence.server.compliance_endpoints.delete_user_data") as mock_delete:
             mock_delete.return_value = mock_deletion_result
-            
+
             response = await delete_user_data_endpoint(request)
-        
+
         assert response.status_code == 200
         mock_delete.assert_called_once()
         call_kwargs = mock_delete.call_args[1]
@@ -190,24 +188,24 @@ class TestDeleteUserDataEndpoint:
         """Test all valid deletion reasons are accepted."""
         valid_reasons = [
             "user_request",
-            "consent_withdrawal", 
+            "consent_withdrawal",
             "legal_order",
             "policy_violation",
             "data_accuracy",
             "security_incident",
         ]
-        
+
         for reason in valid_reasons:
             request = mock_request(
                 path_params={"id": f"user_{reason}"},
                 query_params={"reason": reason},
             )
-            
+
             with patch("valence.server.compliance_endpoints.delete_user_data") as mock_delete:
                 mock_delete.return_value = mock_deletion_result
-                
+
                 response = await delete_user_data_endpoint(request)
-            
+
             assert response.status_code == 200, f"Failed for reason: {reason}"
 
     @pytest.mark.asyncio
@@ -217,17 +215,17 @@ class TestDeleteUserDataEndpoint:
             path_params={"id": "user123"},
             query_params={"reason": "user_request"},
         )
-        
+
         failed_result = DeletionResult(
             success=False,
             error="Database connection failed",
         )
-        
+
         with patch("valence.server.compliance_endpoints.delete_user_data") as mock_delete:
             mock_delete.return_value = failed_result
-            
+
             response = await delete_user_data_endpoint(request)
-        
+
         assert response.status_code == 500
         body = json.loads(response.body)
         assert body["success"] is False
@@ -240,21 +238,22 @@ class TestDeleteUserDataEndpoint:
             path_params={"id": "user123"},
             query_params={"reason": "user_request"},
         )
-        
+
         with patch("valence.server.compliance_endpoints.delete_user_data") as mock_delete:
             mock_delete.side_effect = Exception("Unexpected database error")
-            
+
             response = await delete_user_data_endpoint(request)
-        
+
         assert response.status_code == 500
         body = json.loads(response.body)
         assert body["success"] is False
-        assert "Unexpected database error" in body["error"]
+        assert "Unexpected database error" in body["error"]["message"]
 
 
 # ============================================================================
 # Test get_deletion_verification_endpoint
 # ============================================================================
+
 
 class TestGetDeletionVerificationEndpoint:
     """Test GET /api/v1/tombstones/{id}/verification endpoint."""
@@ -264,7 +263,7 @@ class TestGetDeletionVerificationEndpoint:
         """Successful verification report retrieval."""
         tombstone_id = uuid4()
         request = mock_request(path_params={"id": str(tombstone_id)})
-        
+
         mock_report = {
             "tombstone_id": str(tombstone_id),
             "status": "complete",
@@ -278,12 +277,12 @@ class TestGetDeletionVerificationEndpoint:
             "legal_basis": "GDPR Article 17",
             "reason": "user_request",
         }
-        
+
         with patch("valence.server.compliance_endpoints.get_deletion_verification") as mock_get:
             mock_get.return_value = mock_report
-            
+
             response = await get_deletion_verification_endpoint(request)
-        
+
         assert response.status_code == 200
         body = json.loads(response.body)
         assert body["tombstone_id"] == str(tombstone_id)
@@ -295,47 +294,47 @@ class TestGetDeletionVerificationEndpoint:
         """Tombstone not found returns 404."""
         tombstone_id = uuid4()
         request = mock_request(path_params={"id": str(tombstone_id)})
-        
+
         with patch("valence.server.compliance_endpoints.get_deletion_verification") as mock_get:
             mock_get.return_value = None
-            
+
             response = await get_deletion_verification_endpoint(request)
-        
+
         assert response.status_code == 404
         body = json.loads(response.body)
         assert "error" in body
-        assert "not found" in body["error"].lower()
+        assert "not found" in body["error"]["message"].lower()
 
     @pytest.mark.asyncio
     async def test_verification_invalid_uuid(self, mock_request):
         """Invalid UUID returns 400."""
         request = mock_request(path_params={"id": "not-a-valid-uuid"})
-        
+
         response = await get_deletion_verification_endpoint(request)
-        
+
         assert response.status_code == 400
         body = json.loads(response.body)
         assert "error" in body
-        assert "Invalid tombstone ID" in body["error"]
+        assert "Invalid tombstone ID" in body["error"]["message"]
 
     @pytest.mark.asyncio
     async def test_verification_missing_id(self, mock_request):
         """Missing tombstone ID returns 400."""
         request = mock_request(path_params={})
-        
+
         response = await get_deletion_verification_endpoint(request)
-        
+
         assert response.status_code == 400
         body = json.loads(response.body)
-        assert "Invalid tombstone ID" in body["error"]
+        assert "Invalid tombstone ID" in body["error"]["message"]
 
     @pytest.mark.asyncio
     async def test_verification_empty_string_id(self, mock_request):
         """Empty string ID returns 400."""
         request = mock_request(path_params={"id": ""})
-        
+
         response = await get_deletion_verification_endpoint(request)
-        
+
         assert response.status_code == 400
 
     @pytest.mark.asyncio
@@ -343,7 +342,7 @@ class TestGetDeletionVerificationEndpoint:
         """Verification shows 'processing' status when key not yet revoked."""
         tombstone_id = uuid4()
         request = mock_request(path_params={"id": str(tombstone_id)})
-        
+
         mock_report = {
             "tombstone_id": str(tombstone_id),
             "status": "processing",  # Key not yet revoked
@@ -357,12 +356,12 @@ class TestGetDeletionVerificationEndpoint:
             "legal_basis": None,
             "reason": "user_request",
         }
-        
+
         with patch("valence.server.compliance_endpoints.get_deletion_verification") as mock_get:
             mock_get.return_value = mock_report
-            
+
             response = await get_deletion_verification_endpoint(request)
-        
+
         assert response.status_code == 200
         body = json.loads(response.body)
         assert body["status"] == "processing"
@@ -372,6 +371,7 @@ class TestGetDeletionVerificationEndpoint:
 # ============================================================================
 # Test DeletionReason enum
 # ============================================================================
+
 
 class TestDeletionReasonEnum:
     """Test DeletionReason enum values."""
@@ -404,6 +404,7 @@ class TestDeletionReasonEnum:
 # Test DeletionResult
 # ============================================================================
 
+
 class TestDeletionResult:
     """Test DeletionResult dataclass."""
 
@@ -419,9 +420,9 @@ class TestDeletionResult:
             exchanges_deleted=15,
             patterns_deleted=5,
         )
-        
+
         data = result.to_dict()
-        
+
         assert data["success"] is True
         assert data["tombstone_id"] == str(tombstone_id)
         assert data["deleted_counts"]["beliefs"] == 10
@@ -437,9 +438,9 @@ class TestDeletionResult:
             success=False,
             error="Database connection failed",
         )
-        
+
         data = result.to_dict()
-        
+
         assert data["success"] is False
         assert data["tombstone_id"] is None
         assert data["error"] == "Database connection failed"
@@ -447,9 +448,9 @@ class TestDeletionResult:
     def test_default_counts_are_zero(self):
         """Default deletion counts are zero."""
         result = DeletionResult(success=True)
-        
+
         data = result.to_dict()
-        
+
         assert data["deleted_counts"]["beliefs"] == 0
         assert data["deleted_counts"]["sessions"] == 0
         assert data["deleted_counts"]["exchanges"] == 0
@@ -460,13 +461,14 @@ class TestDeletionResult:
 # Test Tombstone
 # ============================================================================
 
+
 class TestTombstone:
     """Test Tombstone dataclass."""
 
     def test_tombstone_to_dict(self, mock_tombstone):
         """Tombstone serializes to dict."""
         data = mock_tombstone.to_dict()
-        
+
         assert "id" in data
         assert data["target_type"] == "user"
         assert data["reason"] == "user_request"
@@ -478,7 +480,7 @@ class TestTombstone:
         tombstone_id = uuid4()
         target_id = uuid4()
         now = datetime.now()
-        
+
         row = {
             "id": str(tombstone_id),
             "target_type": "belief",
@@ -493,9 +495,9 @@ class TestTombstone:
             "acknowledged_by": json.dumps({"peer1": now.isoformat()}),
             "signature": None,
         }
-        
+
         tombstone = Tombstone.from_row(row)
-        
+
         assert tombstone.id == tombstone_id
         assert tombstone.target_type == "belief"
         assert tombstone.target_id == target_id
@@ -507,7 +509,7 @@ class TestTombstone:
         tombstone_id = uuid4()
         target_id = uuid4()
         now = datetime.now()
-        
+
         row = {
             "id": tombstone_id,  # UUID object, not string
             "target_type": "user",
@@ -517,9 +519,9 @@ class TestTombstone:
             "reason": "user_request",
             "acknowledged_by": {},
         }
-        
+
         tombstone = Tombstone.from_row(row)
-        
+
         assert tombstone.id == tombstone_id
         assert tombstone.target_id == target_id
 
@@ -534,15 +536,16 @@ class TestTombstone:
             reason=DeletionReason.USER_REQUEST,
             signature=b"\x00\x01\x02\x03\xff",
         )
-        
+
         data = tombstone.to_dict()
-        
+
         assert data["signature"] == "00010203ff"
 
 
 # ============================================================================
 # Integration-style tests (with mocked dependencies)
 # ============================================================================
+
 
 class TestEndpointIntegration:
     """Integration tests for compliance endpoints."""
@@ -552,33 +555,33 @@ class TestEndpointIntegration:
         """Test full deletion and verification flow."""
         user_id = "test-user-123"
         tombstone_id = uuid4()
-        
+
         # Step 1: Delete user data
         delete_request = mock_request(
             path_params={"id": user_id},
             query_params={"reason": "user_request"},
         )
-        
+
         deletion_result = DeletionResult(
             success=True,
             tombstone_id=tombstone_id,
             beliefs_deleted=3,
             sessions_deleted=1,
         )
-        
+
         with patch("valence.server.compliance_endpoints.delete_user_data") as mock_delete:
             mock_delete.return_value = deletion_result
             delete_response = await delete_user_data_endpoint(delete_request)
-        
+
         assert delete_response.status_code == 200
         delete_body = json.loads(delete_response.body)
         returned_tombstone_id = delete_body["tombstone_id"]
-        
+
         # Step 2: Verify deletion
         verify_request = mock_request(
             path_params={"id": returned_tombstone_id},
         )
-        
+
         verification_report = {
             "tombstone_id": returned_tombstone_id,
             "status": "complete",
@@ -592,11 +595,11 @@ class TestEndpointIntegration:
             "legal_basis": "GDPR Article 17 - user_request",
             "reason": "user_request",
         }
-        
+
         with patch("valence.server.compliance_endpoints.get_deletion_verification") as mock_verify:
             mock_verify.return_value = verification_report
             verify_response = await get_deletion_verification_endpoint(verify_request)
-        
+
         assert verify_response.status_code == 200
         verify_body = json.loads(verify_response.body)
         assert verify_body["status"] == "complete"
