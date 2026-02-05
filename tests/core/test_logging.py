@@ -5,23 +5,134 @@ from __future__ import annotations
 import json
 import logging
 import sys
-from io import StringIO
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 
 # ============================================================================
+# Correlation ID Tests
+# ============================================================================
+
+
+class TestCorrelationId:
+    """Tests for correlation ID functionality."""
+
+    def test_get_correlation_id_default_none(self):
+        """Should return None when no correlation ID is set."""
+        from valence.core.logging import get_correlation_id, set_correlation_id
+
+        # Ensure clean state
+        set_correlation_id(None)
+        assert get_correlation_id() is None
+
+    def test_set_and_get_correlation_id(self):
+        """Should set and retrieve correlation ID."""
+        from valence.core.logging import get_correlation_id, set_correlation_id
+
+        set_correlation_id("test-correlation-123")
+        assert get_correlation_id() == "test-correlation-123"
+
+        # Clean up
+        set_correlation_id(None)
+
+    def test_generate_correlation_id(self):
+        """Should generate unique correlation IDs."""
+        from valence.core.logging import generate_correlation_id
+
+        id1 = generate_correlation_id()
+        id2 = generate_correlation_id()
+
+        assert id1 != id2
+        assert len(id1) == 36  # UUID format
+        assert "-" in id1
+
+    def test_correlation_context_generates_id(self):
+        """Context manager should generate ID if not provided."""
+        from valence.core.logging import (
+            correlation_context,
+            get_correlation_id,
+            set_correlation_id,
+        )
+
+        set_correlation_id(None)
+
+        with correlation_context() as cid:
+            assert cid is not None
+            assert len(cid) == 36
+            assert get_correlation_id() == cid
+
+        # Should be reset after context
+        assert get_correlation_id() is None
+
+    def test_correlation_context_uses_provided_id(self):
+        """Context manager should use provided ID."""
+        from valence.core.logging import (
+            correlation_context,
+            get_correlation_id,
+            set_correlation_id,
+        )
+
+        set_correlation_id(None)
+
+        with correlation_context("my-custom-id") as cid:
+            assert cid == "my-custom-id"
+            assert get_correlation_id() == "my-custom-id"
+
+        assert get_correlation_id() is None
+
+    def test_correlation_context_restores_previous_id(self):
+        """Context manager should restore previous ID on exit."""
+        from valence.core.logging import (
+            correlation_context,
+            get_correlation_id,
+            set_correlation_id,
+        )
+
+        set_correlation_id("outer-id")
+
+        with correlation_context("inner-id"):
+            assert get_correlation_id() == "inner-id"
+
+        assert get_correlation_id() == "outer-id"
+
+        # Clean up
+        set_correlation_id(None)
+
+    def test_nested_correlation_contexts(self):
+        """Should handle nested correlation contexts correctly."""
+        from valence.core.logging import (
+            correlation_context,
+            get_correlation_id,
+            set_correlation_id,
+        )
+
+        set_correlation_id(None)
+
+        with correlation_context("outer"):
+            assert get_correlation_id() == "outer"
+
+            with correlation_context("inner"):
+                assert get_correlation_id() == "inner"
+
+            assert get_correlation_id() == "outer"
+
+        assert get_correlation_id() is None
+
+
+# ============================================================================
 # JSONFormatter Tests
 # ============================================================================
+
 
 class TestJSONFormatter:
     """Tests for JSONFormatter class."""
 
     def test_format_basic_message(self):
         """Should format basic log message as JSON."""
-        from valence.core.logging import JSONFormatter
+        from valence.core.logging import JSONFormatter, set_correlation_id
 
+        set_correlation_id(None)
         formatter = JSONFormatter()
         record = logging.LogRecord(
             name="test.logger",
@@ -41,10 +152,57 @@ class TestJSONFormatter:
         assert data["logger"] == "test.logger"
         assert data["message"] == "Test message"
 
+    def test_format_includes_correlation_id(self):
+        """Should include correlation ID when present."""
+        from valence.core.logging import JSONFormatter, set_correlation_id
+
+        set_correlation_id("test-correlation-abc")
+        try:
+            formatter = JSONFormatter()
+            record = logging.LogRecord(
+                name="test.logger",
+                level=logging.INFO,
+                pathname="test.py",
+                lineno=10,
+                msg="Test message",
+                args=(),
+                exc_info=None,
+            )
+
+            output = formatter.format(record)
+            data = json.loads(output)
+
+            assert "correlation_id" in data
+            assert data["correlation_id"] == "test-correlation-abc"
+        finally:
+            set_correlation_id(None)
+
+    def test_format_excludes_correlation_id_when_none(self):
+        """Should not include correlation_id field when not set."""
+        from valence.core.logging import JSONFormatter, set_correlation_id
+
+        set_correlation_id(None)
+        formatter = JSONFormatter()
+        record = logging.LogRecord(
+            name="test.logger",
+            level=logging.INFO,
+            pathname="test.py",
+            lineno=10,
+            msg="Test message",
+            args=(),
+            exc_info=None,
+        )
+
+        output = formatter.format(record)
+        data = json.loads(output)
+
+        assert "correlation_id" not in data
+
     def test_format_includes_source_for_warnings(self):
         """Should include source info for warnings and above."""
-        from valence.core.logging import JSONFormatter
+        from valence.core.logging import JSONFormatter, set_correlation_id
 
+        set_correlation_id(None)
         formatter = JSONFormatter()
         record = logging.LogRecord(
             name="test",
@@ -67,8 +225,9 @@ class TestJSONFormatter:
 
     def test_format_excludes_source_for_info(self):
         """Should not include source for INFO level."""
-        from valence.core.logging import JSONFormatter
+        from valence.core.logging import JSONFormatter, set_correlation_id
 
+        set_correlation_id(None)
         formatter = JSONFormatter()
         record = logging.LogRecord(
             name="test",
@@ -87,14 +246,14 @@ class TestJSONFormatter:
 
     def test_format_includes_exception(self):
         """Should include exception info when present."""
-        from valence.core.logging import JSONFormatter
+        from valence.core.logging import JSONFormatter, set_correlation_id
 
+        set_correlation_id(None)
         formatter = JSONFormatter()
 
         try:
             raise ValueError("Test error")
         except ValueError:
-            import sys
             exc_info = sys.exc_info()
 
         record = logging.LogRecord(
@@ -116,8 +275,9 @@ class TestJSONFormatter:
 
     def test_format_includes_extra_data(self):
         """Should include extra_data field if present."""
-        from valence.core.logging import JSONFormatter
+        from valence.core.logging import JSONFormatter, set_correlation_id
 
+        set_correlation_id(None)
         formatter = JSONFormatter()
         record = logging.LogRecord(
             name="test",
@@ -142,13 +302,15 @@ class TestJSONFormatter:
 # StandardFormatter Tests
 # ============================================================================
 
+
 class TestStandardFormatter:
     """Tests for StandardFormatter class."""
 
     def test_format_basic_message(self):
         """Should format basic log message."""
-        from valence.core.logging import StandardFormatter
+        from valence.core.logging import StandardFormatter, set_correlation_id
 
+        set_correlation_id(None)
         formatter = StandardFormatter(use_colors=False)
         record = logging.LogRecord(
             name="test.logger",
@@ -165,10 +327,35 @@ class TestStandardFormatter:
         assert "INFO" in output
         assert "Test message" in output
 
+    def test_format_includes_correlation_id(self):
+        """Should include correlation ID in message when present."""
+        from valence.core.logging import StandardFormatter, set_correlation_id
+
+        set_correlation_id("abcd1234-5678-90ab-cdef")
+        try:
+            formatter = StandardFormatter(use_colors=False)
+            record = logging.LogRecord(
+                name="test.logger",
+                level=logging.INFO,
+                pathname="test.py",
+                lineno=10,
+                msg="Test message",
+                args=(),
+                exc_info=None,
+            )
+
+            output = formatter.format(record)
+            # Should include first 8 chars of correlation ID
+            assert "[abcd1234]" in output
+            assert "Test message" in output
+        finally:
+            set_correlation_id(None)
+
     def test_uses_colors_when_enabled(self):
         """Should use colors when enabled and isatty."""
-        from valence.core.logging import StandardFormatter
+        from valence.core.logging import StandardFormatter, set_correlation_id
 
+        set_correlation_id(None)
         # Mock stderr as a tty
         with patch.object(sys.stderr, "isatty", return_value=True):
             formatter = StandardFormatter(use_colors=True)
@@ -211,6 +398,7 @@ class TestStandardFormatter:
 # configure_logging Tests
 # ============================================================================
 
+
 class TestConfigureLogging:
     """Tests for configure_logging function."""
 
@@ -249,7 +437,7 @@ class TestConfigureLogging:
 
     def test_json_format_explicit(self):
         """Should use JSON format when explicitly set."""
-        from valence.core.logging import configure_logging, JSONFormatter
+        from valence.core.logging import JSONFormatter, configure_logging
 
         configure_logging(json_format=True)
         root = logging.getLogger()
@@ -257,18 +445,28 @@ class TestConfigureLogging:
         assert isinstance(handler.formatter, JSONFormatter)
 
     def test_json_format_from_env(self, monkeypatch):
-        """Should use JSON format from environment variable."""
-        from valence.core.logging import configure_logging, JSONFormatter
+        """Should use JSON format from VALENCE_LOG_FORMAT=json."""
+        from valence.core.logging import JSONFormatter, configure_logging
 
-        monkeypatch.setenv("VALENCE_LOG_JSON", "true")
+        monkeypatch.setenv("VALENCE_LOG_FORMAT", "json")
         configure_logging()
         root = logging.getLogger()
         handler = root.handlers[0]
         assert isinstance(handler.formatter, JSONFormatter)
 
+    def test_text_format_from_env(self, monkeypatch):
+        """Should use text format from VALENCE_LOG_FORMAT=text."""
+        from valence.core.logging import StandardFormatter, configure_logging
+
+        monkeypatch.setenv("VALENCE_LOG_FORMAT", "text")
+        configure_logging()
+        root = logging.getLogger()
+        handler = root.handlers[0]
+        assert isinstance(handler.formatter, StandardFormatter)
+
     def test_standard_format_when_tty(self):
         """Should use standard format when in terminal."""
-        from valence.core.logging import configure_logging, StandardFormatter
+        from valence.core.logging import StandardFormatter, configure_logging
 
         with patch.object(sys.stderr, "isatty", return_value=True):
             configure_logging(json_format=False)
@@ -285,18 +483,22 @@ class TestConfigureLogging:
         configure_logging(log_file=str(log_file))
 
         root = logging.getLogger()
-        file_handlers = [h for h in root.handlers if isinstance(h, logging.FileHandler)]
+        file_handlers = [
+            h for h in root.handlers if isinstance(h, logging.FileHandler)
+        ]
         assert len(file_handlers) == 1
 
     def test_file_handler_uses_json(self, tmp_path):
         """File handler should always use JSON format."""
-        from valence.core.logging import configure_logging, JSONFormatter
+        from valence.core.logging import JSONFormatter, configure_logging
 
         log_file = tmp_path / "test.log"
         configure_logging(log_file=str(log_file), json_format=False)
 
         root = logging.getLogger()
-        file_handlers = [h for h in root.handlers if isinstance(h, logging.FileHandler)]
+        file_handlers = [
+            h for h in root.handlers if isinstance(h, logging.FileHandler)
+        ]
         assert isinstance(file_handlers[0].formatter, JSONFormatter)
 
     def test_removes_existing_handlers(self):
@@ -328,6 +530,7 @@ class TestConfigureLogging:
 # get_logger Tests
 # ============================================================================
 
+
 class TestGetLogger:
     """Tests for get_logger function."""
 
@@ -351,6 +554,7 @@ class TestGetLogger:
 # ============================================================================
 # ToolCallLogger Tests
 # ============================================================================
+
 
 class TestToolCallLogger:
     """Tests for ToolCallLogger class."""
@@ -478,6 +682,7 @@ class TestToolCallLogger:
 # module-level tool_logger Tests
 # ============================================================================
 
+
 class TestModuleLevelToolLogger:
     """Tests for module-level tool_logger instance."""
 
@@ -489,6 +694,49 @@ class TestModuleLevelToolLogger:
 
     def test_tool_logger_is_tool_call_logger(self):
         """Should be a ToolCallLogger instance."""
-        from valence.core.logging import tool_logger, ToolCallLogger
+        from valence.core.logging import ToolCallLogger, tool_logger
 
         assert isinstance(tool_logger, ToolCallLogger)
+
+
+# ============================================================================
+# Integration Tests
+# ============================================================================
+
+
+class TestLoggingIntegration:
+    """Integration tests for logging with correlation IDs."""
+
+    def test_json_logging_with_correlation_context(self, tmp_path):
+        """Full integration: JSON logging with correlation context."""
+        from valence.core.logging import (
+            configure_logging,
+            correlation_context,
+            get_logger,
+            set_correlation_id,
+        )
+
+        set_correlation_id(None)
+        log_file = tmp_path / "integration.log"
+
+        configure_logging(json_format=True, log_file=str(log_file))
+        logger = get_logger("integration.test")
+
+        with correlation_context("integration-test-123"):
+            logger.info("Test message inside context")
+
+        logger.info("Test message outside context")
+
+        # Read and verify log file
+        with open(log_file) as f:
+            lines = f.readlines()
+
+        assert len(lines) == 2
+
+        log1 = json.loads(lines[0])
+        assert log1["correlation_id"] == "integration-test-123"
+        assert log1["message"] == "Test message inside context"
+
+        log2 = json.loads(lines[1])
+        assert "correlation_id" not in log2
+        assert log2["message"] == "Test message outside context"

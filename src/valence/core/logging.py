@@ -4,6 +4,7 @@ Provides:
 - Consistent log formatting across services
 - JSON formatter for production (machine-parseable)
 - Standard formatter for development (human-readable)
+- Correlation IDs for request tracing
 - Sanitized tool call logging
 """
 
@@ -13,23 +14,88 @@ import json
 import logging
 import os
 import sys
+import uuid
+from collections.abc import Generator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import Any
+
+
+# Context variable for correlation ID (thread/async-safe)
+_correlation_id: ContextVar[str | None] = ContextVar("correlation_id", default=None)
+
+
+def get_correlation_id() -> str | None:
+    """Get the current correlation ID.
+
+    Returns:
+        Current correlation ID or None if not set.
+    """
+    return _correlation_id.get()
+
+
+def set_correlation_id(correlation_id: str | None) -> None:
+    """Set the correlation ID for the current context.
+
+    Args:
+        correlation_id: The correlation ID to set, or None to clear.
+    """
+    _correlation_id.set(correlation_id)
+
+
+def generate_correlation_id() -> str:
+    """Generate a new unique correlation ID.
+
+    Returns:
+        A new UUID-based correlation ID.
+    """
+    return str(uuid.uuid4())
+
+
+@contextmanager
+def correlation_context(
+    correlation_id: str | None = None,
+) -> Generator[str, None, None]:
+    """Context manager for correlation ID scope.
+
+    Args:
+        correlation_id: Optional correlation ID to use. If None, generates a new one.
+
+    Yields:
+        The correlation ID being used.
+
+    Example:
+        with correlation_context() as cid:
+            logger.info("Processing request")  # Will include cid
+    """
+    cid = correlation_id or generate_correlation_id()
+    token = _correlation_id.set(cid)
+    try:
+        yield cid
+    finally:
+        _correlation_id.reset(token)
 
 
 class JSONFormatter(logging.Formatter):
     """JSON log formatter for production environments.
 
     Produces structured logs that can be parsed by log aggregation tools.
+    Includes correlation ID when present in context.
     """
 
     def format(self, record: logging.LogRecord) -> str:
-        log_data = {
+        log_data: dict[str, Any] = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
         }
+
+        # Add correlation ID if present
+        correlation_id = get_correlation_id()
+        if correlation_id:
+            log_data["correlation_id"] = correlation_id
 
         # Add source location for errors
         if record.levelno >= logging.WARNING:
@@ -54,25 +120,40 @@ class StandardFormatter(logging.Formatter):
     """Standard log formatter for development.
 
     Human-readable format with colors for terminal output.
+    Includes correlation ID when present in context.
     """
 
     COLORS = {
-        "DEBUG": "\033[36m",     # Cyan
-        "INFO": "\033[32m",      # Green
-        "WARNING": "\033[33m",   # Yellow
-        "ERROR": "\033[31m",     # Red
+        "DEBUG": "\033[36m",  # Cyan
+        "INFO": "\033[32m",  # Green
+        "WARNING": "\033[33m",  # Yellow
+        "ERROR": "\033[31m",  # Red
         "CRITICAL": "\033[35m",  # Magenta
     }
     RESET = "\033[0m"
+    CORRELATION_COLOR = "\033[90m"  # Gray
 
     def __init__(self, use_colors: bool = True):
         super().__init__(
             fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S"
+            datefmt="%Y-%m-%d %H:%M:%S",
         )
         self.use_colors = use_colors and sys.stderr.isatty()
 
     def format(self, record: logging.LogRecord) -> str:
+        # Make a copy to avoid mutating the original record
+        record = logging.makeLogRecord(record.__dict__)
+
+        # Add correlation ID to message if present
+        correlation_id = get_correlation_id()
+        if correlation_id:
+            short_cid = correlation_id[:8]  # Use first 8 chars for readability
+            if self.use_colors:
+                cid_str = f"{self.CORRELATION_COLOR}[{short_cid}]{self.RESET} "
+            else:
+                cid_str = f"[{short_cid}] "
+            record.msg = cid_str + str(record.msg)
+
         if self.use_colors:
             color = self.COLORS.get(record.levelname, "")
             record.levelname = f"{color}{record.levelname}{self.RESET}"
@@ -94,7 +175,7 @@ def configure_logging(
 
     Environment variables:
         VALENCE_LOG_LEVEL: Override log level
-        VALENCE_LOG_JSON: Force JSON format (true/false)
+        VALENCE_LOG_FORMAT: Log format ("json" or "text", auto-detect if unset)
         VALENCE_LOG_FILE: Log file path
     """
     # Get settings from environment
@@ -103,10 +184,10 @@ def configure_logging(
         level = getattr(logging, level.upper(), logging.INFO)
 
     if json_format is None:
-        json_env = os.environ.get("VALENCE_LOG_JSON", "").lower()
-        if json_env in ("true", "1", "yes"):
+        format_env = os.environ.get("VALENCE_LOG_FORMAT", "").lower()
+        if format_env == "json":
             json_format = True
-        elif json_env in ("false", "0", "no"):
+        elif format_env == "text":
             json_format = False
         else:
             # Auto-detect: use JSON if not in a terminal
@@ -115,6 +196,7 @@ def configure_logging(
     log_file = os.environ.get("VALENCE_LOG_FILE", log_file)
 
     # Create formatter
+    formatter: logging.Formatter
     if json_format:
         formatter = JSONFormatter()
     else:
@@ -183,7 +265,7 @@ class ToolCallLogger:
         self,
         tool_name: str,
         arguments: dict[str, Any],
-        level: int = logging.DEBUG
+        level: int = logging.DEBUG,
     ) -> None:
         """Log a tool call with sanitized parameters.
 
@@ -193,19 +275,23 @@ class ToolCallLogger:
             level: Log level
         """
         sanitized = self._sanitize(arguments)
-        self.logger.log(level, f"Tool call: {tool_name}", extra={
-            "extra_data": {
-                "tool": tool_name,
-                "arguments": sanitized,
-            }
-        })
+        self.logger.log(
+            level,
+            f"Tool call: {tool_name}",
+            extra={
+                "extra_data": {
+                    "tool": tool_name,
+                    "arguments": sanitized,
+                }
+            },
+        )
 
     def log_result(
         self,
         tool_name: str,
         success: bool,
         duration_ms: float | None = None,
-        level: int = logging.DEBUG
+        level: int = logging.DEBUG,
     ) -> None:
         """Log a tool result.
 
@@ -220,13 +306,17 @@ class ToolCallLogger:
         if duration_ms is not None:
             msg += f" ({duration_ms:.1f}ms)"
 
-        self.logger.log(level, msg, extra={
-            "extra_data": {
-                "tool": tool_name,
-                "success": success,
-                "duration_ms": duration_ms,
-            }
-        })
+        self.logger.log(
+            level,
+            msg,
+            extra={
+                "extra_data": {
+                    "tool": tool_name,
+                    "success": success,
+                    "duration_ms": duration_ms,
+                }
+            },
+        )
 
     def _sanitize(self, data: Any) -> Any:
         """Recursively sanitize sensitive data.
