@@ -1015,7 +1015,7 @@ class DiscoveryClient:
             List of seed health dictionaries, sorted by health score
         """
         seeds = self._get_seed_list()
-        report = []
+        report: list[dict[str, Any]] = []
         
         for seed_url in seeds:
             health = self._get_seed_health(seed_url)
@@ -1030,8 +1030,8 @@ class DiscoveryClient:
                 "last_failure": health.last_failure,
             })
         
-        # Sort by health score
-        report.sort(key=lambda x: float(x["health_score"]), reverse=True)
+        # Sort by health score (health_score is always a float)
+        report.sort(key=lambda x: float(x.get("health_score", 0)), reverse=True)
         return report
     
     def reset_seed_health(self, seed_url: Optional[str] = None) -> None:

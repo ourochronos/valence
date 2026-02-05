@@ -611,8 +611,8 @@ def belief_get(
 
         # Load history if requested
         if include_history:
-            history = []
-            current_id = belief_id
+            history: list[dict[str, Any]] = []
+            current_id: str | None = belief_id
 
             # Walk backwards through supersession chain
             while current_id:

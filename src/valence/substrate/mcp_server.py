@@ -449,7 +449,7 @@ def get_recent_beliefs(limit: int = 20) -> dict[str, Any]:
 
 def get_trust_graph() -> dict[str, Any]:
     """Get trust relationships for the resource."""
-    result = {
+    result: dict[str, Any] = {
         "entities": [],
         "federation_nodes": [],
         "as_of": datetime.now().isoformat(),
@@ -836,9 +836,10 @@ def belief_get(
             return {"success": False, "error": f"Belief not found: {belief_id}"}
 
         belief = Belief.from_row(dict(row))
-        result = {
+        belief_dict = belief.to_dict()
+        result: dict[str, Any] = {
             "success": True,
-            "belief": belief.to_dict(),
+            "belief": belief_dict,
         }
 
         # Load source
@@ -846,7 +847,7 @@ def belief_get(
             cur.execute("SELECT * FROM sources WHERE id = %s", (str(belief.source_id),))
             source_row = cur.fetchone()
             if source_row:
-                result["belief"]["source"] = dict(source_row)
+                belief_dict["source"] = dict(source_row)
 
         # Load entities
         cur.execute(
@@ -859,15 +860,15 @@ def belief_get(
             (belief_id,)
         )
         entity_rows = cur.fetchall()
-        result["belief"]["entities"] = [
+        belief_dict["entities"] = [
             {"entity": Entity.from_row(dict(r)).to_dict(), "role": r["role"]}
             for r in entity_rows
         ]
 
         # Load history if requested
         if include_history:
-            history = []
-            current_id = belief_id
+            history: list[dict[str, Any]] = []
+            current_id: str | None = belief_id
 
             # Walk backwards through supersession chain
             while current_id:
@@ -1097,7 +1098,7 @@ def trust_check(
     limit: int = 10,
 ) -> dict[str, Any]:
     """Check trust levels for a topic/domain."""
-    result = {
+    result: dict[str, Any] = {
         "success": True,
         "topic": topic,
         "trusted_entities": [],
@@ -1191,15 +1192,17 @@ def confidence_explain(belief_id: str) -> dict[str, Any]:
         conf = belief.confidence
         
         # Build explanation
-        explanation = {
+        dimensions_dict: dict[str, Any] = {}
+        weights_used: dict[str, float] = {}
+        explanation: dict[str, Any] = {
             "success": True,
             "belief_id": belief_id,
             "content_preview": belief.content[:100] + "..." if len(belief.content) > 100 else belief.content,
             "overall_confidence": conf.overall,
             "overall_label": confidence_label(conf.overall),
-            "dimensions": {},
+            "dimensions": dimensions_dict,
             "computation_method": "weighted_geometric_mean",
-            "weights_used": {},
+            "weights_used": weights_used,
         }
         
         # Document each dimension
@@ -1219,13 +1222,13 @@ def confidence_explain(belief_id: str) -> dict[str, Any]:
             value = getattr(conf, dim.value, None)
             if value is not None:
                 weight = DEFAULT_WEIGHTS.get(dim, 0)
-                explanation["dimensions"][dim.value] = {
+                dimensions_dict[dim.value] = {
                     "value": value,
                     "label": confidence_label(value),
                     "weight": weight,
                     "explanation": dimension_explanations.get(dim.value, ""),
                 }
-                explanation["weights_used"][dim.value] = weight
+                weights_used[dim.value] = weight
         
         # Add recommendations
         recommendations = []

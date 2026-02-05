@@ -207,7 +207,8 @@ def multi_signal_rank(
             continue
         
         # Recency score
-        recency = compute_recency_score(r.get('created_at'))
+        created_at = r.get('created_at')
+        recency = compute_recency_score(created_at) if created_at else 0.5
         
         # Final score
         final_score = (
@@ -724,7 +725,9 @@ def cmd_query(args: argparse.Namespace) -> int:
             
             # Show final score and components
             conf_score = compute_confidence_score(r)
-            print(f"    ID: {str(r['id'])[:8]}  Score: {final_score:.0%}  Confidence: {conf_score:.0%}  Semantic: {sim:.0%}  Age: {format_age(r.get('created_at'))}")
+            created_at = r.get('created_at')
+            age_str = format_age(created_at) if created_at else "unknown"
+            print(f"    ID: {str(r['id'])[:8]}  Score: {final_score:.0%}  Confidence: {conf_score:.0%}  Semantic: {sim:.0%}  Age: {age_str}")
             
             if r.get('domain_path'):
                 print(f"    Domains: {', '.join(r['domain_path'])}")

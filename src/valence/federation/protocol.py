@@ -19,7 +19,7 @@ from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
 
-from ..core.confidence import DimensionalConfidence
+from ..core.confidence import DimensionalConfidence, ConfidenceDimension
 from ..core.db import get_cursor
 from .identity import (
     parse_did,
@@ -297,7 +297,7 @@ class SyncChange:
     timestamp: datetime = field(default_factory=datetime.now)
 
     def to_dict(self) -> dict[str, Any]:
-        result = {
+        result: dict[str, Any] = {
             "type": self.change_type,
             "timestamp": self.timestamp.isoformat(),
         }
@@ -498,7 +498,8 @@ def handle_share_belief(
             else:
                 rejected += 1
                 belief_id = belief_data.get("federation_id", "unknown")
-                rejection_reasons[str(belief_id)] = result
+                # result is str when not True (rejection reason)
+                rejection_reasons[str(belief_id)] = str(result) if result else "Unknown error"
         except Exception as e:
             rejected += 1
             belief_id = belief_data.get("federation_id", "unknown")
@@ -620,7 +621,7 @@ def _process_incoming_belief(
 
     # Adjust confidence based on sender trust
     adjusted_overall = confidence.overall * sender_trust
-    confidence = confidence.with_dimension("overall", adjusted_overall, recalculate=False)
+    confidence = confidence.with_dimension(ConfidenceDimension.OVERALL, adjusted_overall, recalculate=False)
 
     with get_cursor() as cur:
         # Insert belief
@@ -1050,10 +1051,20 @@ async def handle_message(
 
         # Authentication messages (no sender required)
         if msg_type == MessageType.AUTH_CHALLENGE:
-            response = create_auth_challenge(message.client_did)
-            return response
+            if isinstance(message, AuthChallengeRequest):
+                response = create_auth_challenge(message.client_did)
+                return response
+            return ErrorMessage(
+                error_code=ErrorCode.INVALID_REQUEST,
+                message="Invalid AUTH_CHALLENGE message format",
+            )
 
         elif msg_type == MessageType.AUTH_VERIFY:
+            if not isinstance(message, AuthVerifyRequest):
+                return ErrorMessage(
+                    error_code=ErrorCode.INVALID_REQUEST,
+                    message="Invalid AUTH_VERIFY message format",
+                )
             # Get public key from database
             public_key = None
             if message.client_did:
@@ -1072,13 +1083,13 @@ async def handle_message(
                     message=f"Unknown node: {message.client_did}",
                 )
 
-            response = verify_auth_challenge(
+            verify_response = verify_auth_challenge(
                 client_did=message.client_did,
                 challenge=message.challenge,
                 signature=message.signature,
                 public_key_multibase=public_key,
             )
-            return response
+            return verify_response
 
         # Messages requiring sender context
         if not sender_node_id:
@@ -1105,16 +1116,24 @@ async def handle_message(
 
         # Handle authenticated messages
         if msg_type == MessageType.SHARE_BELIEF:
-            return handle_share_belief(message, sender_node_id, sender_trust)
+            if isinstance(message, ShareBeliefRequest):
+                return handle_share_belief(message, sender_node_id, sender_trust)
+            return ErrorMessage(error_code=ErrorCode.INVALID_REQUEST, message="Invalid SHARE_BELIEF format")
 
         elif msg_type == MessageType.REQUEST_BELIEFS:
-            return handle_request_beliefs(message, sender_node_id, sender_trust)
+            if isinstance(message, RequestBeliefsRequest):
+                return handle_request_beliefs(message, sender_node_id, sender_trust)
+            return ErrorMessage(error_code=ErrorCode.INVALID_REQUEST, message="Invalid REQUEST_BELIEFS format")
 
         elif msg_type == MessageType.SYNC_REQUEST:
-            return handle_sync_request(message, sender_node_id, sender_trust)
+            if isinstance(message, SyncRequest):
+                return handle_sync_request(message, sender_node_id, sender_trust)
+            return ErrorMessage(error_code=ErrorCode.INVALID_REQUEST, message="Invalid SYNC_REQUEST format")
 
         elif msg_type == MessageType.TRUST_ATTESTATION:
-            return _handle_trust_attestation(message, sender_node_id, sender_trust)
+            if isinstance(message, TrustAttestationRequest):
+                return _handle_trust_attestation(message, sender_node_id, sender_trust)
+            return ErrorMessage(error_code=ErrorCode.INVALID_REQUEST, message="Invalid TRUST_ATTESTATION format")
 
         # Unknown message type
         return ErrorMessage(

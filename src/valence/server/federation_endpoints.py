@@ -68,6 +68,12 @@ async def verify_did_signature(request: Request) -> dict[str, Any] | None:
     if not all([did, signature_b64, timestamp_str, nonce]):
         return None
 
+    # After the all() check, these are guaranteed non-None but mypy doesn't narrow
+    assert did is not None
+    assert signature_b64 is not None
+    assert timestamp_str is not None
+    assert nonce is not None
+
     try:
         timestamp = int(timestamp_str)
     except ValueError:
@@ -90,24 +96,23 @@ async def verify_did_signature(request: Request) -> dict[str, Any] | None:
 
     # Resolve the DID to get the public key
     try:
-        from ..federation.identity import parse_did, resolve_did_sync, verify_signature
+        from ..federation.identity import resolve_did_sync, verify_signature
 
-        parsed_did = parse_did(did)
-        did_document = resolve_did_sync(parsed_did)
+        did_document = resolve_did_sync(did)
 
         if not did_document:
             logger.warning(f"Could not resolve DID: {did}")
             return None
 
         # Get the public key from the DID document
-        public_key = did_document.get_public_key()
-        if not public_key:
+        public_key_multibase = did_document.public_key_multibase
+        if not public_key_multibase:
             logger.warning(f"No public key in DID document: {did}")
             return None
 
         # Verify the signature
         signature = base64.b64decode(signature_b64)
-        if not verify_signature(message_bytes, signature, public_key):
+        if not verify_signature(message_bytes, signature, public_key_multibase):
             logger.warning(f"Invalid DID signature from: {did}")
             return None
 
@@ -617,6 +622,9 @@ async def federation_trust_get(request: Request) -> JSONResponse:
     domain = request.query_params.get("domain")
     include_details = request.query_params.get("details", "false").lower() == "true"
 
+    if not node_id:
+        return missing_field_error("node_id")
+
     result = get_trust(
         node_id=node_id,
         domain=domain,
@@ -647,6 +655,9 @@ async def federation_trust_set(request: Request) -> JSONResponse:
     try:
         body = await request.json()
         node_id = request.path_params.get("node_id")
+
+        if not node_id:
+            return missing_field_error("node_id")
 
         preference = body.get("preference")
         if not preference:

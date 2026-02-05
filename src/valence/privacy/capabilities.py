@@ -927,7 +927,7 @@ class InMemoryCapabilityStore(CapabilityStore):
     async def get_revocation_info(self, capability_id: str) -> Optional[tuple[datetime, str]]:
         """Get revocation timestamp and reason for a capability."""
         cap = self._capabilities.get(capability_id)
-        if cap and cap.is_revoked:
+        if cap and cap.is_revoked and cap.revoked_at is not None and cap.revocation_reason is not None:
             return (cap.revoked_at, cap.revocation_reason)
         return None
     

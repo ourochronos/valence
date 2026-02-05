@@ -269,12 +269,12 @@ def _get_tool_reference() -> str:
     lines.append("## Knowledge Substrate Tools\n")
     for tool in SUBSTRATE_TOOLS:
         # Just first line of description
-        desc = tool.description.split("\n")[0]
+        desc = tool.description.split("\n")[0] if tool.description else ""
         lines.append(f"- **{tool.name}**: {desc}")
 
     lines.append("\n## Conversation Tracking Tools\n")
     for tool in VKB_TOOLS:
-        desc = tool.description.split("\n")[0]
+        desc = tool.description.split("\n")[0] if tool.description else ""
         lines.append(f"- **{tool.name}**: {desc}")
 
     return "\n".join(lines)

@@ -439,7 +439,12 @@ class ChallengeStore:
     def get_for_domain(self, domain: str) -> list[DomainChallenge]:
         """Get all challenges for a domain."""
         challenge_ids = self._by_domain.get(domain.lower(), [])
-        return [self.get(cid) for cid in challenge_ids if self.get(cid)]
+        result: list[DomainChallenge] = []
+        for cid in challenge_ids:
+            challenge = self.get(cid)
+            if challenge is not None:
+                result.append(challenge)
+        return result
     
     def update(self, challenge: DomainChallenge) -> None:
         """Update a challenge in the store."""
@@ -509,8 +514,10 @@ class AttestationStore:
     ) -> list[DomainAttestation]:
         """Get attestations for a domain."""
         attestation_ids = self._by_domain.get(domain.lower(), [])
-        attestations = [self._attestations.get(aid) for aid in attestation_ids]
-        attestations = [a for a in attestations if a is not None]
+        attestations: list[DomainAttestation] = [
+            a for a in (self._attestations.get(aid) for aid in attestation_ids)
+            if a is not None
+        ]
         
         if subject_did:
             attestations = [a for a in attestations if a.subject_did == subject_did]
@@ -527,8 +534,10 @@ class AttestationStore:
     ) -> list[DomainAttestation]:
         """Get all attestations for a subject federation."""
         attestation_ids = self._by_subject.get(subject_did, [])
-        attestations = [self._attestations.get(aid) for aid in attestation_ids]
-        attestations = [a for a in attestations if a is not None]
+        attestations: list[DomainAttestation] = [
+            a for a in (self._attestations.get(aid) for aid in attestation_ids)
+            if a is not None
+        ]
         
         if valid_only:
             attestations = [a for a in attestations if a.is_valid]

@@ -184,7 +184,7 @@ class DimensionalConfidence:
             use_geometric: If True (default), use weighted geometric mean per spec.
         """
         w = weights or DEFAULT_WEIGHTS
-        dims = {}
+        dims: dict[ConfidenceDimension, float] = {}
         for dim in ConfidenceDimension:
             if dim == ConfidenceDimension.OVERALL:
                 continue

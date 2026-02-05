@@ -98,7 +98,7 @@ class LRUDict(dict[K, V]):
             super().__delitem__(key)
             self._order.pop(key, None)
 
-    def get(self, key: K, default: Optional[V] = None) -> Optional[V]:
+    def get(self, key: K, default: Optional[V] = None) -> Optional[V]:  # type: ignore[override]
         """Get item without updating access order (peek)."""
         with self._lock:
             return super().get(key, default)
@@ -127,7 +127,7 @@ class LRUDict(dict[K, V]):
                 for k, v in other.items():
                     self[k] = v
             for k, v in kwargs.items():
-                self[k] = v
+                self[k] = v  # type: ignore[index]
 
     def _evict_if_needed(self) -> None:
         """Evict oldest items if over max size."""
@@ -217,7 +217,7 @@ class BoundedList(list):
             super().extend(items)
             self._trim_if_needed()
 
-    def insert(self, index: int, item: Any) -> None:
+    def insert(self, index: int, item: Any) -> None:  # type: ignore[override]
         """Insert item and trim if needed."""
         with self._lock:
             super().insert(index, item)

@@ -135,7 +135,7 @@ class RateLimitException(GatewayException):
         federation_id: UUID | None = None,
         retry_after: float | None = None,
     ):
-        details = {}
+        details: dict[str, str | float] = {}
         if federation_id:
             details["federation_id"] = str(federation_id)
         if retry_after:

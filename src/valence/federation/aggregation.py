@@ -587,10 +587,11 @@ class TrustWeightedAggregator:
                 total_weight += weight
             elif contrib.beliefs:
                 # Compute local confidence from beliefs
-                local_conf = sum(
+                belief_confidences = [
                     b.confidence.overall if b.confidence else 0.5
                     for b in contrib.beliefs
-                ) / len(contrib.beliefs)
+                ]
+                local_conf = sum(belief_confidences) / len(contrib.beliefs)
                 weighted_sum += local_conf * weight
                 total_weight += weight
         
@@ -622,10 +623,11 @@ class TrustWeightedAggregator:
             if contrib.local_confidence is not None:
                 confidences.append((contrib.local_confidence, weight))
             elif contrib.beliefs:
-                local_conf = sum(
+                belief_confidences = [
                     b.confidence.overall if b.confidence else 0.5
                     for b in contrib.beliefs
-                ) / len(contrib.beliefs)
+                ]
+                local_conf = sum(belief_confidences) / len(contrib.beliefs)
                 confidences.append((local_conf, weight))
         
         if len(confidences) < 2:
