@@ -58,7 +58,7 @@ pip install vulture && vulture src/ --min-confidence 80
 pytest --collect-only 2>&1 | grep -i "error\|import"
 
 # Find tests for deprecated features
-grep -r "@pytest.mark.skip\|@pytest.mark.xfail" tests/ 
+grep -r "@pytest.mark.skip\|@pytest.mark.xfail" tests/
 
 # Check test coverage gaps after refactors
 pytest --cov=src/valence --cov-report=term-missing
@@ -181,6 +181,16 @@ Save audit reports to `docs/audits/CATEGORY-AUDIT-YYYY-MM-DD.md`:
 ## Recommendations
 ...
 ```
+
+### Phase 5: Retrospective
+16. **Review what accumulated** since last release:
+    - How many lint errors? Test failures? Dead code?
+    - Could earlier CI checks have caught them?
+17. **Update preventive measures**:
+    - Tighten CI rules (fail on warnings, enforce format)
+    - Add pre-commit hooks for common issues
+    - Update docs with lessons learned
+18. **Document in release issue**: Brief retrospective comment
 
 ## Post-Release
 
