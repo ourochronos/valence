@@ -12,6 +12,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Network Layer**: Tor-inspired 3-tier topology with seeds, routers, and nodes
 - **Federation**: MLS group encryption, cross-federation consent, gateway nodes
 - **Local Embeddings**: No more OpenAI dependency for basic operation
+- **Production Readiness**: Prometheus metrics, structured logging, connection pooling
+
+### Infrastructure
+- **Prometheus Metrics Endpoint** (#138): `/metrics` endpoint for production monitoring
+- **Structured JSON Logging** (#139): Machine-parseable log output with configurable format
+- **Connection Pooling** (#141): Database connection pool with configurable size and health checks
+- **Clock Skew Tolerance** (#131): Temporal comparisons now handle distributed clock drift
+- **Thread-Safe Singletons** (#148): Added locks to prevent race conditions in lazy initialization
+- **LRU Cache Utilities** (#147): Bounded caches for routers, sessions, and failure events
+
+### Developer Experience
+- **py.typed Marker** (#136): PEP 561 compliance for IDE type inference
+- **Python Examples** (#137): Three tutorial examples covering beliefs, trust graphs, and federation
+- **OpenAPI Spec** (#133): Complete REST API documentation with all endpoints
+- **OAuth Test Coverage** (#129): Comprehensive auth module tests
+
+### Architecture
+- **Layer Violation Fixes** (#134, #135): Clean separation between embeddings, federation, and server config
+- **Policy Hash Verification** (#145): Cross-federation policy snapshots verified by hash
 
 ### Added
 - **Strip on Forward Field Redaction** (Issue #71)
