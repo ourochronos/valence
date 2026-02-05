@@ -662,9 +662,24 @@ class SyncManager:
                         result = await response.json()
                         changes = result.get("changes", [])
 
+                        # Compare vector clocks for conflict detection
+                        peer_clock = result.get("vector_clock", {})
+                        local_state = get_sync_state(node_id)
+                        local_clock = local_state.vector_clock if local_state else {}
+
+                        clock_comparison = compare_vector_clocks(local_clock, peer_clock)
+                        conflict_detected = clock_comparison == "concurrent"
+
+                        if conflict_detected:
+                            logger.warning(
+                                f"Concurrent vector clocks detected with node {node_id}. "
+                                f"Local: {local_clock}, Peer: {peer_clock}. "
+                                f"Split-brain scenario possible - beliefs may conflict."
+                            )
+
                         if changes:
-                            # Process changes
-                            beliefs_received = await self._process_sync_changes(node_id, trust_level, changes)
+                            # Process changes, passing conflict flag
+                            beliefs_received = await self._process_sync_changes(node_id, trust_level, changes, conflict_detected=conflict_detected)
 
                             update_sync_state(
                                 node_id,
@@ -697,6 +712,8 @@ class SyncManager:
         node_id: UUID,
         trust_level: float,
         changes: list[dict[str, Any]],
+        *,
+        conflict_detected: bool = False,
     ) -> int:
         """Process sync changes from a peer.
 
@@ -704,11 +721,17 @@ class SyncManager:
             node_id: Source node's UUID
             trust_level: Node's trust level
             changes: List of change objects
+            conflict_detected: Whether vector clock conflict was detected
 
         Returns:
             Number of beliefs received
         """
         beliefs_received = 0
+
+        if conflict_detected:
+            logger.info(
+                f"Processing {_bucket_count(len(changes))} changes from {node_id} with conflict_detected=True - beliefs may need manual review"
+            )
 
         for change in changes:
             change_type = change.get("type")

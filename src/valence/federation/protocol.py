@@ -333,6 +333,7 @@ class SyncResponse(ProtocolMessage):
     changes: list[SyncChange] = field(default_factory=list)
     cursor: str | None = None
     has_more: bool = False
+    vector_clock: dict[str, int] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         result = super().to_dict()
@@ -341,6 +342,7 @@ class SyncResponse(ProtocolMessage):
                 "changes": [c.to_dict() for c in self.changes],
                 "cursor": self.cursor,
                 "has_more": self.has_more,
+                "vector_clock": self.vector_clock,
             }
         )
         return result
@@ -990,11 +992,23 @@ def handle_sync_request(
     # Determine if there are more changes
     has_more = len(changes) == 100
 
+    # Fetch our vector clock for this peer relationship
+    our_vector_clock: dict[str, int] = {}
+    with get_cursor() as cur:
+        cur.execute(
+            "SELECT vector_clock FROM sync_state WHERE node_id = %s",
+            (requester_node_id,),
+        )
+        row = cur.fetchone()
+        if row:
+            our_vector_clock = row.get("vector_clock", {}) or {}
+
     return SyncResponse(
         request_id=request.request_id,
         changes=changes,
         cursor=changes[-1].timestamp.isoformat() if changes else None,
         has_more=has_more,
+        vector_clock=our_vector_clock,
     )
 
 

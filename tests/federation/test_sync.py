@@ -664,3 +664,157 @@ class TestGetSyncStatus:
         result = get_sync_status()
 
         assert "error" in result
+
+
+# =============================================================================
+# VECTOR CLOCK INTEGRATION TESTS (Issue #234)
+# =============================================================================
+
+
+class TestVectorClockIntegration:
+    """Tests for vector clock conflict detection in sync operations."""
+
+    @pytest.mark.asyncio
+    async def test_pull_from_peer_detects_concurrent_clocks(self):
+        """Test that _pull_from_peer detects concurrent vector clocks."""
+        node_id = uuid4()
+
+        with (
+            patch("valence.federation.sync.get_federation_config") as mock_settings,
+            patch("valence.federation.sync.get_sync_state") as mock_get_state,
+            patch("valence.federation.sync.update_sync_state"),
+            patch("valence.federation.sync.mark_node_active"),
+            patch("valence.federation.sync.get_cursor"),
+            patch("aiohttp.ClientSession") as mock_session_class,
+        ):
+            mock_settings.return_value = MagicMock(
+                federation_sync_interval_seconds=60,
+                federation_node_did="did:vkb:web:local",
+                federation_private_key=None,
+            )
+
+            # Local clock: p1=2, p2=1
+            mock_state = MagicMock()
+            mock_state.vector_clock = {"p1": 2, "p2": 1}
+            mock_get_state.return_value = mock_state
+
+            # Peer clock: p1=1, p2=2 (concurrent!)
+            mock_response = MagicMock()
+            mock_response.status = 200
+            mock_response.json = AsyncMock(return_value={
+                "changes": [],
+                "cursor": None,
+                "vector_clock": {"p1": 1, "p2": 2},
+            })
+
+            mock_session = MagicMock()
+            mock_session.post.return_value.__aenter__ = AsyncMock(return_value=mock_response)
+            mock_session.post.return_value.__aexit__ = AsyncMock()
+            mock_session_class.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session_class.return_value.__aexit__ = AsyncMock()
+
+            manager = SyncManager()
+
+            # Capture logging
+            with patch("valence.federation.sync.logger") as mock_logger:
+                await manager._pull_from_node(
+                    node_id=node_id,
+                    federation_endpoint="https://peer.example.com/federation",
+                    trust_level=0.5,
+                    cursor=None,
+                    last_sync=None,
+                )
+
+                # Should log warning about concurrent clocks
+                mock_logger.warning.assert_called()
+                warning_msg = str(mock_logger.warning.call_args)
+                assert "concurrent" in warning_msg.lower() or "Concurrent" in warning_msg
+
+    @pytest.mark.asyncio
+    async def test_pull_from_peer_no_conflict_when_clocks_ordered(self):
+        """Test that _pull_from_peer doesn't flag conflict for ordered clocks."""
+        node_id = uuid4()
+
+        with (
+            patch("valence.federation.sync.get_federation_config") as mock_settings,
+            patch("valence.federation.sync.get_sync_state") as mock_get_state,
+            patch("valence.federation.sync.update_sync_state"),
+            patch("valence.federation.sync.mark_node_active"),
+            patch("valence.federation.sync.get_cursor"),
+            patch("aiohttp.ClientSession") as mock_session_class,
+        ):
+            mock_settings.return_value = MagicMock(
+                federation_sync_interval_seconds=60,
+                federation_node_did="did:vkb:web:local",
+                federation_private_key=None,
+            )
+
+            # Local clock: p1=1, p2=1
+            mock_state = MagicMock()
+            mock_state.vector_clock = {"p1": 1, "p2": 1}
+            mock_get_state.return_value = mock_state
+
+            # Peer clock: p1=2, p2=2 (peer is ahead, no conflict)
+            mock_response = MagicMock()
+            mock_response.status = 200
+            mock_response.json = AsyncMock(return_value={
+                "changes": [],
+                "cursor": None,
+                "vector_clock": {"p1": 2, "p2": 2},
+            })
+
+            mock_session = MagicMock()
+            mock_session.post.return_value.__aenter__ = AsyncMock(return_value=mock_response)
+            mock_session.post.return_value.__aexit__ = AsyncMock()
+            mock_session_class.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session_class.return_value.__aexit__ = AsyncMock()
+
+            manager = SyncManager()
+
+            with patch("valence.federation.sync.logger") as mock_logger:
+                await manager._pull_from_node(
+                    node_id=node_id,
+                    federation_endpoint="https://peer.example.com/federation",
+                    trust_level=0.5,
+                    cursor=None,
+                    last_sync=None,
+                )
+
+                # Should NOT log warning about concurrent clocks
+                for call in mock_logger.warning.call_args_list:
+                    assert "concurrent" not in str(call).lower()
+
+    @pytest.mark.asyncio
+    async def test_process_sync_changes_logs_conflict_flag(self):
+        """Test that _process_sync_changes handles conflict_detected flag."""
+        node_id = uuid4()
+
+        with (
+            patch("valence.federation.sync.get_federation_config") as mock_settings,
+            patch("valence.federation.sync.handle_share_belief") as mock_handler,
+        ):
+            mock_settings.return_value = MagicMock(
+                federation_node_did="did:vkb:web:local",
+                federation_private_key=None,
+            )
+            mock_handler.return_value = MagicMock(accepted=1)
+
+            manager = SyncManager()
+            changes = [
+                {"type": "belief_created", "belief": {"content": "test", "confidence": {"overall": 0.8}}},
+            ]
+
+            with patch("valence.federation.sync.logger") as mock_logger:
+                result = await manager._process_sync_changes(
+                    node_id=node_id,
+                    trust_level=0.5,
+                    changes=changes,
+                    conflict_detected=True,
+                )
+
+                # Should log about processing with conflict detected
+                mock_logger.info.assert_called()
+                info_msg = str(mock_logger.info.call_args)
+                assert "conflict_detected=True" in info_msg
+
+                assert result == 1  # One belief processed

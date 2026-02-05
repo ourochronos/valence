@@ -394,6 +394,30 @@ class TestSyncResponse:
         assert len(msg.changes) == 2
         assert msg.has_more is True
 
+    def test_sync_response_includes_vector_clock(self):
+        """Test that sync response includes vector_clock field (Issue #234)."""
+        vector_clock = {"peer1": 5, "peer2": 3}
+        msg = SyncResponse(
+            changes=[],
+            cursor=None,
+            has_more=False,
+            vector_clock=vector_clock,
+        )
+
+        assert msg.vector_clock == vector_clock
+
+        # Verify it's included in to_dict()
+        msg_dict = msg.to_dict()
+        assert "vector_clock" in msg_dict
+        assert msg_dict["vector_clock"] == vector_clock
+
+    def test_sync_response_empty_vector_clock_default(self):
+        """Test that sync response defaults to empty vector_clock."""
+        msg = SyncResponse(changes=[], cursor=None, has_more=False)
+
+        assert msg.vector_clock == {}
+        assert msg.to_dict()["vector_clock"] == {}
+
 
 # =============================================================================
 # AUTHENTICATION FLOW TESTS
@@ -603,6 +627,57 @@ class TestHandleSyncRequest:
 
         assert isinstance(response, SyncResponse)
         assert response.has_more is False
+
+    def test_sync_request_includes_vector_clock(self, mock_get_cursor):
+        """Test that sync response includes vector_clock (Issue #234)."""
+        # First fetchall call returns no beliefs
+        # Second fetchone call returns vector_clock
+        mock_get_cursor.fetchall.return_value = []
+        mock_get_cursor.fetchone.return_value = {"vector_clock": {"p1": 10, "p2": 5}}
+
+        request = SyncRequest(
+            since=datetime.now() - timedelta(days=1),
+            domains=["test"],
+        )
+
+        node_id = uuid4()
+        with patch("valence.server.config.get_settings") as mock_settings:
+            mock_settings.return_value = MagicMock(
+                federation_node_did="did:vkb:web:local",
+                federation_private_key=None,
+            )
+
+            response = handle_sync_request(
+                request,
+                requester_node_id=node_id,
+                requester_trust=0.5,
+            )
+
+        assert isinstance(response, SyncResponse)
+        # Should include the vector clock from sync_state
+        assert response.vector_clock == {"p1": 10, "p2": 5}
+
+    def test_sync_request_empty_vector_clock_when_no_state(self, mock_get_cursor):
+        """Test sync response has empty vector_clock when no sync_state exists."""
+        mock_get_cursor.fetchall.return_value = []
+        mock_get_cursor.fetchone.return_value = None  # No sync_state row
+
+        request = SyncRequest()
+
+        with patch("valence.server.config.get_settings") as mock_settings:
+            mock_settings.return_value = MagicMock(
+                federation_node_did="did:vkb:web:local",
+                federation_private_key=None,
+            )
+
+            response = handle_sync_request(
+                request,
+                requester_node_id=uuid4(),
+                requester_trust=0.5,
+            )
+
+        assert isinstance(response, SyncResponse)
+        assert response.vector_clock == {}
 
 
 # =============================================================================
