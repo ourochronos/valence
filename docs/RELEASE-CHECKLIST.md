@@ -2,6 +2,33 @@
 
 This document defines the required steps before any Valence release.
 
+## Versioning Policy
+
+Valence follows [Semantic Versioning](https://semver.org/):
+
+| Change Type | Version Bump | Examples |
+|-------------|--------------|----------|
+| Breaking API/schema changes | **MAJOR** | Drop column, rename endpoint, remove feature |
+| New features, additive schema | **MINOR** | New table, new endpoint, new optional field |
+| Bug fixes, docs, no API changes | **PATCH** | Fix bug, update docs, performance improvement |
+
+**Schema changes:**
+- Additive (new table/column) → MINOR
+- Breaking (drop/rename/retype) → MAJOR
+- Index-only changes → PATCH
+
+## Schema & Migration Handling
+
+See [MIGRATIONS.md](./MIGRATIONS.md) for detailed guidance.
+
+**At each release:**
+1. [ ] Squash all migrations into `schema.sql`
+2. [ ] Archive old migrations to `migrations/archive/vX.Y.Z/`
+3. [ ] Reset migration numbering for next cycle
+4. [ ] Test fresh install with new `schema.sql`
+5. [ ] Test upgrade path with archived migrations
+6. [ ] Document schema changes in CHANGELOG
+
 ## Pre-Release Audit Requirements
 
 All releases MUST complete the following audits:
