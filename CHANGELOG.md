@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-02-05
+
+### Major Refactoring
+The codebase underwent significant restructuring for maintainability. Six large files (13,589 lines total) were split into focused modular packages:
+
+- **federation/groups.py** (2,073 lines) → 11 submodules (#245)
+- **privacy/trust.py** (2,529 lines) → 5 submodules (#247)
+- **core/verification.py** (1,837 lines) → 6 submodules (#248)
+- **network/node.py** (1,604 lines) → 7 submodules (#246)
+- **network/seed.py** (3,571 lines) → 9 submodules (#250)
+- **cli/main.py** (1,975 lines) → 10 submodules (#249)
+
+All existing imports remain backward compatible via `__init__.py` re-exports.
+
+### Security & Privacy
+- **TLS Enforcement** (#254): New `VALENCE_REQUIRE_TLS` config option to reject non-HTTPS federation connections in production
+- **GDPR Documentation**: New `docs/GDPR.md` explaining privacy-by-design compliance for Articles 15, 16, 17, 20, and 25
+
+### Federation Fixes
+All critical federation blockers from the security audit resolved:
+- **Vector Clock Integration** (#234, #239): Conflict detection now properly called during sync
+- **TOCTOU Race Prevention** (#235, #238): Belief import uses `ON CONFLICT DO NOTHING`
+- **Unique Constraints** (#237, #238): Added `UNIQUE` on `federation_id` column
+- **Outbound Auth** (#236, #240): Sync requests now include VFP authentication headers
+
+### Quality
+- **Exception Handling** (#197, #243): Tightened 47 broad `except Exception` patterns in network module
+- **Code Quality Audit**: Grade improved from B- to B+ (0 mypy errors, 5,094 tests passing)
+- **Test Coverage**: 81% overall coverage maintained
+- **CI Optimization** (#223): 62% faster test runs
+
+### Documentation
+- **Audit Reports**: Fresh audits for security, privacy, code quality, and federation (2026-02-05)
+- **Migration Policy**: New `docs/MIGRATIONS.md` with squash-at-release workflow
+- **Sub-Agent Workflow**: Updated `docs/SUBAGENT-WORKFLOW.md` with audit venv requirements
+
+### Migrations
+- Archived 14 migrations from v0.2.x development cycle to `migrations/archive/v0.2.x/`
+- Fresh migration numbering starts at 001 for v0.3.x cycle
+
+### Stats
+- 13,589 lines refactored
+- 12 issues closed
+- 4 comprehensive audits completed
+- 0 critical, 0 high severity findings
+
 ## [0.2.2] - 2026-02-05
 
 ### Quality Improvements
