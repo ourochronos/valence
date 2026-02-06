@@ -19,15 +19,13 @@ from __future__ import annotations
 import time
 from collections.abc import Generator
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
 
 from valence.federation.discovery import (
-    PEER_EXCHANGE_RATE_LIMIT,
-    PEER_EXCHANGE_RATE_WINDOW,
     PeerExchangeMessage,
     PeerExchangeProtocol,
     PeerExchangeResponse,
@@ -41,7 +39,6 @@ from valence.federation.models import (
     NodeStatus,
     TrustPhase,
 )
-
 
 # =============================================================================
 # FIXTURES

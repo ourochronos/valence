@@ -132,9 +132,7 @@ class NonceTracker:
             empty_origins = []
 
             for origin_id, nonces in self._seen.items():
-                expired_keys = [
-                    nonce for nonce, ts in nonces.items() if now - ts > self._ttl
-                ]
+                expired_keys = [nonce for nonce, ts in nonces.items() if now - ts > self._ttl]
                 for key in expired_keys:
                     del nonces[key]
                     removed += 1
@@ -157,9 +155,7 @@ class NonceTracker:
             return
 
         now = time.monotonic()
-        expired_keys = [
-            nonce for nonce, ts in nonces.items() if now - ts > self._ttl
-        ]
+        expired_keys = [nonce for nonce, ts in nonces.items() if now - ts > self._ttl]
         for key in expired_keys:
             del nonces[key]
 

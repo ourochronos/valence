@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+
 from valence.core.confidence import (
     DEFAULT_WEIGHTS,
     ConfidenceDimension,
