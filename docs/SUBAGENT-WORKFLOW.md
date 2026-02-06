@@ -188,6 +188,47 @@ PR #X / Issue #Y — [brief context]
 When fixing issues found in audits, update the audit doc's status section:
 ```markdown
 | Finding | Status | PR/Issue |
+
+## Audit Sub-Agents
+
+Audit sub-agents analyze the codebase for security, privacy, code quality, or other concerns. They have special requirements to ensure accurate findings.
+
+### Fresh Environment Required
+
+**Always create a fresh venv for audits.** Stale environments can report false positives (e.g., wrong dependency versions).
+
+```bash
+# Audit sub-agent setup
+cd ~/.openclaw/workspace/repos/valence
+git fetch origin && git reset --hard origin/main
+
+# Create fresh venv
+python3 -m venv .audit-venv
+source .audit-venv/bin/activate
+pip install -e ".[dev]" --quiet
+
+# Now run audit checks
+pip show PyJWT | grep Version  # Verify actual installed versions
+```
+
+### Audit Checklist
+
+Before reporting findings:
+- [ ] Fresh venv created and dependencies installed
+- [ ] Verified dependency versions match pyproject.toml specs
+- [ ] Ran checks against actual installed packages, not cached data
+- [ ] Cross-referenced with CI to confirm findings
+
+### Cleanup
+
+Remove audit venv after completion:
+```bash
+rm -rf .audit-venv
+```
+
+### Why This Matters
+
+The PyJWT incident (2026-02-05): Audit reported PyJWT 2.7.0 installed when pyproject.toml specified >=2.11.0. Root cause: stale main venv. Fresh install confirmed 2.11.0 was correct. False positive wasted investigation time.
 |---------|--------|----------|
 | [finding] | ✅ Fixed | #123 |
 ```
