@@ -17,6 +17,17 @@ from .db import (
     get_pool_stats,
     put_connection,
 )
+from .dimension_registry import (
+    DimensionRegistry,
+    DimensionSchema,
+    ValidationResult,
+)
+from .dimension_registry import (
+    get_registry as get_dimension_registry,
+)
+from .dimension_registry import (
+    reset_registry as reset_dimension_registry,
+)
 from .exceptions import (
     ConfigException,
     ConflictError,
@@ -151,6 +162,11 @@ __all__ = [
     # Confidence
     "DimensionalConfidence",
     "ConfidenceDimension",
+    "DimensionSchema",
+    "DimensionRegistry",
+    "ValidationResult",
+    "get_dimension_registry",
+    "reset_dimension_registry",
     # Temporal
     "TemporalValidity",
     # Database

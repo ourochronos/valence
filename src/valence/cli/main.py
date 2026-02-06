@@ -37,6 +37,7 @@ from .commands import (
     cmd_query,
     cmd_query_federated,
     cmd_resources,
+    cmd_schema,
     cmd_stats,
     cmd_trust,
 )
@@ -446,6 +447,25 @@ Federation (Week 2):
     migrate_bootstrap.add_argument("--dry-run", action="store_true", help="Show what would be applied")
 
     # ========================================================================
+    # SCHEMA commands (#267)
+    # ========================================================================
+
+    schema_parser = subparsers.add_parser("schema", help="Dimension schema management")
+    schema_subparsers = schema_parser.add_subparsers(dest="schema_command", required=True)
+
+    # schema list
+    schema_subparsers.add_parser("list", help="List all registered dimension schemas")
+
+    # schema show
+    schema_show = schema_subparsers.add_parser("show", help="Show details of a dimension schema")
+    schema_show.add_argument("name", help="Schema name (e.g. v1.confidence.core)")
+
+    # schema validate
+    schema_validate = schema_subparsers.add_parser("validate", help="Validate dimensions against a schema")
+    schema_validate.add_argument("name", help="Schema name")
+    schema_validate.add_argument("json", help="JSON object of dimension values")
+
+    # ========================================================================
     # MIGRATE-VISIBILITY command (legacy)
     # ========================================================================
 
@@ -476,6 +496,7 @@ def main() -> int:
         "trust": cmd_trust,
         "embeddings": cmd_embeddings,
         "resources": cmd_resources,
+        "schema": cmd_schema,
         "migrate": cmd_migrate,
         "migrate-visibility": cmd_migrate_visibility,
     }

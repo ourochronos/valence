@@ -174,12 +174,39 @@ class DimensionalConfidence:
         if domain_applicability is not None:
             self.dimensions[ConfidenceDimension.DOMAIN_APPLICABILITY] = domain_applicability
 
-        # Validate
+        # Validate basic range
         if self.overall < 0 or self.overall > 1:
             raise ValueError(f"overall must be between 0 and 1, got {self.overall}")
         for dim, value in self.dimensions.items():
             if value < 0 or value > 1:
                 raise ValueError(f"{dim} must be between 0 and 1, got {value}")
+
+        # Validate against schema registry (if schema is registered)
+        self._validate_against_registry()
+
+    def _validate_against_registry(self) -> None:
+        """Validate dimensions against the schema registry, if available.
+
+        This performs a soft check: if the schema is registered in the
+        dimension registry, values are validated against it.  Unknown
+        schemas are silently accepted to preserve forward-compatibility.
+        """
+        if not self.dimensions:
+            return
+        # Late import to avoid circular dependency
+        from valence.core.dimension_registry import get_registry
+
+        registry = get_registry()
+        schema = registry.get(self.schema)
+        if schema is None:
+            return  # Unknown schema — no validation
+        result = registry.validate(self.schema, self.dimensions)
+        if not result.valid:
+            # Only raise for value-range errors; missing required dims
+            # and unknown dims are warnings only during construction
+            range_errors = [e for e in result.errors if "out of range" in e]
+            if range_errors:
+                raise ValueError("; ".join(range_errors))
 
     # =========================================================================
     # Backward-compatible properties for core dimensions
