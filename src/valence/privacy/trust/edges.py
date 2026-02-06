@@ -3,6 +3,15 @@
 This module contains the core data structures for representing trust relationships:
 - DecayModel: Enum for how trust decays over time
 - TrustEdge: An edge in the trust graph with multi-dimensional trust scores
+- EpistemicTrustDimension: Extended epistemic trust dimensions (#268)
+
+Trust schemas:
+- v1.trust.core: Original 4D trust (competence, integrity, confidentiality, judgment)
+- v1.trust.epistemic: Extended 6D epistemic trust (#268)
+
+The epistemic trust dimensions live in the extensible `dimensions` dict
+on TrustEdge, following the pattern from confidence.py. This keeps backward
+compatibility: the original 4 fields still work as direct attributes.
 """
 
 from __future__ import annotations
@@ -22,6 +31,100 @@ logger = logging.getLogger(__name__)
 # or premature rejection of otherwise valid trust edges.
 # Default: 5 minutes (300 seconds). Configurable via environment or settings.
 CLOCK_SKEW_TOLERANCE = timedelta(minutes=5)
+
+# ============================================================================
+# Epistemic Trust Dimensions (#268)
+# ============================================================================
+
+# Schema identifiers
+TRUST_SCHEMA_CORE = "v1.trust.core"
+TRUST_SCHEMA_EPISTEMIC = "v1.trust.epistemic"
+
+
+class EpistemicTrustDimension(StrEnum):
+    """Extended epistemic trust dimensions (#268).
+
+    These capture *why* you trust someone's knowledge contributions,
+    not just *that* you trust them.
+    """
+
+    CONCLUSIONS = "conclusions"  # Do I adopt their beliefs?
+    REASONING = "reasoning"  # Is their logic worth following?
+    PERSPECTIVE = "perspective"  # Do they see things I miss?
+    HONESTY = "honesty"  # Do they update when wrong? Steelman?
+    METHODOLOGY = "methodology"  # How do they gather/evaluate evidence?
+    PREDICTIVE = "predictive"  # Do their predictions come true?
+
+
+# All epistemic dimension names for iteration
+EPISTEMIC_DIMENSIONS: list[str] = [d.value for d in EpistemicTrustDimension]
+
+# Default weights for combining epistemic dimensions into an overall score.
+# Reasoning and honesty weighted highest — they're hardest to fake.
+DEFAULT_EPISTEMIC_WEIGHTS: dict[str, float] = {
+    EpistemicTrustDimension.CONCLUSIONS: 0.15,
+    EpistemicTrustDimension.REASONING: 0.20,
+    EpistemicTrustDimension.PERSPECTIVE: 0.15,
+    EpistemicTrustDimension.HONESTY: 0.20,
+    EpistemicTrustDimension.METHODOLOGY: 0.15,
+    EpistemicTrustDimension.PREDICTIVE: 0.15,
+}
+
+# Floor value to prevent zeros in geometric mean calculations
+EPSILON = 0.001
+
+
+def compute_epistemic_trust(
+    dims: dict[str, float],
+    weights: dict[str, float] | None = None,
+    use_geometric: bool = True,
+) -> float:
+    """Compute overall epistemic trust from dimension values.
+
+    Follows the same math as confidence.py's _compute_overall:
+    - Geometric mean: (∏v_i^{w_i})^{1/∑w_i} — penalizes imbalanced vectors
+    - Arithmetic mean: ∑(w_i * v_i) / ∑w_i — traditional weighted average
+
+    Args:
+        dims: Dictionary of dimension name -> value (0.0 to 1.0)
+        weights: Dictionary of dimension name -> weight (defaults to DEFAULT_EPISTEMIC_WEIGHTS)
+        use_geometric: If True, use weighted geometric mean (recommended)
+
+    Returns:
+        Overall epistemic trust score in [0, 1]
+    """
+    if not dims:
+        return 0.5  # Default when no dimensions present
+
+    effective_weights = weights or DEFAULT_EPISTEMIC_WEIGHTS
+
+    if use_geometric:
+        log_sum = 0.0
+        total_weight = 0.0
+        for dim, value in dims.items():
+            w = effective_weights.get(dim, 1.0 / len(dims))
+            if w > 0:
+                safe_value = max(EPSILON, value)
+                log_sum += w * math.log(safe_value)
+                total_weight += w
+        if total_weight > 0:
+            overall = math.exp(log_sum / total_weight)
+        else:
+            overall = 0.5
+    else:
+        weighted_sum = 0.0
+        total_weight = 0.0
+        for dim, value in dims.items():
+            w = effective_weights.get(dim, 1.0 / len(dims))
+            if w > 0:
+                weighted_sum += w * value
+                total_weight += w
+        if total_weight > 0:
+            overall = weighted_sum / total_weight
+        else:
+            overall = 0.5
+
+    return min(1.0, max(0.0, overall))
 
 
 class RelationshipType(StrEnum):
@@ -136,6 +239,9 @@ class TrustEdge:
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     expires_at: datetime | None = None
+    # Extensible dimensions (#268) — epistemic trust dimensions live here
+    dimensions: dict[str, float] = field(default_factory=dict)
+    schema: str = TRUST_SCHEMA_CORE
 
     def __post_init__(self) -> None:
         """Validate fields after initialization."""
@@ -146,6 +252,11 @@ class TrustEdge:
             ("confidentiality", self.confidentiality),
             ("judgment", self.judgment),
         ]:
+            if not 0.0 <= dim_value <= 1.0:
+                raise ValueError(f"{dim_name} must be between 0.0 and 1.0, got {dim_value}")
+
+        # Validate extended dimensions (#268)
+        for dim_name, dim_value in self.dimensions.items():
             if not 0.0 <= dim_value <= 1.0:
                 raise ValueError(f"{dim_name} must be between 0.0 and 1.0, got {dim_value}")
 
@@ -178,6 +289,44 @@ class TrustEdge:
         if not isinstance(other, TrustEdge):
             return False
         return self.source_did == other.source_did and self.target_did == other.target_did and self.domain == other.domain
+
+    # =========================================================================
+    # Epistemic dimension accessors (#268)
+    # =========================================================================
+
+    def get_dimension(self, name: str) -> float | None:
+        """Get any extended dimension by name."""
+        return self.dimensions.get(name)
+
+    def set_dimension(self, name: str, value: float | None) -> None:
+        """Set any extended dimension by name."""
+        if value is not None:
+            if not 0.0 <= value <= 1.0:
+                raise ValueError(f"{name} must be between 0.0 and 1.0, got {value}")
+            self.dimensions[name] = value
+        elif name in self.dimensions:
+            del self.dimensions[name]
+
+    def has_dimension(self, name: str) -> bool:
+        """Check if an extended dimension is set."""
+        return name in self.dimensions
+
+    @property
+    def epistemic_dimensions(self) -> dict[str, float]:
+        """Return only the epistemic trust dimensions from the dimensions dict."""
+        return {k: v for k, v in self.dimensions.items() if k in EPISTEMIC_DIMENSIONS}
+
+    @property
+    def epistemic_trust(self) -> float | None:
+        """Compute overall epistemic trust from extended dimensions.
+
+        Returns None if no epistemic dimensions are set.
+        Uses weighted geometric mean (same math as confidence.py).
+        """
+        eps = self.epistemic_dimensions
+        if not eps:
+            return None
+        return compute_epistemic_trust(eps)
 
     @property
     def overall_trust(self) -> float:
@@ -250,7 +399,7 @@ class TrustEdge:
 
         return value
 
-    def effective_trust(self, as_of: datetime | None = None) -> dict[str, float]:
+    def effective_trust(self, as_of: datetime | None = None) -> dict[str, Any]:
         """Calculate effective trust for all dimensions after applying decay.
 
         Args:
@@ -298,13 +447,26 @@ class TrustEdge:
                 product *= v
             effective_overall = product ** (1.0 / len(values))
 
-        return {
+        result: dict[str, Any] = {
             "competence": effective_competence,
             "integrity": effective_integrity,
             "confidentiality": effective_confidentiality,
             "judgment": effective_judgment,
             "overall": effective_overall,
         }
+
+        # Apply decay to epistemic dimensions too (#268)
+        if self.dimensions:
+            effective_dims: dict[str, float] = {}
+            for dim_name, dim_value in self.dimensions.items():
+                effective_dims[dim_name] = self._apply_decay_to_value(dim_value, days)
+            result["dimensions"] = effective_dims
+            # Compute effective epistemic overall if epistemic dims present
+            eps_dims = {k: v for k, v in effective_dims.items() if k in EPISTEMIC_DIMENSIONS}
+            if eps_dims:
+                result["epistemic_overall"] = compute_epistemic_trust(eps_dims)
+
+        return result
 
     def refresh_trust(
         self,
@@ -342,6 +504,9 @@ class TrustEdge:
                     if not 0.0 <= dim_value <= 1.0:
                         raise ValueError(f"{dim_name} must be between 0.0 and 1.0, got {dim_value}")
                     setattr(self, dim_name, dim_value)
+                else:
+                    # Extended dimensions (#268)
+                    self.set_dimension(dim_name, dim_value)
 
         logger.debug(f"Refreshed trust edge {self.source_did} -> {self.target_did}: last_refreshed={self.last_refreshed}")
 
@@ -379,6 +544,8 @@ class TrustEdge:
             created_at=self.created_at,
             updated_at=self.updated_at,
             expires_at=self.expires_at,
+            dimensions=dict(self.dimensions),
+            schema=self.schema,
         )
 
     def with_delegation(
@@ -417,6 +584,8 @@ class TrustEdge:
             created_at=self.created_at,
             updated_at=self.updated_at,
             expires_at=self.expires_at,
+            dimensions=dict(self.dimensions),
+            schema=self.schema,
         )
 
     def is_stale(self, min_effective_trust: float = 0.1) -> bool:
@@ -479,7 +648,7 @@ class TrustEdge:
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary for JSON storage."""
         effective = self.effective_trust()
-        return {
+        result: dict[str, Any] = {
             "source_did": self.source_did,
             "target_did": self.target_did,
             "competence": self.competence,
@@ -500,6 +669,18 @@ class TrustEdge:
             "overall_trust": self.overall_trust,
             "effective_trust": effective,
         }
+
+        # Include extended dimensions and schema (#268)
+        if self.dimensions:
+            result["dimensions"] = dict(self.dimensions)
+        if self.schema != TRUST_SCHEMA_CORE:
+            result["schema"] = self.schema
+        # Include epistemic overall if epistemic dimensions are set
+        eps_trust = self.epistemic_trust
+        if eps_trust is not None:
+            result["epistemic_trust"] = eps_trust
+
+        return result
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> TrustEdge:
@@ -542,6 +723,16 @@ class TrustEdge:
         if isinstance(edge_id, str):
             edge_id = UUID(edge_id)
 
+        # Parse extended dimensions (#268)
+        raw_dimensions = data.get("dimensions", {})
+        dimensions: dict[str, float] = {}
+        if isinstance(raw_dimensions, dict):
+            for k, v in raw_dimensions.items():
+                if isinstance(v, int | float):
+                    dimensions[k] = float(v)
+
+        schema = data.get("schema", TRUST_SCHEMA_CORE)
+
         return cls(
             source_did=data["source_did"],
             target_did=data["target_did"],
@@ -560,6 +751,83 @@ class TrustEdge:
             created_at=created_at,
             updated_at=updated_at,
             expires_at=expires_at,
+            dimensions=dimensions,
+            schema=schema,
+        )
+
+    @classmethod
+    def with_epistemic(
+        cls,
+        source_did: str,
+        target_did: str,
+        *,
+        conclusions: float | None = None,
+        reasoning: float | None = None,
+        perspective: float | None = None,
+        honesty: float | None = None,
+        methodology: float | None = None,
+        predictive: float | None = None,
+        # Core 4D dimensions (defaults preserved)
+        competence: float = 0.5,
+        integrity: float = 0.5,
+        confidentiality: float = 0.5,
+        judgment: float = 0.1,
+        domain: str | None = None,
+        **kwargs: Any,
+    ) -> TrustEdge:
+        """Create a TrustEdge with epistemic dimensions (#268).
+
+        Convenience factory that sets the schema to v1.trust.epistemic
+        and populates the dimensions dict from keyword args.
+
+        Args:
+            source_did: The trusting entity's DID
+            target_did: The trusted entity's DID
+            conclusions: Do I adopt their beliefs? (0-1)
+            reasoning: Is their logic worth following? (0-1)
+            perspective: Do they see things I miss? (0-1)
+            honesty: Do they update when wrong? Steelman? (0-1)
+            methodology: How do they gather/evaluate evidence? (0-1)
+            predictive: Do their predictions come true? (0-1)
+            competence: Core trust dimension (default 0.5)
+            integrity: Core trust dimension (default 0.5)
+            confidentiality: Core trust dimension (default 0.5)
+            judgment: Core trust dimension (default 0.1)
+            domain: Optional domain scope
+            **kwargs: Additional keyword arguments passed to TrustEdge
+
+        Returns:
+            TrustEdge with epistemic dimensions populated
+
+        Example:
+            >>> edge = TrustEdge.with_epistemic(
+            ...     "did:key:alice", "did:key:bob",
+            ...     conclusions=0.8, reasoning=0.9, honesty=0.85,
+            ... )
+        """
+        dimensions: dict[str, float] = {}
+        for dim_name, dim_value in [
+            (EpistemicTrustDimension.CONCLUSIONS, conclusions),
+            (EpistemicTrustDimension.REASONING, reasoning),
+            (EpistemicTrustDimension.PERSPECTIVE, perspective),
+            (EpistemicTrustDimension.HONESTY, honesty),
+            (EpistemicTrustDimension.METHODOLOGY, methodology),
+            (EpistemicTrustDimension.PREDICTIVE, predictive),
+        ]:
+            if dim_value is not None:
+                dimensions[dim_name] = dim_value
+
+        return cls(
+            source_did=source_did,
+            target_did=target_did,
+            competence=competence,
+            integrity=integrity,
+            confidentiality=confidentiality,
+            judgment=judgment,
+            domain=domain,
+            dimensions=dimensions,
+            schema=TRUST_SCHEMA_EPISTEMIC if dimensions else TRUST_SCHEMA_CORE,
+            **kwargs,
         )
 
 

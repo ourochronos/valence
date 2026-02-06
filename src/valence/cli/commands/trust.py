@@ -6,6 +6,108 @@ import argparse
 import json
 
 
+def cmd_trust_set(args: argparse.Namespace) -> int:
+    """Set multi-dimensional epistemic trust on an entity (#268).
+
+    Usage:
+        valence trust set <entity> --conclusions 0.8 --reasoning 0.9 --honesty 0.7
+    """
+    from ...privacy.trust import EPISTEMIC_DIMENSIONS, TrustService
+
+    service = TrustService(use_memory=False)
+
+    # Collect epistemic dimensions from args
+    dimensions: dict[str, float] = {}
+    for dim in EPISTEMIC_DIMENSIONS:
+        value = getattr(args, dim, None)
+        if value is not None:
+            dimensions[dim] = value
+
+    # Collect core 4D overrides
+    competence = getattr(args, "competence", None)
+    integrity = getattr(args, "integrity", None)
+    confidentiality = getattr(args, "confidentiality", None)
+    judgment = getattr(args, "judgment", None)
+
+    if not dimensions and all(v is None for v in [competence, integrity, confidentiality, judgment]):
+        print("❌ No trust dimensions specified. Use --conclusions, --reasoning, etc.")
+        return 1
+
+    try:
+        edge = service.set_trust_dimensions(
+            source_did=args.source or "self",
+            target_did=args.entity,
+            dimensions=dimensions,
+            domain=getattr(args, "domain", None),
+            competence=competence,
+            integrity=integrity,
+            confidentiality=confidentiality,
+            judgment=judgment,
+        )
+
+        if args.json:
+            print(json.dumps(edge.to_dict(), indent=2, default=str))
+        else:
+            print(f"✅ Trust updated: → {args.entity}")
+            if dimensions:
+                print("   Epistemic dimensions:")
+                for dim, val in sorted(dimensions.items()):
+                    print(f"     {dim}: {val:.2f}")
+            if edge.epistemic_trust is not None:
+                print(f"   Epistemic overall: {edge.epistemic_trust:.2f}")
+            print(f"   Core overall: {edge.overall_trust:.2f}")
+
+        return 0
+
+    except Exception as e:
+        print(f"❌ Failed to set trust: {e}")
+        return 1
+
+
+def cmd_trust_show(args: argparse.Namespace) -> int:
+    """Show trust dimensions for an entity (#268)."""
+    from ...privacy.trust import TrustService
+
+    service = TrustService(use_memory=False)
+
+    try:
+        edge = service.get_trust(
+            source_did=args.source or "self",
+            target_did=args.entity,
+            domain=getattr(args, "domain", None),
+        )
+
+        if edge is None:
+            print(f"No trust edge found for {args.entity}")
+            return 1
+
+        if args.json:
+            print(json.dumps(edge.to_dict(), indent=2, default=str))
+        else:
+            print(f"🔍 Trust: → {args.entity}")
+            print(f"   Schema: {edge.schema}")
+            print("\n   Core dimensions:")
+            print(f"     competence:      {edge.competence:.2f}")
+            print(f"     integrity:       {edge.integrity:.2f}")
+            print(f"     confidentiality: {edge.confidentiality:.2f}")
+            print(f"     judgment:        {edge.judgment:.2f}")
+            print(f"     overall:         {edge.overall_trust:.2f}")
+
+            if edge.dimensions:
+                print("\n   Epistemic dimensions:")
+                for dim, val in sorted(edge.dimensions.items()):
+                    print(f"     {dim}: {val:.2f}")
+                eps = edge.epistemic_trust
+                if eps is not None:
+                    print(f"     epistemic overall: {eps:.2f}")
+
+        return 0
+
+    except Exception as e:
+        print(f"❌ Failed to get trust: {e}")
+        return 1
+
+
 def cmd_trust_check(args: argparse.Namespace) -> int:
     """Check for trust concentration issues in the federation network."""
     from ...federation.trust import check_trust_concentration
@@ -187,6 +289,10 @@ def cmd_trust(args: argparse.Namespace) -> int:
     """Dispatch trust subcommands."""
     if args.trust_command == "check":
         return cmd_trust_check(args)
+    elif args.trust_command == "set":
+        return cmd_trust_set(args)
+    elif args.trust_command == "show":
+        return cmd_trust_show(args)
     elif args.trust_command == "watch":
         return cmd_trust_watch(args)
     elif args.trust_command == "unwatch":

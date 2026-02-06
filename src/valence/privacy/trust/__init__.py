@@ -37,10 +37,16 @@ from .computation import (
 # Edge types
 from .edges import (
     CLOCK_SKEW_TOLERANCE,
+    DEFAULT_EPISTEMIC_WEIGHTS,
+    EPISTEMIC_DIMENSIONS,
+    TRUST_SCHEMA_CORE,
+    TRUST_SCHEMA_EPISTEMIC,
     DecayModel,
+    EpistemicTrustDimension,
     RelationshipType,
     TrustEdge,
     TrustEdge4D,
+    compute_epistemic_trust,
 )
 
 # Federation types and functions
@@ -68,7 +74,9 @@ from .graph_store import (
 from .service import (
     TrustService,
     compute_delegated_trust_from_service,
+    compute_weighted_trust,
     get_trust,
+    get_trust_dimensions,
     get_trust_service,
     grant_trust,
     list_trusted,
@@ -76,6 +84,7 @@ from .service import (
     revoke_trust,
     set_distrust,
     set_ignore,
+    set_trust_dimensions,
     unwatch,
     watch,
 )
@@ -83,12 +92,19 @@ from .service import (
 __all__ = [
     # Constants
     "CLOCK_SKEW_TOLERANCE",
+    "DEFAULT_EPISTEMIC_WEIGHTS",
+    "EPISTEMIC_DIMENSIONS",
     "FEDERATION_PREFIX",
+    "TRUST_SCHEMA_CORE",
+    "TRUST_SCHEMA_EPISTEMIC",
     # Edge types
     "DecayModel",
+    "EpistemicTrustDimension",
     "RelationshipType",
     "TrustEdge",
     "TrustEdge4D",
+    # Epistemic trust computation
+    "compute_epistemic_trust",
     # Computation
     "compute_delegated_trust",
     "compute_transitive_trust",
@@ -108,6 +124,9 @@ __all__ = [
     "set_distrust",
     "set_ignore",
     "compute_delegated_trust_from_service",
+    "compute_weighted_trust",
+    "get_trust_dimensions",
+    "set_trust_dimensions",
     # Federation types
     "FederationTrustEdge",
     "FederationMembershipRegistry",

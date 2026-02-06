@@ -80,6 +80,18 @@ def compute_delegated_trust(
     else:
         result_depth = max(0, min(direct_edge.delegation_depth, delegated_edge.delegation_depth) - 1)
 
+    # Delegate extended dimensions too (#268)
+    delegated_dimensions: dict[str, float] = {}
+    all_dim_keys = set(direct_edge.dimensions.keys()) | set(delegated_edge.dimensions.keys())
+    for dim_key in all_dim_keys:
+        direct_val = direct_edge.dimensions.get(dim_key)
+        delegated_val = delegated_edge.dimensions.get(dim_key)
+        if direct_val is not None and delegated_val is not None:
+            delegated_dimensions[dim_key] = delegate_dimension(direct_val, delegated_val)
+        elif delegated_val is not None:
+            # Only the delegated edge has this dimension — scale by judgment alone
+            delegated_dimensions[dim_key] = delegated_val * judgment_weight
+
     return TrustEdge(
         source_did=direct_edge.source_did,
         target_did=delegated_edge.target_did,
@@ -91,6 +103,8 @@ def compute_delegated_trust(
         domain=delegated_edge.domain,  # Use the target edge's domain
         can_delegate=result_can_delegate,
         delegation_depth=result_depth,
+        dimensions=delegated_dimensions,
+        schema=delegated_edge.schema,
     )
 
 
@@ -210,6 +224,17 @@ def compute_transitive_trust(
 
     # Combine paths: take max of each dimension (optimistic combination)
     # This represents "trust via the best available path"
+
+    # Combine extended dimensions (#268)
+    all_dim_keys: set[str] = set()
+    for t in path_trusts:
+        all_dim_keys.update(t.dimensions.keys())
+    combined_dimensions: dict[str, float] = {}
+    for dim_key in all_dim_keys:
+        values = [t.dimensions[dim_key] for t in path_trusts if dim_key in t.dimensions]
+        if values:
+            combined_dimensions[dim_key] = max(values)
+
     return TrustEdge(
         source_did=source_did,
         target_did=target_did,
@@ -217,4 +242,5 @@ def compute_transitive_trust(
         integrity=max(t.integrity for t in path_trusts),
         confidentiality=max(t.confidentiality for t in path_trusts),
         judgment=max(t.judgment for t in path_trusts),
+        dimensions=combined_dimensions,
     )

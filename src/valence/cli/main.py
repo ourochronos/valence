@@ -343,6 +343,38 @@ Federation (Week 2):
     trust_ignore_parser.add_argument("entity", help="DID of entity to ignore")
     trust_ignore_parser.add_argument("--domain", "-d", help="Optional domain scope")
 
+    # trust set (#268) — set multi-dimensional epistemic trust
+    trust_set_parser = trust_subparsers.add_parser(
+        "set",
+        help="Set multi-dimensional epistemic trust on an entity",
+    )
+    trust_set_parser.add_argument("entity", help="Target entity DID")
+    trust_set_parser.add_argument("--source", default=None, help="Source DID (default: self)")
+    trust_set_parser.add_argument("--domain", default=None, help="Domain scope")
+    trust_set_parser.add_argument("--json", "-j", action="store_true", help="Output as JSON")
+    # Epistemic dimensions
+    trust_set_parser.add_argument("--conclusions", type=float, default=None, help="Trust in their conclusions (0-1)")
+    trust_set_parser.add_argument("--reasoning", type=float, default=None, help="Trust in their reasoning (0-1)")
+    trust_set_parser.add_argument("--perspective", type=float, default=None, help="Trust in their perspective (0-1)")
+    trust_set_parser.add_argument("--honesty", type=float, default=None, help="Trust in their honesty (0-1)")
+    trust_set_parser.add_argument("--methodology", type=float, default=None, help="Trust in their methodology (0-1)")
+    trust_set_parser.add_argument("--predictive", type=float, default=None, help="Trust in their predictions (0-1)")
+    # Core 4D overrides
+    trust_set_parser.add_argument("--competence", type=float, default=None, help="Core competence score (0-1)")
+    trust_set_parser.add_argument("--integrity", type=float, default=None, help="Core integrity score (0-1)")
+    trust_set_parser.add_argument("--confidentiality", type=float, default=None, help="Core confidentiality score (0-1)")
+    trust_set_parser.add_argument("--judgment", type=float, default=None, help="Core judgment score (0-1)")
+
+    # trust show (#268) — show trust dimensions for an entity
+    trust_show_parser = trust_subparsers.add_parser(
+        "show",
+        help="Show trust dimensions for an entity",
+    )
+    trust_show_parser.add_argument("entity", help="Target entity DID")
+    trust_show_parser.add_argument("--source", default=None, help="Source DID (default: self)")
+    trust_show_parser.add_argument("--domain", default=None, help="Domain scope")
+    trust_show_parser.add_argument("--json", "-j", action="store_true", help="Output as JSON")
+
     # ========================================================================
     # EMBEDDINGS commands
     # ========================================================================

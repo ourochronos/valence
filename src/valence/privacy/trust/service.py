@@ -11,7 +11,13 @@ from collections import deque
 from datetime import datetime
 
 from .computation import compute_delegated_trust
-from .edges import RelationshipType, TrustEdge, TrustEdge4D
+from .edges import (
+    TRUST_SCHEMA_EPISTEMIC,
+    RelationshipType,
+    TrustEdge,
+    TrustEdge4D,
+    compute_epistemic_trust,
+)
 from .graph_store import TrustGraphStore, get_trust_graph_store
 
 logger = logging.getLogger(__name__)
@@ -125,6 +131,153 @@ class TrustService:
         else:
             assert self._store is not None
             return self._store.add_edge(edge)
+
+    def set_trust_dimensions(
+        self,
+        source_did: str,
+        target_did: str,
+        dimensions: dict[str, float],
+        domain: str | None = None,
+        competence: float | None = None,
+        integrity: float | None = None,
+        confidentiality: float | None = None,
+        judgment: float | None = None,
+    ) -> TrustEdge4D:
+        """Set multi-dimensional epistemic trust (#268).
+
+        Creates or updates a trust edge with epistemic dimensions.
+        If an edge already exists, merges the new dimensions into it.
+        Unspecified core 4D values are preserved from the existing edge.
+
+        Args:
+            source_did: DID of the trusting agent
+            target_did: DID of the agent being trusted
+            dimensions: Dict of dimension name -> value (0-1).
+                       Keys should be EpistemicTrustDimension values.
+            domain: Optional scope/context for this trust relationship
+            competence: Optionally update core competence score
+            integrity: Optionally update core integrity score
+            confidentiality: Optionally update core confidentiality score
+            judgment: Optionally update core judgment score
+
+        Returns:
+            The created or updated TrustEdge4D
+
+        Example:
+            >>> service.set_trust_dimensions(
+            ...     "did:key:alice", "did:key:bob",
+            ...     dimensions={"conclusions": 0.8, "reasoning": 0.9},
+            ... )
+        """
+        # Look for existing edge to merge
+        existing = self.get_trust(source_did, target_did, domain)
+
+        if existing:
+            # Merge dimensions into existing edge
+            merged_dims = dict(existing.dimensions)
+            merged_dims.update(dimensions)
+
+            # Update core fields only if explicitly provided
+            edge = TrustEdge4D(
+                source_did=source_did,
+                target_did=target_did,
+                competence=competence if competence is not None else existing.competence,
+                integrity=integrity if integrity is not None else existing.integrity,
+                confidentiality=confidentiality if confidentiality is not None else existing.confidentiality,
+                judgment=judgment if judgment is not None else existing.judgment,
+                domain=domain,
+                can_delegate=existing.can_delegate,
+                delegation_depth=existing.delegation_depth,
+                dimensions=merged_dims,
+                schema=TRUST_SCHEMA_EPISTEMIC,
+            )
+            edge.created_at = existing.created_at
+            edge.id = existing.id
+        else:
+            # Create new edge
+            edge = TrustEdge4D(
+                source_did=source_did,
+                target_did=target_did,
+                competence=competence if competence is not None else 0.5,
+                integrity=integrity if integrity is not None else 0.5,
+                confidentiality=confidentiality if confidentiality is not None else 0.5,
+                judgment=judgment if judgment is not None else 0.1,
+                domain=domain,
+                dimensions=dict(dimensions),
+                schema=TRUST_SCHEMA_EPISTEMIC,
+            )
+
+        if self._use_memory:
+            key = self._make_key(source_did, target_did, domain)
+            self._memory_store[key] = edge
+            return edge
+        else:
+            assert self._store is not None
+            return self._store.add_edge(edge)
+
+    def get_trust_dimensions(
+        self,
+        source_did: str,
+        target_did: str,
+        dimension: str | None = None,
+        domain: str | None = None,
+    ) -> dict[str, float] | float | None:
+        """Get epistemic trust dimensions (#268).
+
+        Args:
+            source_did: DID of the trusting agent
+            target_did: DID of the trusted agent
+            dimension: If specified, return just that dimension's value.
+                      If None, return all dimensions.
+            domain: Optional scope to query
+
+        Returns:
+            - If dimension is specified: float value or None if not set
+            - If dimension is None: dict of all dimensions, or None if no edge
+        """
+        edge = self.get_trust(source_did, target_did, domain)
+        if edge is None:
+            return None
+
+        if dimension is not None:
+            return edge.dimensions.get(dimension)
+
+        return dict(edge.dimensions) if edge.dimensions else {}
+
+    def compute_weighted_trust(
+        self,
+        source_did: str,
+        target_did: str,
+        domain: str | None = None,
+        weights: dict[str, float] | None = None,
+    ) -> float | None:
+        """Compute weighted overall epistemic trust score (#268).
+
+        Combines epistemic dimensions into a single score using weighted
+        geometric mean. Falls back to core overall_trust if no epistemic
+        dimensions are set.
+
+        Args:
+            source_did: DID of the trusting agent
+            target_did: DID of the trusted agent
+            domain: Optional scope to query
+            weights: Custom weights for combining dimensions.
+                    Defaults to DEFAULT_EPISTEMIC_WEIGHTS.
+
+        Returns:
+            Overall epistemic trust score, or None if no edge found
+        """
+        edge = self.get_trust(source_did, target_did, domain)
+        if edge is None:
+            return None
+
+        # If epistemic dimensions exist, compute from them
+        eps = edge.epistemic_dimensions
+        if eps:
+            return compute_epistemic_trust(eps, weights)
+
+        # Fall back to core overall trust
+        return edge.overall_trust
 
     def revoke_trust(
         self,
@@ -952,6 +1105,51 @@ def set_ignore(
         source_did=source_did,
         target_did=target_did,
         domain=domain,
+    )
+
+
+def set_trust_dimensions(
+    source_did: str,
+    target_did: str,
+    dimensions: dict[str, float],
+    domain: str | None = None,
+) -> TrustEdge4D:
+    """Set epistemic trust dimensions (convenience function using default service)."""
+    return get_trust_service().set_trust_dimensions(
+        source_did=source_did,
+        target_did=target_did,
+        dimensions=dimensions,
+        domain=domain,
+    )
+
+
+def get_trust_dimensions(
+    source_did: str,
+    target_did: str,
+    dimension: str | None = None,
+    domain: str | None = None,
+) -> dict[str, float] | float | None:
+    """Get epistemic trust dimensions (convenience function using default service)."""
+    return get_trust_service().get_trust_dimensions(
+        source_did=source_did,
+        target_did=target_did,
+        dimension=dimension,
+        domain=domain,
+    )
+
+
+def compute_weighted_trust(
+    source_did: str,
+    target_did: str,
+    domain: str | None = None,
+    weights: dict[str, float] | None = None,
+) -> float | None:
+    """Compute weighted epistemic trust (convenience function using default service)."""
+    return get_trust_service().compute_weighted_trust(
+        source_did=source_did,
+        target_did=target_did,
+        domain=domain,
+        weights=weights,
     )
 
 
