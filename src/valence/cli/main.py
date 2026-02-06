@@ -23,6 +23,7 @@ from .commands import (
     cmd_add,
     cmd_conflicts,
     cmd_discover,
+    cmd_embeddings,
     cmd_export,
     cmd_import,
     cmd_init,
@@ -52,6 +53,7 @@ __all__ = [
     "cmd_add",
     "cmd_conflicts",
     "cmd_discover",
+    "cmd_embeddings",
     "cmd_export",
     "cmd_import",
     "cmd_init",
@@ -317,6 +319,41 @@ Federation (Week 2):
     )
 
     # ========================================================================
+    # EMBEDDINGS commands
+    # ========================================================================
+
+    embeddings_parser = subparsers.add_parser("embeddings", help="Embedding management")
+    embeddings_subparsers = embeddings_parser.add_subparsers(dest="embeddings_command", required=True)
+
+    # embeddings backfill
+    backfill_parser = embeddings_subparsers.add_parser("backfill", help="Backfill missing or outdated embeddings")
+    backfill_parser.add_argument(
+        "--batch-size",
+        "-b",
+        type=int,
+        default=100,
+        help="Number of records to process per batch (default: 100)",
+    )
+    backfill_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be backfilled without making changes",
+    )
+    backfill_parser.add_argument(
+        "--content-type",
+        "-t",
+        choices=["belief", "exchange", "pattern"],
+        default=None,
+        help="Content type to backfill (default: all)",
+    )
+    backfill_parser.add_argument(
+        "--force",
+        "-f",
+        action="store_true",
+        help="Re-embed all records even if embedding exists (for provider migration)",
+    )
+
+    # ========================================================================
     # MIGRATE-VISIBILITY command
     # ========================================================================
 
@@ -345,6 +382,7 @@ def main() -> int:
         "export": cmd_export,
         "import": cmd_import,
         "trust": cmd_trust,
+        "embeddings": cmd_embeddings,
         "migrate-visibility": cmd_migrate_visibility,
     }
 
