@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from valence.core.confidence import (
     DEFAULT_WEIGHTS,
     ConfidenceDimension,
@@ -606,3 +605,167 @@ class TestAggregateConfidence:
         result = aggregate_confidence([c1, c2], method="weighted_average")
         # Should not divide by zero
         assert result.overall == 0.0
+
+
+# ============================================================================
+# Extensible Dimensions Tests (#266)
+# ============================================================================
+
+
+class TestExtensibleDimensionsSchema:
+    """Tests for schema field in DimensionalConfidence."""
+
+    def test_default_schema(self):
+        """Default schema should be v1.confidence.core."""
+        conf = DimensionalConfidence(overall=0.8)
+        assert conf.schema == "v1.confidence.core"
+
+    def test_custom_schema(self):
+        """Schema can be set to custom value."""
+        conf = DimensionalConfidence(overall=0.8, schema="v2.trust.social")
+        assert conf.schema == "v2.trust.social"
+
+    def test_schema_preserved_in_to_dict(self):
+        """to_dict() should include schema."""
+        conf = DimensionalConfidence(overall=0.8, schema="custom.schema")
+        d = conf.to_dict()
+        assert d["schema"] == "custom.schema"
+
+    def test_schema_restored_from_dict(self):
+        """from_dict() should restore schema."""
+        data = {"overall": 0.8, "schema": "v2.trust.social"}
+        conf = DimensionalConfidence.from_dict(data)
+        assert conf.schema == "v2.trust.social"
+
+    def test_missing_schema_defaults(self):
+        """from_dict() with missing schema should use default."""
+        data = {"overall": 0.8}
+        conf = DimensionalConfidence.from_dict(data)
+        assert conf.schema == "v1.confidence.core"
+
+
+class TestExtensibleDimensionsCustom:
+    """Tests for custom dimensions via dimensions dict."""
+
+    def test_custom_dimensions_via_dict(self):
+        """Custom dimensions can be passed via dimensions dict."""
+        conf = DimensionalConfidence(
+            overall=0.8,
+            dimensions={"trust_conclusions": 0.9, "trust_reasoning": 0.7},
+        )
+        assert conf.dimensions["trust_conclusions"] == 0.9
+        assert conf.dimensions["trust_reasoning"] == 0.7
+
+    def test_custom_dimensions_preserved_in_to_dict(self):
+        """to_dict() should include custom dimensions."""
+        conf = DimensionalConfidence(
+            overall=0.8,
+            schema="v2.trust.social",
+            dimensions={"trust_honesty": 0.85, "trust_predictive": 0.6},
+        )
+        d = conf.to_dict()
+        assert d["trust_honesty"] == 0.85
+        assert d["trust_predictive"] == 0.6
+
+    def test_custom_dimensions_restored_from_dict(self):
+        """from_dict() should restore custom dimensions."""
+        data = {
+            "overall": 0.8,
+            "schema": "v2.trust.social",
+            "trust_methodology": 0.75,
+            "trust_domain": 0.9,
+        }
+        conf = DimensionalConfidence.from_dict(data)
+        assert conf.dimensions["trust_methodology"] == 0.75
+        assert conf.dimensions["trust_domain"] == 0.9
+
+    def test_mixed_core_and_custom_dimensions(self):
+        """Core and custom dimensions can coexist."""
+        conf = DimensionalConfidence(
+            overall=0.8,
+            source_reliability=0.9,  # Core dimension via kwarg
+            dimensions={"trust_honesty": 0.7},  # Custom dimension
+        )
+        assert conf.source_reliability == 0.9
+        assert conf.dimensions["trust_honesty"] == 0.7
+        # Core dimension should also be in dimensions dict
+        assert conf.dimensions["source_reliability"] == 0.9
+
+
+class TestExtensibleDimensionsCalculation:
+    """Tests for overall calculation with custom dimensions."""
+
+    def test_recalculate_includes_custom_dimensions(self):
+        """recalculate_overall should include custom dimensions."""
+        conf = DimensionalConfidence(
+            overall=0.5,
+            dimensions={
+                "dim_a": 0.8,
+                "dim_b": 0.6,
+            },
+        )
+        conf.recalculate_overall()
+        # With equal weights, geometric mean of 0.8 and 0.6 ≈ 0.693
+        assert abs(conf.overall - 0.693) < 0.01
+
+    def test_full_with_custom_dimensions(self):
+        """full() should work with custom dimensions."""
+        conf = DimensionalConfidence.full(
+            source_reliability=0.8,
+            method_quality=0.8,
+            internal_consistency=0.8,
+            temporal_freshness=0.8,
+            corroboration=0.8,
+            domain_applicability=0.8,
+        )
+        # All equal = geometric mean = 0.8
+        assert abs(conf.overall - 0.8) < 0.01
+
+
+class TestExtensibleDimensionsBackwardCompat:
+    """Tests for backward compatibility with pre-extension code."""
+
+    def test_old_style_construction(self):
+        """Old-style construction with kwargs still works."""
+        conf = DimensionalConfidence(
+            overall=0.7,
+            source_reliability=0.9,
+            method_quality=0.8,
+        )
+        # Properties should work
+        assert conf.overall == 0.7
+        assert conf.source_reliability == 0.9
+        assert conf.method_quality == 0.8
+        # Schema should be default
+        assert conf.schema == "v1.confidence.core"
+
+    def test_old_style_to_dict_from_dict_roundtrip(self):
+        """Old-style serialization should still work."""
+        original = DimensionalConfidence(
+            overall=0.8,
+            source_reliability=0.9,
+            corroboration=0.7,
+        )
+        data = original.to_dict()
+        restored = DimensionalConfidence.from_dict(data)
+        assert restored.overall == original.overall
+        assert restored.source_reliability == original.source_reliability
+        assert restored.corroboration == original.corroboration
+
+    def test_legacy_data_without_schema(self):
+        """Legacy data without schema field should work."""
+        # Simulates data from before #266
+        legacy_data = {
+            "overall": 0.8,
+            "source_reliability": 0.9,
+        }
+        conf = DimensionalConfidence.from_dict(legacy_data)
+        assert conf.overall == 0.8
+        assert conf.source_reliability == 0.9
+        assert conf.schema == "v1.confidence.core"  # Default
+
+    def test_with_dimension_preserves_schema(self):
+        """with_dimension() should preserve custom schema."""
+        original = DimensionalConfidence(overall=0.7, schema="custom.schema")
+        new = original.with_dimension("source_reliability", 0.9)
+        assert new.schema == "custom.schema"
