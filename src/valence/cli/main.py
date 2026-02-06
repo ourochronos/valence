@@ -28,6 +28,7 @@ from .commands import (
     cmd_import,
     cmd_init,
     cmd_list,
+    cmd_migrate,
     cmd_migrate_visibility,
     cmd_peer,
     cmd_peer_add,
@@ -58,6 +59,7 @@ __all__ = [
     "cmd_import",
     "cmd_init",
     "cmd_list",
+    "cmd_migrate",
     "cmd_migrate_visibility",
     "cmd_peer",
     "cmd_peer_add",
@@ -354,7 +356,35 @@ Federation (Week 2):
     )
 
     # ========================================================================
-    # MIGRATE-VISIBILITY command
+    # MIGRATE command (proper migration system)
+    # ========================================================================
+
+    migrate_parser = subparsers.add_parser("migrate", help="Database migration management")
+    migrate_subparsers = migrate_parser.add_subparsers(dest="migrate_command", required=True)
+
+    # migrate up
+    migrate_up = migrate_subparsers.add_parser("up", help="Apply pending migrations")
+    migrate_up.add_argument("--to", help="Apply up to this version (inclusive)")
+    migrate_up.add_argument("--dry-run", action="store_true", help="Show what would be applied")
+
+    # migrate down
+    migrate_down = migrate_subparsers.add_parser("down", help="Rollback migrations")
+    migrate_down.add_argument("--to", help="Rollback to this version (exclusive — it stays applied)")
+    migrate_down.add_argument("--dry-run", action="store_true", help="Show what would be rolled back")
+
+    # migrate status
+    migrate_subparsers.add_parser("status", help="Show migration status")
+
+    # migrate create
+    migrate_create = migrate_subparsers.add_parser("create", help="Scaffold a new migration")
+    migrate_create.add_argument("name", help="Migration name (e.g. add_users_table)")
+
+    # migrate bootstrap
+    migrate_bootstrap = migrate_subparsers.add_parser("bootstrap", help="Bootstrap fresh database")
+    migrate_bootstrap.add_argument("--dry-run", action="store_true", help="Show what would be applied")
+
+    # ========================================================================
+    # MIGRATE-VISIBILITY command (legacy)
     # ========================================================================
 
     subparsers.add_parser(
@@ -383,6 +413,7 @@ def main() -> int:
         "import": cmd_import,
         "trust": cmd_trust,
         "embeddings": cmd_embeddings,
+        "migrate": cmd_migrate,
         "migrate-visibility": cmd_migrate_visibility,
     }
 

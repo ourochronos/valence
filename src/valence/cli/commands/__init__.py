@@ -6,7 +6,7 @@ from .discovery import cmd_discover
 from .embeddings import cmd_embeddings
 from .federation import cmd_query_federated
 from .io import cmd_export, cmd_import
-from .migration import cmd_migrate_visibility
+from .migration import cmd_migrate, cmd_migrate_visibility
 from .peers import cmd_peer, cmd_peer_add, cmd_peer_list, cmd_peer_remove
 from .stats import cmd_stats
 from .trust import cmd_trust
@@ -20,6 +20,7 @@ __all__ = [
     "cmd_import",
     "cmd_init",
     "cmd_list",
+    "cmd_migrate",
     "cmd_migrate_visibility",
     "cmd_peer",
     "cmd_peer_add",
