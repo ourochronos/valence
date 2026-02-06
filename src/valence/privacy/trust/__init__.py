@@ -38,6 +38,7 @@ from .computation import (
 from .edges import (
     CLOCK_SKEW_TOLERANCE,
     DecayModel,
+    RelationshipType,
     TrustEdge,
     TrustEdge4D,
 )
@@ -73,6 +74,10 @@ from .service import (
     list_trusted,
     list_trusters,
     revoke_trust,
+    set_distrust,
+    set_ignore,
+    unwatch,
+    watch,
 )
 
 __all__ = [
@@ -81,6 +86,7 @@ __all__ = [
     "FEDERATION_PREFIX",
     # Edge types
     "DecayModel",
+    "RelationshipType",
     "TrustEdge",
     "TrustEdge4D",
     # Computation
@@ -97,6 +103,10 @@ __all__ = [
     "get_trust",
     "list_trusted",
     "list_trusters",
+    "watch",
+    "unwatch",
+    "set_distrust",
+    "set_ignore",
     "compute_delegated_trust_from_service",
     # Federation types
     "FederationTrustEdge",
