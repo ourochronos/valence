@@ -19,6 +19,10 @@ from uuid import uuid4
 
 import pytest
 
+from valence.federation.challenge_store import (
+    get_auth_challenge_store,
+    reset_auth_challenge_store,
+)
 from valence.federation.protocol import (
     AuthChallengeRequest,
     AuthChallengeResponse,
@@ -37,7 +41,6 @@ from valence.federation.protocol import (
     SyncResponse,
     TrustAttestationRequest,
     TrustAttestationResponse,
-    _pending_challenges,
     create_auth_challenge,
     handle_message,
     handle_request_beliefs,
@@ -75,10 +78,10 @@ def mock_get_cursor(mock_cursor):
 
 @pytest.fixture(autouse=True)
 def clear_pending_challenges():
-    """Clear pending challenges before each test."""
-    _pending_challenges.clear()
+    """Reset auth challenge store before each test."""
+    reset_auth_challenge_store()
     yield
-    _pending_challenges.clear()
+    reset_auth_challenge_store()
 
 
 # =============================================================================
@@ -438,13 +441,15 @@ class TestCreateAuthChallenge:
         assert response.expires_at > datetime.now()
 
     def test_challenge_stored(self):
-        """Test that challenge is stored in pending challenges."""
+        """Test that challenge is stored in the auth challenge store."""
         client_did = "did:vkb:web:test.example.com"
 
         response = create_auth_challenge(client_did)
 
-        assert client_did in _pending_challenges
-        stored_challenge, expires_at = _pending_challenges[client_did]
+        store = get_auth_challenge_store()
+        entry = store.get_challenge(client_did)
+        assert entry is not None
+        stored_challenge, expires_at = entry
         assert stored_challenge == response.challenge
 
 
@@ -467,11 +472,9 @@ class TestVerifyAuthChallenge:
     def test_verify_expired_challenge(self):
         """Test verify with expired challenge."""
         client_did = "did:vkb:web:test.example.com"
-        # Add expired challenge
-        _pending_challenges[client_did] = (
-            "abc123",
-            datetime.now() - timedelta(minutes=10),
-        )
+        # Add expired challenge via store
+        store = get_auth_challenge_store()
+        store.store_challenge(client_did, "abc123", datetime.now() - timedelta(minutes=10))
 
         result = verify_auth_challenge(
             client_did=client_did,
@@ -487,10 +490,8 @@ class TestVerifyAuthChallenge:
     def test_verify_challenge_mismatch(self):
         """Test verify with wrong challenge."""
         client_did = "did:vkb:web:test.example.com"
-        _pending_challenges[client_did] = (
-            "correct_challenge",
-            datetime.now() + timedelta(minutes=5),
-        )
+        store = get_auth_challenge_store()
+        store.store_challenge(client_did, "correct_challenge", datetime.now() + timedelta(minutes=5))
 
         result = verify_auth_challenge(
             client_did=client_did,

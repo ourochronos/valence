@@ -20,6 +20,7 @@ from uuid import UUID, uuid4
 
 from ..core.confidence import ConfidenceDimension, DimensionalConfidence
 from ..core.db import get_cursor
+from .challenge_store import get_auth_challenge_store
 from .identity import (
     sign_belief_content,
     verify_belief_signature,
@@ -404,10 +405,6 @@ class TrustAttestationResponse(ProtocolMessage):
 # =============================================================================
 
 
-# In-memory challenge store (should use Redis in production)
-_pending_challenges: dict[str, tuple[str, datetime]] = {}
-
-
 def create_auth_challenge(client_did: str) -> AuthChallengeResponse:
     """Create an authentication challenge for a client.
 
@@ -417,12 +414,14 @@ def create_auth_challenge(client_did: str) -> AuthChallengeResponse:
     Returns:
         AuthChallengeResponse with challenge nonce
     """
+    store = get_auth_challenge_store()
+
     # Generate random challenge
     challenge = secrets.token_hex(32)
     expires_at = datetime.now() + timedelta(minutes=5)
 
     # Store challenge
-    _pending_challenges[client_did] = (challenge, expires_at)
+    store.store_challenge(client_did, challenge, expires_at)
 
     return AuthChallengeResponse(
         challenge=challenge,
@@ -447,17 +446,20 @@ def verify_auth_challenge(
     Returns:
         AuthVerifyResponse with session token, or ErrorMessage on failure
     """
+    store = get_auth_challenge_store()
+
     # Check if challenge exists and is valid
-    if client_did not in _pending_challenges:
+    entry = store.get_challenge(client_did)
+    if entry is None:
         return ErrorMessage(
             error_code=ErrorCode.AUTH_FAILED,
             message="No pending challenge for this DID",
         )
 
-    stored_challenge, expires_at = _pending_challenges[client_did]
+    stored_challenge, expires_at = entry
 
     if datetime.now() > expires_at:
-        del _pending_challenges[client_did]
+        store.delete_challenge(client_did)
         return ErrorMessage(
             error_code=ErrorCode.AUTH_FAILED,
             message="Challenge has expired",
@@ -491,7 +493,7 @@ def verify_auth_challenge(
         )
 
     # Clean up challenge
-    del _pending_challenges[client_did]
+    store.delete_challenge(client_did)
 
     # Generate session token
     session_token = secrets.token_hex(32)

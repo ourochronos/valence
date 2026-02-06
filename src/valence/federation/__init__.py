@@ -41,6 +41,13 @@ from .aggregation import (
     aggregate_cross_federation,
     create_contribution,
 )
+from .challenge_store import (
+    AuthChallengeStore,
+    MemoryAuthChallengeStore,
+    RedisAuthChallengeStore,
+    get_auth_challenge_store,
+    reset_auth_challenge_store,
+)
 from .challenges import (
     DEFAULT_REVIEWER_CONFIG,
     AppealHandler,
@@ -466,6 +473,12 @@ __all__ = [
     "get_nonce_tracker",
     "reset_nonce_tracker",
     "DEFAULT_NONCE_TTL_SECONDS",
+    # Challenge Store
+    "AuthChallengeStore",
+    "MemoryAuthChallengeStore",
+    "RedisAuthChallengeStore",
+    "get_auth_challenge_store",
+    "reset_auth_challenge_store",
     # Protocol
     "MessageType",
     "ErrorCode",
