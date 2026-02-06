@@ -1,5 +1,6 @@
 """CLI command modules for Valence."""
 
+from .attestations import cmd_attestations
 from .beliefs import cmd_add, cmd_init, cmd_list, cmd_query
 from .conflicts import cmd_conflicts
 from .discovery import cmd_discover
@@ -15,6 +16,7 @@ from .trust import cmd_trust
 
 __all__ = [
     "cmd_add",
+    "cmd_attestations",
     "cmd_conflicts",
     "cmd_discover",
     "cmd_embeddings",

@@ -1,5 +1,11 @@
 """Valence Core - Shared primitives for the knowledge substrate."""
 
+from .attestation_service import (
+    AttestationFilter,
+    AttestationService,
+    AttestationStats,
+    TrustSignal,
+)
 from .confidence import ConfidenceDimension, DimensionalConfidence
 from .config import (
     FederationConfig,
@@ -237,6 +243,11 @@ __all__ = [
     "AccessResult",
     "SafetyScanResult",
     "scan_content",
+    # Attestation Service (Issue #271)
+    "AttestationService",
+    "AttestationFilter",
+    "AttestationStats",
+    "TrustSignal",
     # External Source Verification (L4)
     "ExternalSourceConstants",
     "SourceCategory",

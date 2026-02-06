@@ -21,6 +21,7 @@ from pathlib import Path
 # Re-export for backward compatibility
 from .commands import (
     cmd_add,
+    cmd_attestations,
     cmd_conflicts,
     cmd_discover,
     cmd_embeddings,
@@ -54,6 +55,7 @@ from .utils import (
 __all__ = [
     "app",
     "cmd_add",
+    "cmd_attestations",
     "cmd_conflicts",
     "cmd_discover",
     "cmd_embeddings",
@@ -411,6 +413,14 @@ Federation (Week 2):
     )
 
     # ========================================================================
+    # ATTESTATIONS commands (Issue #271)
+    # ========================================================================
+
+    from .commands.attestations import register as register_attestations
+
+    register_attestations(subparsers)
+
+    # ========================================================================
     # RESOURCES commands (Issue #270)
     # ========================================================================
 
@@ -528,6 +538,7 @@ def main() -> int:
         "trust": cmd_trust,
         "embeddings": cmd_embeddings,
         "resources": cmd_resources,
+        "attestations": cmd_attestations,
         "schema": cmd_schema,
         "migrate": cmd_migrate,
         "migrate-visibility": cmd_migrate_visibility,
