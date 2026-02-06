@@ -246,7 +246,7 @@ def mock_db():
 class TestInitCommand:
     """Test init command."""
 
-    @patch("valence.cli.main.get_db_connection")
+    @patch("valence.cli.commands.beliefs.get_db_connection")
     def test_init_already_exists(self, mock_get_conn, mock_db):
         """Init when schema already exists."""
         mock_conn, mock_cur = mock_db
@@ -264,7 +264,7 @@ class TestInitCommand:
 
         assert result == 0
 
-    @patch("valence.cli.main.get_db_connection")
+    @patch("valence.cli.commands.beliefs.get_db_connection")
     def test_init_creates_schema(self, mock_get_conn, mock_db):
         """Init creates schema when not exists."""
         mock_conn, mock_cur = mock_db
@@ -287,8 +287,8 @@ class TestInitCommand:
 class TestAddCommand:
     """Test add command."""
 
-    @patch("valence.cli.main.get_db_connection")
-    @patch("valence.cli.main.get_embedding")
+    @patch("valence.cli.commands.beliefs.get_db_connection")
+    @patch("valence.cli.commands.beliefs.get_embedding")
     def test_add_basic(self, mock_embed, mock_get_conn, mock_db):
         """Add basic belief."""
         mock_conn, mock_cur = mock_db
@@ -310,8 +310,8 @@ class TestAddCommand:
         insert_calls = [c for c in mock_cur.execute.call_args_list if "INSERT INTO beliefs" in str(c)]
         assert len(insert_calls) >= 1
 
-    @patch("valence.cli.main.get_db_connection")
-    @patch("valence.cli.main.get_embedding")
+    @patch("valence.cli.commands.beliefs.get_db_connection")
+    @patch("valence.cli.commands.beliefs.get_embedding")
     def test_add_with_derivation(self, mock_embed, mock_get_conn, mock_db):
         """Add belief with derivation info."""
         mock_conn, mock_cur = mock_db
@@ -346,8 +346,8 @@ class TestAddCommand:
 class TestQueryCommand:
     """Test query command with derivation chains."""
 
-    @patch("valence.cli.main.get_db_connection")
-    @patch("valence.cli.main.get_embedding")
+    @patch("valence.cli.commands.beliefs.get_db_connection")
+    @patch("valence.cli.commands.beliefs.get_embedding")
     def test_query_shows_derivation(self, mock_embed, mock_get_conn, mock_db, capsys):
         """Query results show derivation chains."""
         mock_conn, mock_cur = mock_db
@@ -396,8 +396,8 @@ class TestQueryCommand:
         assert "Method: Derived via logical deduction" in captured.out
         assert "Derived from" in captured.out or "primary" in captured.out
 
-    @patch("valence.cli.main.get_db_connection")
-    @patch("valence.cli.main.get_embedding")
+    @patch("valence.cli.commands.beliefs.get_db_connection")
+    @patch("valence.cli.commands.beliefs.get_embedding")
     def test_query_no_results(self, mock_embed, mock_get_conn, mock_db, capsys):
         """Query with no results."""
         mock_conn, mock_cur = mock_db
@@ -418,7 +418,7 @@ class TestQueryCommand:
 class TestConflictsCommand:
     """Test conflict detection."""
 
-    @patch("valence.cli.main.get_db_connection")
+    @patch("valence.cli.commands.conflicts.get_db_connection")
     def test_conflicts_detects_negation(self, mock_get_conn, mock_db, capsys):
         """Detect conflicts with negation asymmetry."""
         mock_conn, mock_cur = mock_db
@@ -447,7 +447,7 @@ class TestConflictsCommand:
         captured = capsys.readouterr()
         assert "potential conflict" in captured.out.lower() or "Conflict" in captured.out
 
-    @patch("valence.cli.main.get_db_connection")
+    @patch("valence.cli.commands.conflicts.get_db_connection")
     def test_conflicts_no_conflicts(self, mock_get_conn, mock_db, capsys):
         """No conflicts found."""
         mock_conn, mock_cur = mock_db
@@ -463,7 +463,7 @@ class TestConflictsCommand:
         captured = capsys.readouterr()
         assert "No potential conflicts" in captured.out or "no" in captured.out.lower()
 
-    @patch("valence.cli.main.get_db_connection")
+    @patch("valence.cli.commands.conflicts.get_db_connection")
     def test_conflicts_auto_record(self, mock_get_conn, mock_db):
         """Auto-record detected conflicts as tensions."""
         mock_conn, mock_cur = mock_db
@@ -497,7 +497,7 @@ class TestConflictsCommand:
 class TestListCommand:
     """Test list command."""
 
-    @patch("valence.cli.main.get_db_connection")
+    @patch("valence.cli.commands.beliefs.get_db_connection")
     def test_list_basic(self, mock_get_conn, mock_db, capsys):
         """List beliefs."""
         mock_conn, mock_cur = mock_db
@@ -535,7 +535,7 @@ class TestListCommand:
 class TestStatsCommand:
     """Test stats command."""
 
-    @patch("valence.cli.main.get_db_connection")
+    @patch("valence.cli.commands.stats.get_db_connection")
     def test_stats_basic(self, mock_get_conn, mock_db, capsys):
         """Show stats."""
         mock_conn, mock_cur = mock_db
@@ -568,8 +568,8 @@ class TestStatsCommand:
 class TestDerivationChains:
     """Test derivation chain visibility."""
 
-    @patch("valence.cli.main.get_db_connection")
-    @patch("valence.cli.main.get_embedding")
+    @patch("valence.cli.commands.beliefs.get_db_connection")
+    @patch("valence.cli.commands.beliefs.get_embedding")
     def test_shows_external_ref(self, mock_embed, mock_get_conn, mock_db, capsys):
         """Show external references in derivation."""
         mock_conn, mock_cur = mock_db
@@ -608,8 +608,8 @@ class TestDerivationChains:
         assert "External" in captured.out
         assert "example.com" in captured.out
 
-    @patch("valence.cli.main.get_db_connection")
-    @patch("valence.cli.main.get_embedding")
+    @patch("valence.cli.commands.beliefs.get_db_connection")
+    @patch("valence.cli.commands.beliefs.get_embedding")
     def test_shows_supersession_chain(self, mock_embed, mock_get_conn, mock_db, capsys):
         """Show supersession chain when --chain flag used."""
         mock_conn, mock_cur = mock_db
@@ -1023,8 +1023,8 @@ class TestQueryMultiSignalArgs:
         assert args.min_confidence is None
         assert args.explain is False
 
-    @patch("valence.cli.main.get_db_connection")
-    @patch("valence.cli.main.get_embedding")
+    @patch("valence.cli.commands.beliefs.get_db_connection")
+    @patch("valence.cli.commands.beliefs.get_embedding")
     def test_query_with_explain_output(self, mock_embed, mock_get_conn, mock_db, capsys):
         """Query with --explain shows score breakdown."""
         mock_conn, mock_cur = mock_db
@@ -1069,8 +1069,8 @@ class TestQueryMultiSignalArgs:
         assert "Confidence:" in captured.out
         assert "Recency:" in captured.out
 
-    @patch("valence.cli.main.get_db_connection")
-    @patch("valence.cli.main.get_embedding")
+    @patch("valence.cli.commands.beliefs.get_db_connection")
+    @patch("valence.cli.commands.beliefs.get_embedding")
     def test_query_min_confidence_filters(self, mock_embed, mock_get_conn, mock_db, capsys):
         """Query with --min-confidence filters low confidence beliefs."""
         mock_conn, mock_cur = mock_db
