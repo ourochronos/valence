@@ -199,6 +199,11 @@ class ServerSettings(BaseSettings):
         default=5,
         description="Minimum contributors required for aggregation results",
     )
+    federation_require_auth: bool = Field(
+        default=False,
+        description="Require authentication for all federation/sync requests. "
+        "When true, unauthenticated federation requests are rejected with 401.",
+    )
 
     @model_validator(mode="after")
     def validate_production_settings(self) -> ServerSettings:

@@ -1281,6 +1281,18 @@ async def handle_message(
                         sender_node_id = row["id"]
 
         if not sender_node_id:
+            # When federation_require_auth is enabled, always reject
+            # unauthenticated non-auth messages
+            from ..core.config import get_config
+
+            config = get_config()
+            if config.federation_require_auth:
+                return ErrorMessage(
+                    error_code=ErrorCode.AUTH_FAILED,
+                    message="Authentication required. This node requires authenticated "
+                    "federation requests (VALENCE_FEDERATION_REQUIRE_AUTH=true). "
+                    "Provide valid DID credentials.",
+                )
             return ErrorMessage(
                 error_code=ErrorCode.AUTH_FAILED,
                 message="Sender identification required",

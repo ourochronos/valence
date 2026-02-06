@@ -192,6 +192,11 @@ class CoreSettings(BaseSettings):
         description="Require TLS (HTTPS) for all federation peer connections. Set to true in production to prevent MITM attacks.",
         validation_alias="VALENCE_REQUIRE_TLS",
     )
+    federation_require_auth: bool = Field(
+        default=False,
+        description="Require authentication for all federation/sync requests. When true, unauthenticated federation requests are rejected with 401.",
+        validation_alias="VALENCE_FEDERATION_REQUIRE_AUTH",
+    )
 
     # ==========================================================================
     # HEALTH CHECK SETTINGS

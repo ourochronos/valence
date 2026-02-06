@@ -25,6 +25,7 @@ from starlette.responses import JSONResponse
 
 from .config import get_settings
 from .errors import (
+    AUTH_FEDERATION_REQUIRED,
     AUTH_SIGNATURE_FAILED,
     auth_error,
     feature_not_enabled_error,
@@ -154,6 +155,44 @@ def require_did_signature(handler: Callable) -> Callable:
             return auth_error(
                 "DID signature verification failed. Required headers: X-VFP-DID, X-VFP-Signature, X-VFP-Timestamp, X-VFP-Nonce",
                 code=AUTH_SIGNATURE_FAILED,
+            )
+
+        # Attach verified DID info to request state
+        request.state.did_info = did_info
+
+        return await handler(request)
+
+    return wrapper
+
+
+def require_federation_auth(handler: Callable) -> Callable:
+    """Decorator that enforces authentication on federation endpoints when configured.
+
+    When VALENCE_FEDERATION_REQUIRE_AUTH=true, this rejects requests that lack
+    valid DID signature headers. When false (default), requests pass through
+    for backward compatibility.
+
+    Usage:
+        @require_federation_auth
+        async def my_handler(request: Request) -> JSONResponse:
+            ...
+    """
+
+    @wraps(handler)
+    async def wrapper(request: Request) -> JSONResponse:
+        settings = get_settings()
+
+        if not settings.federation_require_auth:
+            return await handler(request)
+
+        # Check for DID signature headers
+        did_info = await verify_did_signature(request)
+        if not did_info:
+            return auth_error(
+                "Authentication required. This node requires DID signature "
+                "authentication for all federation requests. Required headers: "
+                "X-VFP-DID, X-VFP-Signature, X-VFP-Timestamp, X-VFP-Nonce",
+                code=AUTH_FEDERATION_REQUIRED,
             )
 
         # Attach verified DID info to request state
@@ -364,6 +403,7 @@ def _get_trust_anchors() -> list[dict[str, Any]]:
 # =============================================================================
 
 
+@require_federation_auth
 async def federation_status(request: Request) -> JSONResponse:
     """Get federation status for this node.
 
@@ -374,7 +414,7 @@ async def federation_status(request: Request) -> JSONResponse:
     - Trust statistics
 
     Endpoint: GET /federation/status
-    Requires authentication.
+    Requires authentication when VALENCE_FEDERATION_REQUIRE_AUTH=true.
     """
     settings = get_settings()
 
@@ -530,6 +570,7 @@ async def federation_protocol(request: Request) -> JSONResponse:
 # =============================================================================
 
 
+@require_federation_auth
 async def federation_nodes_list(request: Request) -> JSONResponse:
     """List federation nodes.
 
@@ -539,6 +580,7 @@ async def federation_nodes_list(request: Request) -> JSONResponse:
     - limit: Maximum results (default 50)
 
     Endpoint: GET /federation/nodes
+    Requires authentication when VALENCE_FEDERATION_REQUIRE_AUTH=true.
     """
     settings = get_settings()
 
@@ -562,10 +604,12 @@ async def federation_nodes_list(request: Request) -> JSONResponse:
     return JSONResponse(result)
 
 
+@require_federation_auth
 async def federation_nodes_get(request: Request) -> JSONResponse:
     """Get a specific federation node.
 
     Endpoint: GET /federation/nodes/{node_id}
+    Requires authentication when VALENCE_FEDERATION_REQUIRE_AUTH=true.
     """
     settings = get_settings()
 
@@ -620,10 +664,12 @@ async def federation_nodes_discover(request: Request) -> JSONResponse:
 # =============================================================================
 
 
+@require_federation_auth
 async def federation_trust_get(request: Request) -> JSONResponse:
     """Get trust information for a node.
 
     Endpoint: GET /federation/nodes/{node_id}/trust
+    Requires authentication when VALENCE_FEDERATION_REQUIRE_AUTH=true.
     """
     settings = get_settings()
 
@@ -698,10 +744,12 @@ async def federation_trust_set(request: Request) -> JSONResponse:
 # =============================================================================
 
 
+@require_federation_auth
 async def federation_sync_status(request: Request) -> JSONResponse:
     """Get sync status.
 
     Endpoint: GET /federation/sync
+    Requires authentication when VALENCE_FEDERATION_REQUIRE_AUTH=true.
     """
     settings = get_settings()
 
