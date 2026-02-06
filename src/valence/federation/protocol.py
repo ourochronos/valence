@@ -24,6 +24,7 @@ from .identity import (
     sign_belief_content,
     verify_belief_signature,
 )
+from .nonces import generate_nonce, get_nonce_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -583,6 +584,14 @@ def _process_incoming_belief(
     origin_node_did = belief_data["origin_node_did"]
     content = belief_data["content"]
 
+    # Replay protection: validate nonce if present (#256)
+    nonce = belief_data.get("nonce")
+    if nonce is not None:
+        tracker = get_nonce_tracker()
+        if tracker.is_seen(origin_node_did, nonce):
+            return "Replayed nonce"
+        tracker.record_nonce(origin_node_did, nonce)
+
     # NOTE: Existence check moved to INSERT with ON CONFLICT to prevent TOCTOU race (#235)
 
     # Verify signature
@@ -595,6 +604,9 @@ def _process_incoming_belief(
         "valid_from": belief_data.get("valid_from"),
         "valid_until": belief_data.get("valid_until"),
     }
+    # Include nonce in signable content when present (replay protection, #256)
+    if nonce is not None:
+        signable_content["nonce"] = nonce
 
     # Get origin node's public key
     with get_cursor() as cur:
@@ -902,7 +914,11 @@ def _belief_row_to_federated(
     if row.get("valid_until"):
         result["valid_until"] = row["valid_until"].isoformat()
 
-    # Sign the belief
+    # Generate nonce for replay protection (#256)
+    belief_nonce = generate_nonce()
+    result["nonce"] = belief_nonce
+
+    # Sign the belief (nonce included in signable content)
     if settings.federation_private_key:
         signable = {
             "federation_id": result["federation_id"],
@@ -912,6 +928,7 @@ def _belief_row_to_federated(
             "domain_path": result["domain_path"],
             "valid_from": result.get("valid_from"),
             "valid_until": result.get("valid_until"),
+            "nonce": belief_nonce,
         }
         result["origin_signature"] = sign_belief_content(
             signable,
