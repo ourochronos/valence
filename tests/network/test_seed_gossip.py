@@ -588,7 +588,7 @@ class TestGossipRound:
             }
         )
 
-        with patch("valence.network.seed.aiohttp.ClientSession") as mock_session:
+        with patch("valence.network.seed.peers.aiohttp.ClientSession") as mock_session:
             mock_ctx = MagicMock()
             mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
             mock_ctx.__aexit__ = AsyncMock()
