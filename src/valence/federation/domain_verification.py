@@ -667,25 +667,108 @@ def set_external_client(client: ExternalAuthorityClient) -> None:
 
 
 # =============================================================================
+# TRUST CONFIGURATION
+# =============================================================================
+
+# Default trust score when no trust relationship exists
+DEFAULT_TRUST_SCORE = 0.5
+
+# Minimum trust score to auto-verify a domain claim (skip full verification)
+# Nodes with trust >= this threshold are trusted enough that a single
+# verification method suffices and attestation alone is accepted.
+TRUST_AUTO_VERIFY_THRESHOLD = 0.8
+
+# Trust score below which additional scrutiny is applied:
+# - require_all methods must pass
+# - attestation chains are shortened
+LOW_TRUST_THRESHOLD = 0.3
+
+# Domain used for scoping trust lookups in domain verification context
+DOMAIN_VERIFICATION_TRUST_DOMAIN = "federation:domain-verification"
+
+
+# =============================================================================
 # TRUST LOOKUP (integration with trust system)
 # =============================================================================
+
+# Optional TrustService override (for testing or custom wiring)
+_trust_service_override: Any = None
+
+
+def set_trust_service(service: Any) -> None:
+    """Set a custom TrustService for domain verification trust lookups.
+
+    Args:
+        service: A TrustService instance (or None to reset to default).
+    """
+    global _trust_service_override
+    _trust_service_override = service
+
+
+def _get_trust_service() -> Any:
+    """Get the TrustService instance used for trust lookups.
+
+    Returns the override if set, otherwise imports and returns the
+    default singleton from the privacy.trust module.
+    """
+    if _trust_service_override is not None:
+        return _trust_service_override
+    try:
+        from valence.privacy.trust.service import get_trust_service
+
+        return get_trust_service()
+    except Exception:
+        logger.debug("TrustService not available, using default trust scores")
+        return None
 
 
 async def get_federation_trust(
     local_did: str,
     remote_did: str,
+    domain: str | None = DOMAIN_VERIFICATION_TRUST_DOMAIN,
 ) -> float:
-    """Get trust level for a remote federation.
+    """Get trust level for a remote federation using TrustService.
 
-    This is a simplified implementation. In production, this would
-    integrate with the full trust system.
+    Queries the trust graph for a direct or delegated trust relationship
+    between the local and remote DIDs. Falls back to a default score
+    if no trust relationship exists.
+
+    Args:
+        local_did: DID of the local (verifying) federation
+        remote_did: DID of the remote federation being evaluated
+        domain: Trust domain to scope the lookup (default: domain verification)
 
     Returns:
         Trust level from 0.0 to 1.0
     """
-    # TODO: Integrate with TrustManager from .trust module
-    # For now, return a default medium trust
-    return 0.5
+    service = _get_trust_service()
+    if service is None:
+        return DEFAULT_TRUST_SCORE
+
+    try:
+        # Try direct trust first
+        edge = service.get_trust(local_did, remote_did, domain)
+        if edge is not None:
+            return edge.overall_trust
+
+        # Try delegated (transitive) trust
+        delegated = service.compute_delegated_trust(local_did, remote_did, domain)
+        if delegated is not None:
+            return delegated.overall_trust
+
+        # Fall back to global trust (no domain scope)
+        if domain is not None:
+            edge = service.get_trust(local_did, remote_did, None)
+            if edge is not None:
+                return edge.overall_trust
+
+        return DEFAULT_TRUST_SCORE
+    except Exception:
+        logger.debug(
+            f"Error looking up trust for {remote_did}, using default",
+            exc_info=True,
+        )
+        return DEFAULT_TRUST_SCORE
 
 
 # =============================================================================
@@ -888,6 +971,7 @@ async def verify_domain(
     methods: list[DomainVerificationMethod] | None = None,
     require_all: bool = False,
     use_cache: bool = True,
+    trust_threshold: float | None = None,
 ) -> DomainVerificationResult:
     """Verify that a federation controls a domain.
 
@@ -896,6 +980,16 @@ async def verify_domain(
     2. Mutual attestation (trusted federations vouching)
     3. External authority (third-party verification services)
     4. DID document (service endpoint in DID doc)
+
+    Trust-weighted verification:
+    - High trust (>= trust_threshold or TRUST_AUTO_VERIFY_THRESHOLD):
+      A single method success is sufficient; attestation alone is accepted.
+    - Low trust (< LOW_TRUST_THRESHOLD): Requires all specified methods
+      to pass (overrides require_all=False), and attestation chain
+      length is shortened for additional scrutiny.
+    - Medium trust: Default behavior (require_all as specified).
+
+    The trust score is included in the result's trust_level field.
 
     By default, verification succeeds if ANY method succeeds.
     Set require_all=True to require ALL specified methods.
@@ -907,6 +1001,8 @@ async def verify_domain(
         methods: List of methods to try (default: all)
         require_all: If True, all methods must succeed
         use_cache: Whether to use cached results
+        trust_threshold: Custom trust threshold for auto-verify
+                        (default: TRUST_AUTO_VERIFY_THRESHOLD)
 
     Returns:
         DomainVerificationResult with status, method used, and evidence
@@ -921,6 +1017,18 @@ async def verify_domain(
     start_time = time.time()
     domain = domain.lower().rstrip(".")
     local_did = local_did or "did:vkb:local"
+    auto_verify_threshold = trust_threshold if trust_threshold is not None else TRUST_AUTO_VERIFY_THRESHOLD
+
+    # Look up trust score for the remote federation
+    trust_score = await get_federation_trust(local_did, federation_did)
+
+    # Trust-weighted adjustments:
+    # - Low trust nodes require all methods to pass
+    # - High trust nodes get streamlined verification
+    effective_require_all = require_all
+    if trust_score < LOW_TRUST_THRESHOLD:
+        effective_require_all = True
+        logger.info(f"Low trust ({trust_score:.2f}) for {federation_did}: requiring all verification methods")
 
     # Default to all methods
     if methods is None:
@@ -948,6 +1056,7 @@ async def verify_domain(
                 ),
                 cached=True,
                 verification_duration_ms=0,
+                trust_level=trust_score,
             )
 
     # Collect evidence from each method
@@ -1018,18 +1127,27 @@ async def verify_domain(
             method_results[method] = False
             errors.append(f"{method.value}: {str(e)}")
 
-    # Determine overall result
-    if require_all:
+    # Determine overall result based on trust-weighted requirements
+    successful_methods = [m for m, v in method_results.items() if v]
+
+    if effective_require_all:
         verified = all(method_results.values())
     else:
         verified = any(method_results.values())
 
+    # High-trust auto-verification: if the federation has high trust and
+    # at least one method succeeded, accept even if require_all was set
+    # (trust overrides strict requirements for highly trusted peers)
+    if not verified and trust_score >= auto_verify_threshold and successful_methods:
+        logger.info(f"High trust ({trust_score:.2f}) for {federation_did}: auto-verifying with {len(successful_methods)} method(s)")
+        verified = True
+
     # Determine the primary method used
     if verified:
-        if len([m for m, v in method_results.items() if v]) > 1:
+        if len(successful_methods) > 1:
             primary_method = DomainVerificationMethod.COMBINED
         else:
-            primary_method = next(m for m, v in method_results.items() if v)
+            primary_method = successful_methods[0] if successful_methods else methods[0]
         status = VerificationStatus.VERIFIED
     else:
         primary_method = methods[0] if methods else DomainVerificationMethod.DNS_TXT
@@ -1046,6 +1164,7 @@ async def verify_domain(
         evidence=evidence_list,
         verification_duration_ms=duration,
         error="; ".join(errors) if errors and not verified else None,
+        trust_level=trust_score,
     )
 
     # Cache the result (via the base verification cache)
@@ -1133,9 +1252,21 @@ async def _verify_mutual_attestation(
     Checks if any trusted federation has attested to the domain claim.
     Supports transitive attestation with configurable chain length.
 
+    Trust-weighted behavior:
+    - For low-trust subjects, the max attestation chain length is
+      reduced (minimum 1) to increase scrutiny.
+    - The min_trust threshold for attesters is unchanged; only the
+      chain length is tightened.
+
     Returns:
         Tuple of (verified, attestation_used)
     """
+    # Adjust chain length based on subject's trust level
+    subject_trust = await get_federation_trust(local_did, subject_did)
+    if subject_trust < LOW_TRUST_THRESHOLD:
+        # Shorten chain for low-trust subjects (min 1 to allow direct attestation)
+        max_chain_length = max(1, max_chain_length - 1)
+        logger.debug(f"Low trust ({subject_trust:.2f}) for {subject_did}: reduced attestation chain length to {max_chain_length}")
     store = get_attestation_store()
 
     # Get all valid attestations for this domain + subject
@@ -1289,9 +1420,10 @@ def verify_domain_sync(
     methods: list[DomainVerificationMethod] | None = None,
     require_all: bool = False,
     use_cache: bool = True,
+    trust_threshold: float | None = None,
 ) -> DomainVerificationResult:
     """Synchronous version of verify_domain."""
-    return asyncio.run(verify_domain(domain, federation_did, local_did, methods, require_all, use_cache))
+    return asyncio.run(verify_domain(domain, federation_did, local_did, methods, require_all, use_cache, trust_threshold))
 
 
 # =============================================================================
