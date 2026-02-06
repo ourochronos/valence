@@ -5,13 +5,18 @@ Gateway nodes bridge federations for controlled external sharing, providing:
 - Outbound: send shares to external federations via their gateways
 - Rate limiting and access control
 - Audit logging of all gateway traffic
+- Key versioning and rotation for gateway protocol security
 
 Issue #88: Implement gateway nodes for external sharing
+Issue #253: Gateway key rotation mechanism
 """
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
+import secrets
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -46,6 +51,12 @@ DEFAULT_MAX_BELIEF_SIZE = 65536  # 64KB max belief content
 
 # Audit log retention
 DEFAULT_AUDIT_RETENTION_DAYS = 90
+
+# Key rotation defaults (Issue #253)
+DEFAULT_KEY_SIZE = 32  # 256-bit keys
+DEFAULT_ROTATION_INTERVAL_HOURS = 24  # Rotate every 24 hours
+DEFAULT_TRANSITION_PERIOD_HOURS = 2  # Accept old keys for 2 hours after rotation
+MAX_KEY_HISTORY = 5  # Maximum number of previous keys to retain
 
 
 # =============================================================================
@@ -87,6 +98,7 @@ class AuditEventType(StrEnum):
     ROUTE_FAILED = "route_failed"
     TRUST_CHECK = "trust_check"
     CONFIG_CHANGE = "config_change"
+    KEY_ROTATED = "key_rotated"
 
 
 class ShareDirection(StrEnum):
@@ -168,6 +180,22 @@ class ValidationFailedException(GatewayException):
     ):
         super().__init__(message, details or {})
         self.result = result
+
+
+class KeyRotationException(GatewayException):
+    """Raised when key rotation or key verification fails."""
+
+    def __init__(
+        self,
+        message: str,
+        key_version: str | None = None,
+        details: dict | None = None,
+    ):
+        d = details or {}
+        if key_version:
+            d["key_version"] = key_version
+        super().__init__(message, d)
+        self.key_version = key_version
 
 
 # =============================================================================
@@ -377,6 +405,357 @@ class ShareResult:
 
 
 # =============================================================================
+# KEY ROTATION (Issue #253)
+# =============================================================================
+
+
+@dataclass
+class KeyVersion:
+    """A versioned cryptographic key for gateway protocol operations.
+
+    Each key has a version ID, the key material, creation time, and optional
+    expiry. Keys are used for signing and verifying gateway messages.
+    """
+
+    version_id: str
+    key_material: bytes
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    expires_at: datetime | None = None
+    revoked: bool = False
+
+    @property
+    def is_expired(self) -> bool:
+        """Check if this key has expired."""
+        if self.expires_at is None:
+            return False
+        return datetime.now(UTC) >= self.expires_at
+
+    @property
+    def is_usable(self) -> bool:
+        """Check if this key can be used (not expired and not revoked)."""
+        return not self.is_expired and not self.revoked
+
+    def sign(self, data: bytes) -> str:
+        """Sign data with this key using HMAC-SHA256.
+
+        Args:
+            data: The data to sign
+
+        Returns:
+            Hex-encoded HMAC signature
+        """
+        return hmac.new(self.key_material, data, hashlib.sha256).hexdigest()
+
+    def verify(self, data: bytes, signature: str) -> bool:
+        """Verify a signature against this key.
+
+        Args:
+            data: The original data
+            signature: The hex-encoded HMAC signature to verify
+
+        Returns:
+            True if signature is valid
+        """
+        expected = self.sign(data)
+        return hmac.compare_digest(expected, signature)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary (excludes key material for security)."""
+        return {
+            "version_id": self.version_id,
+            "created_at": self.created_at.isoformat(),
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "revoked": self.revoked,
+            "is_expired": self.is_expired,
+            "is_usable": self.is_usable,
+        }
+
+
+@dataclass
+class KeyRotationConfig:
+    """Configuration for key rotation behaviour."""
+
+    key_size: int = DEFAULT_KEY_SIZE
+    rotation_interval: timedelta = field(default_factory=lambda: timedelta(hours=DEFAULT_ROTATION_INTERVAL_HOURS))
+    transition_period: timedelta = field(default_factory=lambda: timedelta(hours=DEFAULT_TRANSITION_PERIOD_HOURS))
+    max_key_history: int = MAX_KEY_HISTORY
+    auto_rotate: bool = True
+
+
+class KeyRotationManager:
+    """Manages cryptographic key versioning and rotation for gateway protocol.
+
+    Supports:
+    - Generating new versioned keys
+    - Maintaining active + previous keys for graceful transition
+    - Configurable rotation intervals
+    - Key version negotiation (try active key first, fall back to previous)
+    - Automated rotation scheduling
+
+    Issue #253: Gateway key rotation mechanism
+    """
+
+    def __init__(
+        self,
+        config: KeyRotationConfig | None = None,
+        initial_key: KeyVersion | None = None,
+    ):
+        """Initialize the key rotation manager.
+
+        Args:
+            config: Key rotation configuration
+            initial_key: Optional initial key (one will be generated if not provided)
+        """
+        self.config = config or KeyRotationConfig()
+        self._active_key: KeyVersion | None = None
+        self._previous_keys: list[KeyVersion] = []
+        self._rotation_history: list[dict[str, Any]] = []
+        self._rotation_callbacks: list[Callable[[KeyVersion, KeyVersion | None], None]] = []
+
+        # Initialize with provided or generated key
+        if initial_key:
+            self._active_key = initial_key
+        else:
+            self._active_key = self._generate_key()
+
+        logger.info(f"KeyRotationManager initialized with key version {self._active_key.version_id}")
+
+    @property
+    def active_key(self) -> KeyVersion:
+        """Get the currently active key."""
+        if self._active_key is None:
+            raise KeyRotationException("No active key available")
+        return self._active_key
+
+    @property
+    def previous_keys(self) -> list[KeyVersion]:
+        """Get previous keys still within transition period."""
+        now = datetime.now(UTC)
+        return [k for k in self._previous_keys if not k.revoked and (k.expires_at is None or k.expires_at > now)]
+
+    @property
+    def all_valid_keys(self) -> list[KeyVersion]:
+        """Get all keys that can currently be used for verification."""
+        keys: list[KeyVersion] = []
+        if self._active_key and self._active_key.is_usable:
+            keys.append(self._active_key)
+        keys.extend(self.previous_keys)
+        return keys
+
+    @property
+    def needs_rotation(self) -> bool:
+        """Check if the active key should be rotated based on schedule."""
+        if not self.config.auto_rotate:
+            return False
+        if self._active_key is None:
+            return True
+        age = datetime.now(UTC) - self._active_key.created_at
+        return age >= self.config.rotation_interval
+
+    def _generate_key(self) -> KeyVersion:
+        """Generate a new versioned key.
+
+        Returns:
+            A new KeyVersion with random key material
+        """
+        version_id = f"v{int(time.time())}-{secrets.token_hex(4)}"
+        key_material = secrets.token_bytes(self.config.key_size)
+        now = datetime.now(UTC)
+
+        return KeyVersion(
+            version_id=version_id,
+            key_material=key_material,
+            created_at=now,
+        )
+
+    def rotate(self) -> KeyVersion:
+        """Rotate to a new key.
+
+        The current active key becomes a previous key with an expiry set
+        to the transition period. A new key is generated and becomes active.
+
+        Returns:
+            The newly generated active key
+        """
+        old_key = self._active_key
+        new_key = self._generate_key()
+
+        # Move current key to previous keys with transition expiry
+        if old_key is not None:
+            old_key.expires_at = datetime.now(UTC) + self.config.transition_period
+            self._previous_keys.insert(0, old_key)
+
+        # Prune old keys beyond history limit
+        self._prune_previous_keys()
+
+        # Set new active key
+        self._active_key = new_key
+
+        # Record rotation
+        rotation_record = {
+            "timestamp": datetime.now(UTC).isoformat(),
+            "old_version": old_key.version_id if old_key else None,
+            "new_version": new_key.version_id,
+            "transition_expires": (old_key.expires_at.isoformat() if old_key and old_key.expires_at else None),
+        }
+        self._rotation_history.append(rotation_record)
+
+        logger.info(f"Key rotated: {old_key.version_id if old_key else 'none'} -> {new_key.version_id}")
+
+        # Notify callbacks
+        for callback in self._rotation_callbacks:
+            try:
+                callback(new_key, old_key)
+            except Exception as e:
+                logger.error(f"Key rotation callback failed: {e}")
+
+        return new_key
+
+    def rotate_if_needed(self) -> KeyVersion | None:
+        """Rotate the key if the rotation interval has elapsed.
+
+        Returns:
+            The new key if rotation occurred, None otherwise
+        """
+        if self.needs_rotation:
+            return self.rotate()
+        return None
+
+    def sign(self, data: bytes) -> tuple[str, str]:
+        """Sign data with the active key.
+
+        Args:
+            data: The data to sign
+
+        Returns:
+            Tuple of (key_version_id, signature)
+
+        Raises:
+            KeyRotationException: If no active key available
+        """
+        key = self.active_key
+        if not key.is_usable:
+            raise KeyRotationException(
+                "Active key is not usable",
+                key_version=key.version_id,
+            )
+        signature = key.sign(data)
+        return key.version_id, signature
+
+    def verify(self, data: bytes, signature: str, key_version: str | None = None) -> bool:
+        """Verify a signature, trying active key then previous keys.
+
+        If key_version is specified, only that key is tried.
+        Otherwise, tries the active key first, then previous keys
+        still within the transition period.
+
+        Args:
+            data: The original data
+            signature: The hex-encoded signature to verify
+            key_version: Optional specific key version to use
+
+        Returns:
+            True if signature is valid with any acceptable key
+        """
+        if key_version:
+            # Try specific version
+            key = self.get_key_by_version(key_version)
+            if key is None:
+                return False
+            if not key.is_usable:
+                return False
+            return key.verify(data, signature)
+
+        # Try all valid keys (active first)
+        for key in self.all_valid_keys:
+            if key.verify(data, signature):
+                return True
+
+        return False
+
+    def get_key_by_version(self, version_id: str) -> KeyVersion | None:
+        """Look up a key by its version ID.
+
+        Args:
+            version_id: The version ID to look up
+
+        Returns:
+            The matching KeyVersion or None
+        """
+        if self._active_key and self._active_key.version_id == version_id:
+            return self._active_key
+        for key in self._previous_keys:
+            if key.version_id == version_id:
+                return key
+        return None
+
+    def revoke_key(self, version_id: str) -> bool:
+        """Revoke a specific key version.
+
+        Args:
+            version_id: The version ID to revoke
+
+        Returns:
+            True if the key was found and revoked
+        """
+        key = self.get_key_by_version(version_id)
+        if key is None:
+            return False
+        key.revoked = True
+        logger.info(f"Key version {version_id} revoked")
+
+        # If active key was revoked, rotate immediately
+        if self._active_key and self._active_key.version_id == version_id:
+            logger.warning("Active key revoked, rotating immediately")
+            self.rotate()
+
+        return True
+
+    def on_rotation(self, callback: Callable[[KeyVersion, KeyVersion | None], None]) -> None:
+        """Register a callback for key rotation events.
+
+        The callback receives (new_key, old_key). old_key may be None
+        on first initialization.
+
+        Args:
+            callback: Function to call on rotation
+        """
+        self._rotation_callbacks.append(callback)
+
+    def _prune_previous_keys(self) -> None:
+        """Remove expired and excess previous keys."""
+        now = datetime.now(UTC)
+
+        # Remove expired keys
+        self._previous_keys = [k for k in self._previous_keys if not k.revoked and (k.expires_at is None or k.expires_at > now)]
+
+        # Enforce max history limit
+        if len(self._previous_keys) > self.config.max_key_history:
+            self._previous_keys = self._previous_keys[: self.config.max_key_history]
+
+    def get_status(self) -> dict[str, Any]:
+        """Get the current key rotation status.
+
+        Returns:
+            Dictionary with key rotation state information
+        """
+        now = datetime.now(UTC)
+        active = self._active_key
+        return {
+            "active_key": active.to_dict() if active else None,
+            "active_key_age_seconds": ((now - active.created_at).total_seconds() if active else None),
+            "previous_keys": [k.to_dict() for k in self.previous_keys],
+            "total_previous_keys": len(self._previous_keys),
+            "valid_previous_keys": len(self.previous_keys),
+            "needs_rotation": self.needs_rotation,
+            "auto_rotate": self.config.auto_rotate,
+            "rotation_interval_seconds": self.config.rotation_interval.total_seconds(),
+            "transition_period_seconds": self.config.transition_period.total_seconds(),
+            "rotation_count": len(self._rotation_history),
+        }
+
+
+# =============================================================================
 # GATEWAY NODE
 # =============================================================================
 
@@ -390,6 +769,7 @@ class GatewayNode:
     - Rate limiting to prevent abuse
     - Access control based on trust
     - Audit logging for all operations
+    - Key versioning and rotation for protocol security (Issue #253)
     """
 
     def __init__(
@@ -398,6 +778,7 @@ class GatewayNode:
         endpoint: str,
         capabilities: list[GatewayCapability] | None = None,
         config: GatewayConfig | None = None,
+        key_rotation_config: KeyRotationConfig | None = None,
     ):
         """Initialize a gateway node.
 
@@ -406,6 +787,7 @@ class GatewayNode:
             endpoint: External endpoint URL for this gateway
             capabilities: List of supported capabilities
             config: Gateway configuration
+            key_rotation_config: Key rotation configuration (Issue #253)
         """
         self.id = uuid4()
         self.federation_id = federation_id
@@ -436,6 +818,9 @@ class GatewayNode:
 
         # Known external gateways
         self._external_gateways: dict[UUID, str] = {}  # federation_id -> endpoint
+
+        # Key rotation manager (Issue #253)
+        self._key_rotation_manager = KeyRotationManager(config=key_rotation_config)
 
         self.created_at = datetime.now(UTC)
 
@@ -506,6 +891,83 @@ class GatewayNode:
         if federation_id in self._external_gateways:
             del self._external_gateways[federation_id]
             logger.info(f"Unregistered external gateway for {federation_id}")
+
+    # =========================================================================
+    # KEY ROTATION (Issue #253)
+    # =========================================================================
+
+    @property
+    def key_rotation_manager(self) -> KeyRotationManager:
+        """Access the key rotation manager."""
+        return self._key_rotation_manager
+
+    def rotate_keys(self) -> KeyVersion:
+        """Manually trigger a key rotation.
+
+        Returns:
+            The newly generated active key
+        """
+        new_key = self._key_rotation_manager.rotate()
+        self._audit(
+            AuditEventType.KEY_ROTATED,
+            metadata={
+                "new_version": new_key.version_id,
+                "previous_keys": len(self._key_rotation_manager.previous_keys),
+            },
+        )
+        return new_key
+
+    def rotate_keys_if_needed(self) -> KeyVersion | None:
+        """Rotate keys if the rotation interval has elapsed.
+
+        Returns:
+            The new key if rotation occurred, None otherwise
+        """
+        new_key = self._key_rotation_manager.rotate_if_needed()
+        if new_key:
+            self._audit(
+                AuditEventType.KEY_ROTATED,
+                metadata={
+                    "new_version": new_key.version_id,
+                    "trigger": "auto",
+                },
+            )
+        return new_key
+
+    def sign_message(self, data: bytes) -> tuple[str, str]:
+        """Sign data using the active gateway key.
+
+        Auto-rotates keys if needed before signing.
+
+        Args:
+            data: The data to sign
+
+        Returns:
+            Tuple of (key_version_id, signature)
+        """
+        self.rotate_keys_if_needed()
+        return self._key_rotation_manager.sign(data)
+
+    def verify_message(
+        self,
+        data: bytes,
+        signature: str,
+        key_version: str | None = None,
+    ) -> bool:
+        """Verify a signed message, supporting key version negotiation.
+
+        Tries the specified key version if provided, otherwise tries
+        the active key first, then previous keys within the transition period.
+
+        Args:
+            data: The original data
+            signature: The signature to verify
+            key_version: Optional key version ID from the sender
+
+        Returns:
+            True if signature is valid
+        """
+        return self._key_rotation_manager.verify(data, signature, key_version)
 
     # =========================================================================
     # RATE LIMITING
@@ -1065,6 +1527,7 @@ class GatewayNode:
                 }
                 for k, v in self._rate_limits.items()
             },
+            "key_rotation": self._key_rotation_manager.get_status(),
         }
 
     def to_dict(self) -> dict[str, Any]:
@@ -1078,6 +1541,7 @@ class GatewayNode:
             "config": self.config.to_dict(),
             "created_at": self.created_at.isoformat(),
             "external_gateways": {str(k): v for k, v in self._external_gateways.items()},
+            "active_key_version": self._key_rotation_manager.active_key.version_id,
         }
 
 
@@ -1168,6 +1632,7 @@ def create_gateway(
     endpoint: str,
     capabilities: list[GatewayCapability] | None = None,
     config: GatewayConfig | None = None,
+    key_rotation_config: KeyRotationConfig | None = None,
     register: bool = True,
 ) -> GatewayNode:
     """Create a new gateway node.
@@ -1177,6 +1642,7 @@ def create_gateway(
         endpoint: External endpoint URL
         capabilities: Optional list of capabilities
         config: Optional gateway configuration
+        key_rotation_config: Optional key rotation configuration (Issue #253)
         register: Whether to register in global registry
 
     Returns:
@@ -1187,6 +1653,7 @@ def create_gateway(
         endpoint=endpoint,
         capabilities=capabilities,
         config=config,
+        key_rotation_config=key_rotation_config,
     )
 
     if register:
