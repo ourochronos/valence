@@ -26,6 +26,7 @@ from .commands import (
     cmd_discover,
     cmd_embeddings,
     cmd_export,
+    cmd_identity,
     cmd_import,
     cmd_init,
     cmd_list,
@@ -41,6 +42,7 @@ from .commands import (
     cmd_schema,
     cmd_stats,
     cmd_trust,
+    register_identity_commands,
 )
 from .utils import (
     compute_confidence_score,
@@ -60,6 +62,7 @@ __all__ = [
     "cmd_discover",
     "cmd_embeddings",
     "cmd_export",
+    "cmd_identity",
     "cmd_import",
     "cmd_init",
     "cmd_list",
@@ -71,6 +74,7 @@ __all__ = [
     "cmd_peer_remove",
     "cmd_query",
     "cmd_query_federated",
+    "register_identity_commands",
     "cmd_resources",
     "cmd_stats",
     "cmd_trust",
@@ -516,6 +520,12 @@ Federation (Week 2):
         help="Migrate existing beliefs from visibility to SharePolicy",
     )
 
+    # ========================================================================
+    # IDENTITY commands (#277)
+    # ========================================================================
+
+    register_identity_commands(subparsers)
+
     return parser
 
 
@@ -542,6 +552,7 @@ def main() -> int:
         "schema": cmd_schema,
         "migrate": cmd_migrate,
         "migrate-visibility": cmd_migrate_visibility,
+        "identity": cmd_identity,
     }
 
     handler = commands.get(args.command)
