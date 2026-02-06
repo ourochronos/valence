@@ -254,6 +254,13 @@ from .models import (
     Vote,
     WarningSeverity,
 )
+from .nonces import (
+    DEFAULT_NONCE_TTL_SECONDS,
+    NonceTracker,
+    generate_nonce,
+    get_nonce_tracker,
+    reset_nonce_tracker,
+)
 from .privacy import (
     DEFAULT_DELTA,
     DEFAULT_EPSILON,
@@ -453,6 +460,12 @@ __all__ = [
     "create_user_did",
     "parse_did",
     "resolve_did",
+    # Nonces (replay protection)
+    "NonceTracker",
+    "generate_nonce",
+    "get_nonce_tracker",
+    "reset_nonce_tracker",
+    "DEFAULT_NONCE_TTL_SECONDS",
     # Protocol
     "MessageType",
     "ErrorCode",

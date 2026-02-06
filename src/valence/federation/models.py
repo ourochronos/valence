@@ -251,6 +251,9 @@ class FederatedBelief:
     hop_count: int = 0
     federation_path: list[str] = field(default_factory=list)
 
+    # Replay protection
+    nonce: str | None = None
+
     # Cryptographic proof
     origin_signature: str = ""
     signed_at: datetime = field(default_factory=datetime.now)
@@ -280,6 +283,7 @@ class FederatedBelief:
             "share_level": self.share_level.value,
             "hop_count": self.hop_count,
             "federation_path": self.federation_path,
+            "nonce": self.nonce,
             "origin_signature": self.origin_signature,
             "signed_at": self.signed_at.isoformat(),
             "signature_method": self.signature_method,
@@ -301,8 +305,12 @@ class FederatedBelief:
         return result
 
     def to_signable_content(self) -> dict[str, Any]:
-        """Return content for signature generation (canonical form)."""
-        return {
+        """Return content for signature generation (canonical form).
+
+        Includes the nonce when present so that signatures are bound
+        to a specific transmission and cannot be replayed.
+        """
+        result = {
             "federation_id": str(self.federation_id),
             "origin_node_did": self.origin_node_did,
             "content": self.content,
@@ -311,6 +319,9 @@ class FederatedBelief:
             "valid_from": self.valid_from.isoformat() if self.valid_from else None,
             "valid_until": self.valid_until.isoformat() if self.valid_until else None,
         }
+        if self.nonce is not None:
+            result["nonce"] = self.nonce
+        return result
 
 
 # =============================================================================
