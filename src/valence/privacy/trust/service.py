@@ -11,7 +11,7 @@ from collections import deque
 from datetime import datetime
 
 from .computation import compute_delegated_trust
-from .edges import TrustEdge, TrustEdge4D
+from .edges import RelationshipType, TrustEdge, TrustEdge4D
 from .graph_store import TrustGraphStore, get_trust_graph_store
 
 logger = logging.getLogger(__name__)
@@ -72,6 +72,7 @@ class TrustService:
         confidentiality: float,
         judgment: float = 0.1,
         domain: str | None = None,
+        relationship_type: RelationshipType = RelationshipType.TRUST,
         can_delegate: bool = False,
         delegation_depth: int = 0,
         expires_at: datetime | None = None,
@@ -88,6 +89,7 @@ class TrustService:
             confidentiality: Trust in target's ability to keep secrets (0-1)
             judgment: Trust in target's decision-making quality (0-1, default 0.1)
             domain: Optional scope/context for this trust relationship
+            relationship_type: Type of relationship (TRUST, WATCH, DISTRUST, IGNORE)
             can_delegate: Whether trust can be transitively delegated (default False)
             delegation_depth: Maximum delegation chain length (0 = no limit when can_delegate=True)
             expires_at: Optional expiration time
@@ -106,6 +108,7 @@ class TrustService:
             confidentiality=confidentiality,
             judgment=judgment,
             domain=domain,
+            relationship_type=relationship_type,
             can_delegate=can_delegate,
             delegation_depth=delegation_depth,
             expires_at=expires_at,
@@ -531,6 +534,244 @@ class TrustService:
             domain=domain,
         )
 
+    # =================================================================
+    # Relationship-type convenience methods
+    # =================================================================
+
+    def watch(
+        self,
+        source_did: str,
+        target_did: str,
+        domain: str | None = None,
+    ) -> TrustEdge4D:
+        """Watch an entity (see content, no reputation boost).
+
+        Creates a WATCH relationship: content is visible but doesn't
+        contribute to reputation scores or affect worldview.
+
+        Args:
+            source_did: DID of the watcher
+            target_did: DID of the entity to watch
+            domain: Optional scope/context
+
+        Returns:
+            The created or updated TrustEdge4D with relationship_type=WATCH
+        """
+        return self.grant_trust(
+            source_did=source_did,
+            target_did=target_did,
+            competence=0.0,
+            integrity=0.0,
+            confidentiality=0.0,
+            judgment=0.0,
+            domain=domain,
+            relationship_type=RelationshipType.WATCH,
+        )
+
+    def unwatch(
+        self,
+        source_did: str,
+        target_did: str,
+        domain: str | None = None,
+    ) -> bool:
+        """Remove a watch relationship.
+
+        Only removes the edge if it is a WATCH relationship. If the edge
+        is a TRUST or other type, it is left unchanged.
+
+        Args:
+            source_did: DID of the watcher
+            target_did: DID of the watched entity
+            domain: Optional scope/context
+
+        Returns:
+            True if a WATCH edge was removed, False otherwise
+        """
+        edge = self.get_trust(source_did, target_did, domain)
+        if edge is not None and edge.relationship_type == RelationshipType.WATCH:
+            return self.revoke_trust(source_did, target_did, domain)
+        return False
+
+    def distrust(
+        self,
+        source_did: str,
+        target_did: str,
+        competence: float = 0.5,
+        integrity: float = 0.5,
+        confidentiality: float = 0.5,
+        judgment: float = 0.1,
+        domain: str | None = None,
+    ) -> TrustEdge4D:
+        """Mark an entity as distrusted (negative reputation weight).
+
+        Creates a DISTRUST relationship: optionally see content, but with
+        negative reputation contribution and inverse worldview effect.
+
+        Args:
+            source_did: DID of the distrusting agent
+            target_did: DID of the distrusted entity
+            competence: Magnitude of distrust in ability (0-1)
+            integrity: Magnitude of distrust in honesty (0-1)
+            confidentiality: Magnitude of distrust in discretion (0-1)
+            judgment: Magnitude of distrust in judgment (0-1)
+            domain: Optional scope/context
+
+        Returns:
+            The created TrustEdge4D with relationship_type=DISTRUST
+        """
+        return self.grant_trust(
+            source_did=source_did,
+            target_did=target_did,
+            competence=competence,
+            integrity=integrity,
+            confidentiality=confidentiality,
+            judgment=judgment,
+            domain=domain,
+            relationship_type=RelationshipType.DISTRUST,
+        )
+
+    def ignore(
+        self,
+        source_did: str,
+        target_did: str,
+        domain: str | None = None,
+    ) -> TrustEdge4D:
+        """Ignore an entity (block content, no reputation effect).
+
+        Creates an IGNORE relationship: no content visible, no reputation
+        boost, no worldview effect.
+
+        Args:
+            source_did: DID of the ignoring agent
+            target_did: DID of the entity to ignore
+            domain: Optional scope/context
+
+        Returns:
+            The created TrustEdge4D with relationship_type=IGNORE
+        """
+        return self.grant_trust(
+            source_did=source_did,
+            target_did=target_did,
+            competence=0.0,
+            integrity=0.0,
+            confidentiality=0.0,
+            judgment=0.0,
+            domain=domain,
+            relationship_type=RelationshipType.IGNORE,
+        )
+
+    def get_relationship_type(
+        self,
+        source_did: str,
+        target_did: str,
+        domain: str | None = None,
+    ) -> RelationshipType | None:
+        """Get the relationship type between two entities.
+
+        Args:
+            source_did: DID of the source agent
+            target_did: DID of the target agent
+            domain: Optional scope/context
+
+        Returns:
+            The RelationshipType if an edge exists, None otherwise
+        """
+        edge = self.get_trust(source_did, target_did, domain)
+        if edge is not None:
+            return edge.relationship_type
+        return None
+
+    def list_watched(
+        self,
+        source_did: str,
+        domain: str | None = None,
+    ) -> list[TrustEdge4D]:
+        """List entities being watched by source (WATCH relationships only).
+
+        Args:
+            source_did: DID of the watcher
+            domain: Optional scope filter
+
+        Returns:
+            List of WATCH edges from source
+        """
+        all_edges = self.list_trusted(source_did, domain)
+        return [e for e in all_edges if e.relationship_type == RelationshipType.WATCH]
+
+    def list_by_relationship(
+        self,
+        source_did: str,
+        relationship_type: RelationshipType,
+        domain: str | None = None,
+    ) -> list[TrustEdge4D]:
+        """List edges of a specific relationship type from source.
+
+        Args:
+            source_did: DID of the source agent
+            relationship_type: Filter by this relationship type
+            domain: Optional scope filter
+
+        Returns:
+            List of edges matching the relationship type
+        """
+        all_edges = self.list_trusted(source_did, domain)
+        return [e for e in all_edges if e.relationship_type == relationship_type]
+
+    def is_content_visible(
+        self,
+        source_did: str,
+        target_did: str,
+        domain: str | None = None,
+    ) -> bool:
+        """Check whether content from target is visible to source.
+
+        Content is visible for TRUST and WATCH relationships.
+
+        Args:
+            source_did: DID of the viewing agent
+            target_did: DID of the content author
+            domain: Optional scope/context
+
+        Returns:
+            True if content should be shown
+        """
+        edge = self.get_trust(source_did, target_did, domain)
+        if edge is None:
+            return False
+        return edge.relationship_type.shows_content
+
+    def get_reputation_weight(
+        self,
+        source_did: str,
+        target_did: str,
+        domain: str | None = None,
+    ) -> float:
+        """Get the reputation weight for a target as seen by source.
+
+        Only TRUST edges contribute positive reputation. DISTRUST edges
+        contribute negative reputation (inverted). WATCH and IGNORE
+        contribute zero.
+
+        Args:
+            source_did: DID of the evaluating agent
+            target_did: DID being evaluated
+            domain: Optional scope/context
+
+        Returns:
+            Reputation weight: positive for TRUST, negative for DISTRUST,
+            zero for WATCH/IGNORE/no relationship
+        """
+        edge = self.get_trust(source_did, target_did, domain)
+        if edge is None:
+            return 0.0
+
+        sign = edge.relationship_type.reputation_sign
+        if sign == 0:
+            return 0.0
+
+        effective = edge.effective_trust()
+        return sign * effective["overall"]
+
     def clear(self) -> int:
         """Clear all trust edges (mainly for testing).
 
@@ -585,6 +826,7 @@ def grant_trust(
     confidentiality: float,
     judgment: float = 0.1,
     domain: str | None = None,
+    relationship_type: RelationshipType = RelationshipType.TRUST,
     can_delegate: bool = False,
     delegation_depth: int = 0,
     expires_at: datetime | None = None,
@@ -598,6 +840,7 @@ def grant_trust(
         confidentiality=confidentiality,
         judgment=judgment,
         domain=domain,
+        relationship_type=relationship_type,
         can_delegate=can_delegate,
         delegation_depth=delegation_depth,
         expires_at=expires_at,
@@ -647,6 +890,66 @@ def list_trusters(
 ) -> list[TrustEdge4D]:
     """List trusters (convenience function using default service)."""
     return get_trust_service().list_trusters(
+        target_did=target_did,
+        domain=domain,
+    )
+
+
+def watch(
+    source_did: str,
+    target_did: str,
+    domain: str | None = None,
+) -> TrustEdge4D:
+    """Watch an entity (convenience function using default service)."""
+    return get_trust_service().watch(
+        source_did=source_did,
+        target_did=target_did,
+        domain=domain,
+    )
+
+
+def unwatch(
+    source_did: str,
+    target_did: str,
+    domain: str | None = None,
+) -> bool:
+    """Unwatch an entity (convenience function using default service)."""
+    return get_trust_service().unwatch(
+        source_did=source_did,
+        target_did=target_did,
+        domain=domain,
+    )
+
+
+def set_distrust(
+    source_did: str,
+    target_did: str,
+    competence: float = 0.5,
+    integrity: float = 0.5,
+    confidentiality: float = 0.5,
+    judgment: float = 0.1,
+    domain: str | None = None,
+) -> TrustEdge4D:
+    """Distrust an entity (convenience function using default service)."""
+    return get_trust_service().distrust(
+        source_did=source_did,
+        target_did=target_did,
+        competence=competence,
+        integrity=integrity,
+        confidentiality=confidentiality,
+        judgment=judgment,
+        domain=domain,
+    )
+
+
+def set_ignore(
+    source_did: str,
+    target_did: str,
+    domain: str | None = None,
+) -> TrustEdge4D:
+    """Ignore an entity (convenience function using default service)."""
+    return get_trust_service().ignore(
+        source_did=source_did,
         target_did=target_did,
         domain=domain,
     )

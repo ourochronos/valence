@@ -24,6 +24,57 @@ logger = logging.getLogger(__name__)
 CLOCK_SKEW_TOLERANCE = timedelta(minutes=5)
 
 
+class RelationshipType(StrEnum):
+    """Types of relationships in the trust graph.
+
+    Separates 'seeing content' from 'giving reputation weight':
+
+    | Relationship | See content? | Reputation boost? | Affects worldview? |
+    |---|---|---|---|
+    | TRUST | Yes | Yes | Yes |
+    | WATCH | Yes | No  | No  |
+    | DISTRUST | Optional | Negative | Inverse |
+    | IGNORE | No | No  | No  |
+    """
+
+    TRUST = "trust"  # Full trust: content visible, positive reputation, affects worldview
+    WATCH = "watch"  # Attention only: content visible, no reputation or worldview effect
+    DISTRUST = "distrust"  # Negative trust: optional content, negative reputation, inverse worldview
+    IGNORE = "ignore"  # Block: no content, no reputation, no worldview effect
+
+    @classmethod
+    def from_string(cls, value: str) -> RelationshipType:
+        """Convert string to RelationshipType, case-insensitive."""
+        try:
+            return cls(value.lower())
+        except ValueError:
+            return cls.TRUST  # Default to trust for backward compat
+
+    @property
+    def shows_content(self) -> bool:
+        """Whether this relationship type makes content visible."""
+        return self in (RelationshipType.TRUST, RelationshipType.WATCH)
+
+    @property
+    def affects_reputation(self) -> bool:
+        """Whether this relationship type contributes to reputation scores."""
+        return self in (RelationshipType.TRUST, RelationshipType.DISTRUST)
+
+    @property
+    def reputation_sign(self) -> int:
+        """Sign of reputation contribution: +1, 0, or -1."""
+        if self == RelationshipType.TRUST:
+            return 1
+        elif self == RelationshipType.DISTRUST:
+            return -1
+        return 0
+
+    @property
+    def affects_worldview(self) -> bool:
+        """Whether this relationship type affects the entity's worldview."""
+        return self in (RelationshipType.TRUST, RelationshipType.DISTRUST)
+
+
 class DecayModel(StrEnum):
     """Models for how trust decays over time."""
 
@@ -75,6 +126,7 @@ class TrustEdge:
     confidentiality: float = 0.5
     judgment: float = 0.1  # Very low default - trust in judgment must be earned
     domain: str | None = None
+    relationship_type: RelationshipType = RelationshipType.TRUST  # Default for backward compat
     can_delegate: bool = False  # Default: non-transitive trust
     delegation_depth: int = 0  # 0 = no limit when can_delegate=True
     decay_rate: float = 0.0  # 0.0 = no decay
@@ -108,6 +160,10 @@ class TrustEdge:
         # Convert string decay_model to enum if needed
         if isinstance(self.decay_model, str):
             self.decay_model = DecayModel.from_string(self.decay_model)
+
+        # Convert string relationship_type to enum if needed
+        if isinstance(self.relationship_type, str):
+            self.relationship_type = RelationshipType.from_string(self.relationship_type)
 
         # Cannot trust yourself (that's not a trust edge)
         if self.source_did == self.target_did:
@@ -313,6 +369,7 @@ class TrustEdge:
             confidentiality=self.confidentiality,
             judgment=self.judgment,
             domain=self.domain,
+            relationship_type=self.relationship_type,
             can_delegate=self.can_delegate,
             delegation_depth=self.delegation_depth,
             decay_rate=decay_rate,
@@ -350,6 +407,7 @@ class TrustEdge:
             confidentiality=self.confidentiality,
             judgment=self.judgment,
             domain=self.domain,
+            relationship_type=self.relationship_type,
             can_delegate=can_delegate,
             delegation_depth=delegation_depth,
             decay_rate=self.decay_rate,
@@ -429,6 +487,7 @@ class TrustEdge:
             "confidentiality": self.confidentiality,
             "judgment": self.judgment,
             "domain": self.domain,
+            "relationship_type": self.relationship_type.value,
             "can_delegate": self.can_delegate,
             "delegation_depth": self.delegation_depth,
             "decay_rate": self.decay_rate,
@@ -473,6 +532,11 @@ class TrustEdge:
         if isinstance(decay_model, str):
             decay_model = DecayModel.from_string(decay_model)
 
+        # Parse relationship type
+        relationship_type = data.get("relationship_type", "trust")
+        if isinstance(relationship_type, str):
+            relationship_type = RelationshipType.from_string(relationship_type)
+
         # Parse UUID
         edge_id = data.get("id")
         if isinstance(edge_id, str):
@@ -486,6 +550,7 @@ class TrustEdge:
             confidentiality=float(data.get("confidentiality", 0.5)),
             judgment=float(data.get("judgment", 0.1)),
             domain=data.get("domain"),
+            relationship_type=relationship_type,
             can_delegate=bool(data.get("can_delegate", False)),
             delegation_depth=int(data.get("delegation_depth", 0)),
             decay_rate=float(data.get("decay_rate", 0.0)),

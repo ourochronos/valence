@@ -318,6 +318,26 @@ Federation (Week 2):
         help="Minimum trusted sources (default: 3)",
     )
 
+    # trust watch
+    trust_watch_parser = trust_subparsers.add_parser("watch", help="Watch an entity (see content without reputation boost)")
+    trust_watch_parser.add_argument("entity", help="DID of entity to watch")
+    trust_watch_parser.add_argument("--domain", "-d", help="Optional domain scope")
+
+    # trust unwatch
+    trust_unwatch_parser = trust_subparsers.add_parser("unwatch", help="Remove a watch relationship")
+    trust_unwatch_parser.add_argument("entity", help="DID of entity to unwatch")
+    trust_unwatch_parser.add_argument("--domain", "-d", help="Optional domain scope")
+
+    # trust distrust
+    trust_distrust_parser = trust_subparsers.add_parser("distrust", help="Mark an entity as distrusted (negative reputation)")
+    trust_distrust_parser.add_argument("entity", help="DID of entity to distrust")
+    trust_distrust_parser.add_argument("--domain", "-d", help="Optional domain scope")
+
+    # trust ignore
+    trust_ignore_parser = trust_subparsers.add_parser("ignore", help="Ignore an entity (block content)")
+    trust_ignore_parser.add_argument("entity", help="DID of entity to ignore")
+    trust_ignore_parser.add_argument("--domain", "-d", help="Optional domain scope")
+
     # ========================================================================
     # EMBEDDINGS commands
     # ========================================================================
