@@ -155,9 +155,7 @@ class TestMemoryAuthChallengeStore:
         assert removed == 5
 
     def test_cleanup_none_expired(self, memory_store):
-        memory_store.store_challenge(
-            "did:vkb:web:a.example.com", "c", datetime.now() + timedelta(minutes=5)
-        )
+        memory_store.store_challenge("did:vkb:web:a.example.com", "c", datetime.now() + timedelta(minutes=5))
         removed = memory_store.cleanup_expired()
         assert removed == 0
 
@@ -168,12 +166,8 @@ class TestMemoryAuthChallengeStore:
         assert did in memory_store
 
     def test_clear(self, memory_store):
-        memory_store.store_challenge(
-            "did:vkb:web:a.example.com", "a", datetime.now() + timedelta(minutes=5)
-        )
-        memory_store.store_challenge(
-            "did:vkb:web:b.example.com", "b", datetime.now() + timedelta(minutes=5)
-        )
+        memory_store.store_challenge("did:vkb:web:a.example.com", "a", datetime.now() + timedelta(minutes=5))
+        memory_store.store_challenge("did:vkb:web:b.example.com", "b", datetime.now() + timedelta(minutes=5))
 
         memory_store.clear()
         assert memory_store.get_challenge("did:vkb:web:a.example.com") is None

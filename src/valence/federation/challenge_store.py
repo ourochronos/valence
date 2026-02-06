@@ -139,10 +139,7 @@ class RedisAuthChallengeStore(AuthChallengeStore):
 
     def __init__(self, redis_url: str | None = None) -> None:
         if redis is None:
-            raise ImportError(
-                "redis package is required for RedisAuthChallengeStore. "
-                "Install with: pip install valence[redis]"
-            )
+            raise ImportError("redis package is required for RedisAuthChallengeStore. Install with: pip install valence[redis]")
 
         url = redis_url or os.environ.get("VALENCE_REDIS_URL", "redis://localhost:6379")
         self._client = redis.Redis.from_url(url, decode_responses=True)
@@ -162,10 +159,12 @@ class RedisAuthChallengeStore(AuthChallengeStore):
         expires_at: datetime,
     ) -> None:
         key = self._key(client_did)
-        data = json.dumps({
-            "challenge": challenge,
-            "expires_at": expires_at.isoformat(),
-        })
+        data = json.dumps(
+            {
+                "challenge": challenge,
+                "expires_at": expires_at.isoformat(),
+            }
+        )
         # Compute TTL in seconds from now
         ttl_seconds = max(1, int((expires_at - datetime.now()).total_seconds()))
         self._client.setex(key, ttl_seconds, data)
