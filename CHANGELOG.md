@@ -5,6 +5,64 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-02-06
+
+### 🎉 First Stable Release
+
+Valence is a knowledge substrate for agents and humans — beliefs with dimensional confidence, trust-gated sharing, and real peer-to-peer networking.
+
+### Core — Beliefs & Confidence
+- **Extensible dimensions** via JSONB storage (#266) — custom confidence dimensions beyond the core 6
+- **Dimension schema registry** (#267) — register, validate, and inherit dimension schemas
+- **Schema columns**: `holder_id`, `version`, `content_hash`, `visibility` added to beliefs table
+
+### Trust & Social Layer
+- **Multi-dimensional epistemic trust** (#268) — trust across competence, integrity, judgment + extensible dimensions
+- **Watch vs Trust distinction** (#269) — attention is free, endorsement is earned
+- **Resource sharing** (#270) — share prompts, configs, patterns with trust-gated access and safety scanning
+- **Usage attestations** (#271) — track resource usage outcomes as quality signals
+- **Multi-DID identity** (#277) — each node has its own DID, no master key single point of failure
+
+### Federation
+- **Require-auth config** (#255) — `VALENCE_FEDERATION_REQUIRE_AUTH` for production deployments
+- **Belief-level nonces** (#256) — replay protection per belief
+- **Redis challenge store** (#257) — production-ready auth challenge storage
+- **Embeddings backfill CLI** (#258) — `valence embeddings backfill` command
+- **Peer exchange protocol** (#263) — gossip-style peer discovery with rate limiting and trust filtering
+- **TrustManager domain verification** (#264) — trust-weighted domain verification decisions
+- **Cursor-based pagination** (#265) — efficient keyset pagination for sync
+- **Gateway key rotation** (#253) — HMAC-SHA256 key rotation with graceful transitions
+- **Migration system** (#261) — proper up/down/status/create migrations
+
+### P2P Transport
+- **Transport adapter layer** (#299) — pluggable networking via Protocol-based abstraction
+- **py-libp2p integration** (#300) — Kademlia DHT, GossipSub, NAT traversal, Ed25519 PeerID
+- **VFP protocol mapping** (#301) — Valence Federation Protocol mapped to libp2p streams
+- Legacy transport preserved as fallback
+
+### Network
+- **Contribution-based QoS** (#276) — dynamic deprioritization curve, priority tiers, new-user grace period
+
+### CLI
+- **Modular command registration** (#293) — `main.py` reduced from 621 to 164 lines
+- New commands: `valence embeddings`, `valence schema`, `valence attestations`, `valence resources`, `valence qos`, `valence identity`, `valence migrate`
+
+### Docs
+- **Principles** (#273) — five non-negotiable principles with compliance tests
+- **Governance** (#273) — three-phase transition plan (BDFL → shared stewardship → network governance)
+- **Economics** (#274) — sustainability model analysis (foundation + cooperative recommended)
+
+### Infrastructure
+- Unified CI test runner (single job, honest coverage)
+- `.mypy_cache` excluded from git
+- Spec compliance tests: all 13 passing (0 xfails)
+
+### Decisions
+- Protocol neutral on content — node-level policy, not protocol-level censorship
+- py-libp2p for v1.0.0, rust-libp2p deferred to when scale demands it
+
+---
+
 ## [0.3.0] - 2026-02-05
 
 ### Major Refactoring
