@@ -10,14 +10,14 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
-from starlette.requests import Request
-from starlette.responses import JSONResponse
-
-from ..compliance.deletion import (
+from oro_compliance.deletion import (
     DeletionReason,
     delete_user_data,
     get_deletion_verification,
 )
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+
 from .errors import (
     NOT_FOUND_TOMBSTONE,
     VALIDATION_INVALID_VALUE,

@@ -58,7 +58,7 @@ async def belief_corroboration_endpoint(request: Request) -> JSONResponse:
         return invalid_format_error("belief_id", "must be valid UUID")
 
     try:
-        from ..core.corroboration import get_corroboration
+        from oro_federation.corroboration import get_corroboration
 
         corroboration = get_corroboration(belief_id)
 
@@ -126,7 +126,7 @@ async def most_corroborated_beliefs_endpoint(request: Request) -> JSONResponse:
 
         domain_filter = [domain] if domain else None
 
-        from ..core.corroboration import get_most_corroborated_beliefs
+        from oro_federation.corroboration import get_most_corroborated_beliefs
 
         beliefs = get_most_corroborated_beliefs(
             limit=limit,

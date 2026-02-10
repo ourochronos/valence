@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 async def cmd_start(args: argparse.Namespace) -> int:
     """Start a router node."""
-    from ..network.router import RouterNode
+    from oro_network import RouterNode
 
     router = RouterNode(
         host=args.host,

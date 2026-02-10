@@ -92,7 +92,7 @@ def cmd_trust_set(args: argparse.Namespace) -> int:
     Usage:
         valence trust set <entity> --conclusions 0.8 --reasoning 0.9 --honesty 0.7
     """
-    from ...privacy.trust import EPISTEMIC_DIMENSIONS, TrustService
+    from oro_privacy.trust import EPISTEMIC_DIMENSIONS, TrustService
 
     service = TrustService(use_memory=False)
 
@@ -146,7 +146,7 @@ def cmd_trust_set(args: argparse.Namespace) -> int:
 
 def cmd_trust_show(args: argparse.Namespace) -> int:
     """Show trust dimensions for an entity (#268)."""
-    from ...privacy.trust import TrustService
+    from oro_privacy.trust import TrustService
 
     service = TrustService(use_memory=False)
 
@@ -190,8 +190,8 @@ def cmd_trust_show(args: argparse.Namespace) -> int:
 
 def cmd_trust_check(args: argparse.Namespace) -> int:
     """Check for trust concentration issues in the federation network."""
-    from ...federation.trust import check_trust_concentration
-    from ...federation.trust_policy import CONCENTRATION_THRESHOLDS
+    from oro_federation.trust import check_trust_concentration
+    from oro_federation.trust_policy import CONCENTRATION_THRESHOLDS
 
     # Build custom thresholds if provided
     thresholds = dict(CONCENTRATION_THRESHOLDS)  # Copy defaults
@@ -252,7 +252,7 @@ def cmd_trust_check(args: argparse.Namespace) -> int:
 
 def cmd_trust_watch(args: argparse.Namespace) -> int:
     """Watch an entity (see content without giving reputation weight)."""
-    from ...privacy.trust import TrustService
+    from oro_privacy.trust import TrustService
 
     try:
         service = TrustService(use_memory=False)
@@ -276,7 +276,7 @@ def cmd_trust_watch(args: argparse.Namespace) -> int:
 
 def cmd_trust_unwatch(args: argparse.Namespace) -> int:
     """Remove a watch relationship."""
-    from ...privacy.trust import TrustService
+    from oro_privacy.trust import TrustService
 
     try:
         service = TrustService(use_memory=False)
@@ -300,7 +300,7 @@ def cmd_trust_unwatch(args: argparse.Namespace) -> int:
 
 def cmd_trust_distrust(args: argparse.Namespace) -> int:
     """Mark an entity as distrusted (negative reputation weight)."""
-    from ...privacy.trust import TrustService
+    from oro_privacy.trust import TrustService
 
     try:
         service = TrustService(use_memory=False)
@@ -324,7 +324,7 @@ def cmd_trust_distrust(args: argparse.Namespace) -> int:
 
 def cmd_trust_ignore(args: argparse.Namespace) -> int:
     """Ignore an entity (block content, no reputation effect)."""
-    from ...privacy.trust import TrustService
+    from oro_privacy.trust import TrustService
 
     try:
         service = TrustService(use_memory=False)

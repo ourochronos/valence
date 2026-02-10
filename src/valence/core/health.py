@@ -11,10 +11,46 @@ import sys
 from dataclasses import dataclass, field
 from typing import Any
 
-from .db import DatabaseStats, get_connection_params, table_exists
+from oro_db import count_rows, table_exists
+from oro_db.db import get_connection_params
+
 from .exceptions import ConfigException, DatabaseException
 
 logger = logging.getLogger(__name__)
+
+
+class DatabaseStats:
+    """Statistics about the valence database tables."""
+
+    def __init__(self):
+        self.beliefs_count: int = 0
+        self.entities_count: int = 0
+        self.sessions_count: int = 0
+        self.exchanges_count: int = 0
+        self.patterns_count: int = 0
+        self.tensions_count: int = 0
+
+    @classmethod
+    def collect(cls) -> DatabaseStats:
+        """Collect current database statistics."""
+        import psycopg2
+
+        stats = cls()
+        tables = [
+            ("beliefs", "beliefs_count"),
+            ("entities", "entities_count"),
+            ("vkb_sessions", "sessions_count"),
+            ("vkb_exchanges", "exchanges_count"),
+            ("vkb_patterns", "patterns_count"),
+            ("tensions", "tensions_count"),
+        ]
+        for table, attr in tables:
+            try:
+                setattr(stats, attr, count_rows(table))
+            except (ValueError, DatabaseException, psycopg2.Error) as e:
+                logger.debug(f"Could not count rows in {table}: {e}")
+        return stats
+
 
 # Required environment variables for operation
 REQUIRED_ENV_VARS = [

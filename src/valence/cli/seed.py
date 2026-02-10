@@ -72,7 +72,7 @@ def get_config_from_env() -> dict[str, Any]:
 
 async def cmd_start(args: argparse.Namespace) -> int:
     """Start the seed node server."""
-    from valence.network.seed import SeedConfig, SeedNode
+    from oro_network import SeedConfig, SeedNode
 
     # Build config from env + CLI args
     config_dict = get_config_from_env()

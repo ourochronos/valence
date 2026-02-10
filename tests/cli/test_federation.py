@@ -399,7 +399,7 @@ class TestListCommand:
             json=False,
         )
 
-        with patch("valence.federation.tools.federation_node_list") as mock_list:
+        with patch("oro_federation.tools.federation_node_list") as mock_list:
             mock_list.return_value = mock_node_list
 
             result = await cmd_list(args)
@@ -418,7 +418,7 @@ class TestListCommand:
             json=False,
         )
 
-        with patch("valence.federation.tools.federation_node_list") as mock_list:
+        with patch("oro_federation.tools.federation_node_list") as mock_list:
             mock_list.return_value = {"success": True, "nodes": [], "count": 0}
 
             result = await cmd_list(args)
@@ -437,7 +437,7 @@ class TestListCommand:
             json=True,
         )
 
-        with patch("valence.federation.tools.federation_node_list") as mock_list:
+        with patch("oro_federation.tools.federation_node_list") as mock_list:
             mock_list.return_value = mock_node_list
 
             result = await cmd_list(args)
@@ -465,8 +465,8 @@ class TestTrustCommand:
         )
 
         with (
-            patch("valence.federation.tools.federation_trust_get") as mock_get,
-            patch("valence.federation.tools.federation_trust_set_preference") as mock_set,
+            patch("oro_federation.tools.federation_trust_get") as mock_get,
+            patch("oro_federation.tools.federation_trust_set_preference") as mock_set,
         ):
             mock_get.return_value = {"success": True, "effective_trust": 0.5}
             mock_set.return_value = {"success": True, "effective_trust": 0.75}
@@ -505,7 +505,7 @@ class TestTrustCommand:
             json=False,
         )
 
-        with patch("valence.federation.tools.federation_trust_get") as mock_get:
+        with patch("oro_federation.tools.federation_trust_get") as mock_get:
             mock_get.return_value = {"success": False, "error": "Node not found"}
 
             result = await cmd_trust(args)
@@ -527,7 +527,7 @@ class TestSyncCommand:
             json=False,
         )
 
-        with patch("valence.federation.tools.federation_sync_trigger") as mock_trigger:
+        with patch("oro_federation.tools.federation_sync_trigger") as mock_trigger:
             mock_trigger.return_value = {
                 "success": True,
                 "queued_nodes": 3,
@@ -550,7 +550,7 @@ class TestSyncCommand:
             json=False,
         )
 
-        with patch("valence.federation.tools.federation_sync_trigger") as mock_trigger:
+        with patch("oro_federation.tools.federation_sync_trigger") as mock_trigger:
             mock_trigger.return_value = {"success": True}
 
             result = await cmd_sync(args)
@@ -567,7 +567,7 @@ class TestSyncCommand:
             json=False,
         )
 
-        with patch("valence.federation.tools.federation_sync_trigger") as mock_trigger:
+        with patch("oro_federation.tools.federation_sync_trigger") as mock_trigger:
             mock_trigger.return_value = {"success": False, "error": "No active nodes"}
 
             result = await cmd_sync(args)

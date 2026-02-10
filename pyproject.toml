@@ -18,11 +18,25 @@ keywords = [
 ]
 
 dependencies = [
-    # Core dependencies
+    # Orobobos bricks
+    "oro-db>=0.1.0",
+    "oro-models>=0.1.0",
+    "oro-confidence>=0.1.0",
+    "oro-crypto>=0.1.0",
+    "oro-identity>=0.1.0",
+    "oro-consensus>=0.1.0",
+    "oro-storage>=0.1.0",
+    "oro-mcp-base>=0.1.0",
+    "oro-compliance>=0.1.0",
+    "oro-network>=0.1.0",
+    "oro-embeddings>=0.1.0",
+    "oro-privacy>=0.1.0",
+    "oro-federation>=0.1.0",
+    # Existing deps
     "mcp>=1.0",
     "openai>=1.0",
     "psycopg2-binary>=2.9",
-    "asyncpg>=0.29.0",  # Async database driver
+    "asyncpg>=0.29.0",
     "numpy>=1.24",
     "pgvector>=0.2",
     "sentence-transformers>=2.2.0",
@@ -31,10 +45,9 @@ dependencies = [
     "pydantic-settings>=2.0.0",
     "PyJWT>=2.11.0",
     "PyYAML>=6.0",
-    "aiohttp>=3.9.0",  # Federation HTTP client
-    "dnspython>=2.4.0",  # DNS lookups for domain verification
-    "cryptography>=42.0",  # E2E encryption for relay protocol
-    # Resilient storage (erasure coding uses pure Python GF arithmetic)
+    "aiohttp>=3.9.0",
+    "dnspython>=2.4.0",
+    "cryptography>=42.0",
 ]
 
 [project.optional-dependencies]

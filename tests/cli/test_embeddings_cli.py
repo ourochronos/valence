@@ -231,7 +231,7 @@ class TestBackfillDryRun:
 class TestBackfillNormal:
     """Test normal backfill delegates to service layer."""
 
-    @patch("valence.embeddings.service.backfill_embeddings", return_value=5)
+    @patch("oro_embeddings.service.backfill_embeddings", return_value=5)
     @patch("valence.cli.commands.embeddings.get_db_connection")
     def test_backfill_calls_service(self, mock_get_conn, mock_backfill, mock_db, capsys):
         """Backfill delegates to backfill_embeddings service."""
@@ -250,7 +250,7 @@ class TestBackfillNormal:
         assert result == 0
         mock_backfill.assert_called_once_with("belief", batch_size=100)
 
-    @patch("valence.embeddings.service.backfill_embeddings", side_effect=[3, 2, 1])
+    @patch("oro_embeddings.service.backfill_embeddings", side_effect=[3, 2, 1])
     @patch("valence.cli.commands.embeddings.get_db_connection")
     def test_backfill_all_types(self, mock_get_conn, mock_backfill, mock_db, capsys):
         """Backfill processes all types when no filter."""
@@ -272,7 +272,7 @@ class TestBackfillNormal:
         captured = capsys.readouterr()
         assert "complete" in captured.out.lower()
 
-    @patch("valence.embeddings.service.backfill_embeddings", return_value=10)
+    @patch("oro_embeddings.service.backfill_embeddings", return_value=10)
     @patch("valence.cli.commands.embeddings.get_db_connection")
     def test_backfill_custom_batch_size(self, mock_get_conn, mock_backfill, mock_db, capsys):
         """Batch size is passed through to service."""
@@ -317,7 +317,7 @@ class TestBackfillNormal:
 class TestBackfillForce:
     """Test --force mode re-embeds existing records."""
 
-    @patch("valence.embeddings.service.embed_content", return_value={})
+    @patch("oro_embeddings.service.embed_content", return_value={})
     @patch("valence.cli.commands.embeddings.get_db_connection")
     def test_force_reembeds_all(self, mock_get_conn, mock_embed, mock_db, capsys):
         """Force mode fetches and re-embeds all records."""

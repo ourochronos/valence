@@ -31,7 +31,7 @@ def get_db_connection():
 def get_embedding(text: str) -> list[float] | None:
     """Generate embedding using configured provider (local or OpenAI)."""
     try:
-        from ..embeddings.service import generate_embedding
+        from oro_embeddings.service import generate_embedding
 
         return generate_embedding(text)
     except Exception as e:

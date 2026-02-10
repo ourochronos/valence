@@ -121,7 +121,7 @@ async def health_endpoint(request: Request) -> JSONResponse:
 
     # Optionally check database connectivity
     try:
-        from ..core.db import get_cursor
+        from oro_db import get_cursor
 
         with get_cursor() as cur:
             cur.execute("SELECT 1")

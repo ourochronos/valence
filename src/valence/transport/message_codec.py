@@ -20,7 +20,7 @@ import struct
 from dataclasses import dataclass
 from typing import Any
 
-from valence.federation.protocol import ProtocolMessage, parse_message
+from oro_federation.protocol import ProtocolMessage, parse_message
 
 # Maximum allowed frame payload (8 MiB).  Protects against OOM from a
 # malicious peer sending a huge length prefix.

@@ -36,7 +36,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
 def cmd_peer_add(args: argparse.Namespace) -> int:
     """Add a trusted peer to the local registry."""
-    from ...federation.peer_sync import get_trust_registry
+    from oro_federation.peer_sync import get_trust_registry
 
     try:
         registry = get_trust_registry()
@@ -64,7 +64,7 @@ def cmd_peer_add(args: argparse.Namespace) -> int:
 
 def cmd_peer_list(args: argparse.Namespace) -> int:
     """List trusted peers."""
-    from ...federation.peer_sync import get_trust_registry
+    from oro_federation.peer_sync import get_trust_registry
 
     try:
         registry = get_trust_registry()
@@ -97,7 +97,7 @@ def cmd_peer_list(args: argparse.Namespace) -> int:
 
 def cmd_peer_remove(args: argparse.Namespace) -> int:
     """Remove a peer from the trust registry."""
-    from ...federation.peer_sync import get_trust_registry
+    from oro_federation.peer_sync import get_trust_registry
 
     try:
         registry = get_trust_registry()

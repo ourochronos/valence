@@ -66,8 +66,8 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
 def cmd_qos_status(args: argparse.Namespace) -> int:
     """Show QoS system status including policy, load, and tier summary."""
-    from ...network.qos import QoSPolicy
-    from ...network.qos_manager import QoSManager
+    from oro_network.qos import QoSPolicy
+    from oro_network.qos_manager import QoSManager
 
     try:
         manager = QoSManager(policy=QoSPolicy())
@@ -114,7 +114,7 @@ def cmd_qos_status(args: argparse.Namespace) -> int:
 
 def cmd_qos_score(args: argparse.Namespace) -> int:
     """Show contribution score for a node (or simulated default)."""
-    from ...network.qos import ContributionDimension, ContributionScore, QoSPolicy
+    from oro_network.qos import ContributionDimension, ContributionScore, QoSPolicy
 
     try:
         node_id = getattr(args, "node_id", None) or "self"

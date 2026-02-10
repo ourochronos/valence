@@ -257,8 +257,8 @@ async def cmd_discover(args: argparse.Namespace) -> int:
         print("\nRegistering node...")
         # Use the federation tools to register
         try:
-            from ..federation.discovery import register_node
-            from ..federation.identity import DIDDocument
+            from oro_federation.discovery import register_node
+            from oro_federation.identity import DIDDocument
 
             did_doc = DIDDocument.from_dict(result)
             node = register_node(did_doc)
@@ -279,7 +279,7 @@ async def cmd_discover(args: argparse.Namespace) -> int:
 async def cmd_list(args: argparse.Namespace) -> int:
     """List known federation nodes."""
     try:
-        from ..federation.tools import federation_node_list
+        from oro_federation.tools import federation_node_list
 
         result = federation_node_list(
             status=args.status,
@@ -336,7 +336,7 @@ async def cmd_list(args: argparse.Namespace) -> int:
 async def cmd_status(args: argparse.Namespace) -> int:
     """Show federation status."""
     try:
-        from ..core.db import get_cursor
+        from oro_db import get_cursor
 
         # Get overall federation stats
         with get_cursor() as cur:
@@ -453,7 +453,7 @@ async def cmd_trust(args: argparse.Namespace) -> int:
         return 1
 
     try:
-        from ..federation.tools import (
+        from oro_federation.tools import (
             federation_trust_get,
             federation_trust_set_preference,
         )
@@ -498,7 +498,7 @@ async def cmd_trust(args: argparse.Namespace) -> int:
 async def cmd_sync(args: argparse.Namespace) -> int:
     """Trigger sync with a node or all active nodes."""
     try:
-        from ..federation.tools import federation_sync_status, federation_sync_trigger
+        from oro_federation.tools import federation_sync_status, federation_sync_trigger
 
         node_id = args.node_id
 

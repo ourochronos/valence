@@ -213,7 +213,7 @@ def cmd_migrate_bootstrap(args: argparse.Namespace) -> int:
 
 def cmd_migrate_visibility(args: argparse.Namespace) -> int:
     """Migrate existing beliefs from old visibility to SharePolicy."""
-    from ...privacy.migration import migrate_all_beliefs_sync
+    from oro_privacy.migration import migrate_all_beliefs_sync
 
     print("🔄 Migrating visibility to SharePolicy...")
 

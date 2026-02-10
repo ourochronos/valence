@@ -114,7 +114,7 @@ class MigrationRunner:
         """Get a database connection."""
         if self._connection_factory:
             return self._connection_factory()
-        from .db import get_connection
+        from oro_db import get_connection
 
         return get_connection()
 
@@ -127,7 +127,7 @@ class MigrationRunner:
             except Exception:
                 pass
             return
-        from .db import put_connection
+        from oro_db import put_connection
 
         put_connection(conn)
 

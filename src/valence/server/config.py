@@ -269,7 +269,7 @@ def get_settings() -> ServerSettings:
     if _settings is None:
         _settings = ServerSettings()
         # Register with core config layer so federation can access without importing server
-        from ..core.config import set_federation_config
+        from oro_federation.config import set_federation_config
 
         set_federation_config(_settings)
     return _settings

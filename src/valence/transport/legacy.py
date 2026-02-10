@@ -92,7 +92,7 @@ class LegacyTransportAdapter:
         try:
             # Lazy-import so the transport package can be loaded without
             # pulling in the full federation dependency graph at import time.
-            from ..federation.peers import get_peer_store  # noqa: F811
+            from oro_federation.peers import get_peer_store
 
             self._peer_store = get_peer_store()
 

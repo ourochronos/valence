@@ -80,7 +80,7 @@ def mock_db():
 
         return CM()
 
-    with patch("valence.core.db.get_cursor", mock_context):
+    with patch("oro_db.get_cursor", mock_context):
         yield mock_cursor
 
 
@@ -151,7 +151,7 @@ class TestHealthEndpoint:
             return CM()
 
         # Patch at valence.core.db where get_cursor is defined
-        with patch("valence.core.db.get_cursor", mock_context):
+        with patch("oro_db.get_cursor", mock_context):
             from valence.server.app import create_app
 
             app = create_app()

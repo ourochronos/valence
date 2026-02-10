@@ -43,7 +43,7 @@ def cmd_discover(args: argparse.Namespace) -> int:
     import asyncio
 
     async def run_discovery():
-        from ...network.discovery import (
+        from oro_network.discovery import (
             DiscoveryClient,
             DiscoveryError,
             NoSeedsAvailableError,

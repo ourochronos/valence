@@ -15,13 +15,13 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
-from starlette.requests import Request
-
-from valence.compliance.deletion import (
+from oro_compliance.deletion import (
     DeletionReason,
     DeletionResult,
     Tombstone,
 )
+from starlette.requests import Request
+
 from valence.server.compliance_endpoints import (
     delete_user_data_endpoint,
     get_deletion_verification_endpoint,

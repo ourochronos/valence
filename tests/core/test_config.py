@@ -6,23 +6,14 @@ Tests cover:
 - Singleton behavior (get_config / clear_config_cache)
 - Computed properties (database_url, connection_params, pool_config)
 - All setting categories: db, embedding, logging, cache, federation/seed
-- Federation config protocol and management
 """
 
 from __future__ import annotations
 
-import pytest
-
 from valence.core.config import (
     CoreSettings,
-    FederationConfig,
-    FederationConfigProtocol,
     clear_config_cache,
-    clear_federation_config,
     get_config,
-    get_federation_config,
-    get_federation_config_or_none,
-    set_federation_config,
 )
 
 # ============================================================================
@@ -326,111 +317,6 @@ class TestGetConfigSingleton:
         # Same instance, no reload
         assert config2.log_level == "INFO"
         assert config1 is config2
-
-
-# ============================================================================
-# FederationConfig and Protocol
-# ============================================================================
-
-
-class TestFederationConfig:
-    """Test FederationConfig dataclass and protocol."""
-
-    def test_federation_config_defaults(self):
-        """Test FederationConfig has correct defaults."""
-        config = FederationConfig()
-
-        assert config.federation_node_did is None
-        assert config.federation_private_key is None
-        assert config.federation_sync_interval_seconds == 300
-        assert config.port == 8420
-
-    def test_federation_config_custom_values(self):
-        """Test FederationConfig with custom values."""
-        config = FederationConfig(
-            federation_node_did="did:key:z6Mk...",
-            federation_private_key="abcd1234",
-            federation_sync_interval_seconds=600,
-            port=9000,
-        )
-
-        assert config.federation_node_did == "did:key:z6Mk..."
-        assert config.federation_private_key == "abcd1234"
-        assert config.federation_sync_interval_seconds == 600
-        assert config.port == 9000
-
-    def test_federation_config_implements_protocol(self):
-        """Test FederationConfig implements FederationConfigProtocol."""
-        config = FederationConfig()
-        assert isinstance(config, FederationConfigProtocol)
-
-
-class TestFederationConfigManagement:
-    """Test global federation config management functions."""
-
-    def setup_method(self):
-        """Clear federation config before each test."""
-        clear_federation_config()
-
-    def teardown_method(self):
-        """Clear federation config after each test."""
-        clear_federation_config()
-
-    def test_get_federation_config_raises_when_not_set(self):
-        """Test get_federation_config raises RuntimeError when not set."""
-        with pytest.raises(RuntimeError) as exc_info:
-            get_federation_config()
-
-        assert "Federation config not initialized" in str(exc_info.value)
-
-    def test_get_federation_config_or_none_returns_none(self):
-        """Test get_federation_config_or_none returns None when not set."""
-        result = get_federation_config_or_none()
-        assert result is None
-
-    def test_set_and_get_federation_config(self):
-        """Test setting and getting federation config."""
-        config = FederationConfig(
-            federation_node_did="did:key:test",
-            federation_private_key="testkey",
-        )
-        set_federation_config(config)
-
-        retrieved = get_federation_config()
-        assert retrieved is config
-        assert retrieved.federation_node_did == "did:key:test"
-        assert retrieved.federation_private_key == "testkey"
-
-    def test_get_federation_config_or_none_returns_config(self):
-        """Test get_federation_config_or_none returns config when set."""
-        config = FederationConfig()
-        set_federation_config(config)
-
-        retrieved = get_federation_config_or_none()
-        assert retrieved is config
-
-    def test_clear_federation_config(self):
-        """Test clear_federation_config clears the global config."""
-        config = FederationConfig()
-        set_federation_config(config)
-
-        # Verify it's set
-        assert get_federation_config_or_none() is not None
-
-        # Clear and verify
-        clear_federation_config()
-        assert get_federation_config_or_none() is None
-
-    def test_set_federation_config_replaces_existing(self):
-        """Test that setting federation config replaces existing one."""
-        config1 = FederationConfig(port=8001)
-        config2 = FederationConfig(port=8002)
-
-        set_federation_config(config1)
-        assert get_federation_config().port == 8001
-
-        set_federation_config(config2)
-        assert get_federation_config().port == 8002
 
 
 # ============================================================================

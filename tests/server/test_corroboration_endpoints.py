@@ -82,7 +82,7 @@ class TestBeliefCorroborationEndpoint:
         """Test successful corroboration retrieval."""
         belief_id = uuid4()
 
-        with patch("valence.core.corroboration.get_corroboration") as mock_get:
+        with patch("oro_federation.corroboration.get_corroboration") as mock_get:
             mock_get.return_value = mock_corroboration_info(
                 belief_id=belief_id,
                 count=3,
@@ -105,7 +105,7 @@ class TestBeliefCorroborationEndpoint:
         """Test uncorroborated belief."""
         belief_id = uuid4()
 
-        with patch("valence.core.corroboration.get_corroboration") as mock_get:
+        with patch("oro_federation.corroboration.get_corroboration") as mock_get:
             mock_get.return_value = mock_corroboration_info(
                 belief_id=belief_id,
                 count=0,
@@ -125,7 +125,7 @@ class TestBeliefCorroborationEndpoint:
         """Test single corroboration."""
         belief_id = uuid4()
 
-        with patch("valence.core.corroboration.get_corroboration") as mock_get:
+        with patch("oro_federation.corroboration.get_corroboration") as mock_get:
             mock_get.return_value = mock_corroboration_info(count=1)
 
             response = client.get(f"/beliefs/{belief_id}/corroboration")
@@ -137,7 +137,7 @@ class TestBeliefCorroborationEndpoint:
         """Test well corroborated belief."""
         belief_id = uuid4()
 
-        with patch("valence.core.corroboration.get_corroboration") as mock_get:
+        with patch("oro_federation.corroboration.get_corroboration") as mock_get:
             mock_get.return_value = mock_corroboration_info(count=5)
 
             response = client.get(f"/beliefs/{belief_id}/corroboration")
@@ -149,7 +149,7 @@ class TestBeliefCorroborationEndpoint:
         """Test highly corroborated belief."""
         belief_id = uuid4()
 
-        with patch("valence.core.corroboration.get_corroboration") as mock_get:
+        with patch("oro_federation.corroboration.get_corroboration") as mock_get:
             mock_get.return_value = mock_corroboration_info(count=10)
 
             response = client.get(f"/beliefs/{belief_id}/corroboration")
@@ -161,7 +161,7 @@ class TestBeliefCorroborationEndpoint:
         """Test 404 when belief not found."""
         belief_id = uuid4()
 
-        with patch("valence.core.corroboration.get_corroboration") as mock_get:
+        with patch("oro_federation.corroboration.get_corroboration") as mock_get:
             mock_get.return_value = None
 
             response = client.get(f"/beliefs/{belief_id}/corroboration")
@@ -184,7 +184,7 @@ class TestBeliefCorroborationEndpoint:
         """Test 500 on internal error."""
         belief_id = uuid4()
 
-        with patch("valence.core.corroboration.get_corroboration") as mock_get:
+        with patch("oro_federation.corroboration.get_corroboration") as mock_get:
             mock_get.side_effect = Exception("Database connection failed")
 
             response = client.get(f"/beliefs/{belief_id}/corroboration")
@@ -225,7 +225,7 @@ class TestMostCorroboratedBeliefsEndpoint:
             },
         ]
 
-        with patch("valence.core.corroboration.get_most_corroborated_beliefs") as mock_get:
+        with patch("oro_federation.corroboration.get_most_corroborated_beliefs") as mock_get:
             mock_get.return_value = mock_beliefs
 
             response = client.get("/beliefs/most-corroborated")
@@ -241,7 +241,7 @@ class TestMostCorroboratedBeliefsEndpoint:
 
     def test_most_corroborated_with_limit(self, client):
         """Test with custom limit."""
-        with patch("valence.core.corroboration.get_most_corroborated_beliefs") as mock_get:
+        with patch("oro_federation.corroboration.get_most_corroborated_beliefs") as mock_get:
             mock_get.return_value = []
 
             response = client.get("/beliefs/most-corroborated?limit=5")
@@ -254,7 +254,7 @@ class TestMostCorroboratedBeliefsEndpoint:
 
     def test_most_corroborated_with_min_count(self, client):
         """Test with minimum corroboration count."""
-        with patch("valence.core.corroboration.get_most_corroborated_beliefs") as mock_get:
+        with patch("oro_federation.corroboration.get_most_corroborated_beliefs") as mock_get:
             mock_get.return_value = []
 
             response = client.get("/beliefs/most-corroborated?min_count=3")
@@ -266,7 +266,7 @@ class TestMostCorroboratedBeliefsEndpoint:
 
     def test_most_corroborated_with_domain_filter(self, client):
         """Test with domain filter."""
-        with patch("valence.core.corroboration.get_most_corroborated_beliefs") as mock_get:
+        with patch("oro_federation.corroboration.get_most_corroborated_beliefs") as mock_get:
             mock_get.return_value = []
 
             response = client.get("/beliefs/most-corroborated?domain=tech")
@@ -278,7 +278,7 @@ class TestMostCorroboratedBeliefsEndpoint:
 
     def test_most_corroborated_empty_result(self, client):
         """Test when no corroborated beliefs exist."""
-        with patch("valence.core.corroboration.get_most_corroborated_beliefs") as mock_get:
+        with patch("oro_federation.corroboration.get_most_corroborated_beliefs") as mock_get:
             mock_get.return_value = []
 
             response = client.get("/beliefs/most-corroborated")
@@ -291,7 +291,7 @@ class TestMostCorroboratedBeliefsEndpoint:
 
     def test_most_corroborated_internal_error(self, client):
         """Test 500 on internal error."""
-        with patch("valence.core.corroboration.get_most_corroborated_beliefs") as mock_get:
+        with patch("oro_federation.corroboration.get_most_corroborated_beliefs") as mock_get:
             mock_get.side_effect = Exception("Database error")
 
             response = client.get("/beliefs/most-corroborated")
@@ -328,7 +328,7 @@ class TestConfidenceLabelLogic:
         """Test all confidence label thresholds."""
         belief_id = uuid4()
 
-        with patch("valence.core.corroboration.get_corroboration") as mock_get:
+        with patch("oro_federation.corroboration.get_corroboration") as mock_get:
             mock_get.return_value = mock_corroboration_info(count=count)
 
             response = client.get(f"/beliefs/{belief_id}/corroboration")

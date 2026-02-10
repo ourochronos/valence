@@ -98,7 +98,7 @@ class TestSignatureForgery:
 
     def test_invalid_signature_rejected(self):
         """Requests with invalid signatures must be rejected."""
-        from valence.federation.identity import verify_signature
+        from oro_federation.identity import verify_signature
 
         message = b"test message"
         fake_signature = b"not a valid signature"
@@ -114,7 +114,7 @@ class TestSignatureForgery:
 
     def test_wrong_key_signature_rejected(self):
         """Signatures made with different key must be rejected."""
-        from valence.federation.identity import (
+        from oro_federation.identity import (
             generate_keypair,
             sign_message,
             verify_signature,
@@ -135,7 +135,7 @@ class TestSignatureForgery:
 
     def test_tampered_message_detected(self):
         """Modified messages must fail signature verification."""
-        from valence.federation.identity import (
+        from oro_federation.identity import (
             generate_keypair,
             sign_message,
             verify_signature,
@@ -157,7 +157,7 @@ class TestSignatureForgery:
         """Only Ed25519 signatures should be accepted."""
         # RSA, ECDSA, etc. should be rejected
         # The system only supports Ed25519VerificationKey2020
-        from valence.federation.identity import DIDDocument
+        from oro_federation.identity import DIDDocument
 
         # Create document with different algorithm
         doc_dict = {
@@ -183,7 +183,7 @@ class TestMaliciousPeerBehavior:
 
     def test_belief_spam_rate_limiting(self):
         """Nodes sending excessive beliefs must be rate limited."""
-        from valence.federation.trust import TrustManager
+        from oro_federation.trust import TrustManager
 
         TrustManager()
         uuid4()
@@ -195,7 +195,7 @@ class TestMaliciousPeerBehavior:
 
     def test_invalid_belief_format_rejected(self):
         """Beliefs with invalid format must be rejected before processing."""
-        from valence.federation.models import FederatedBelief
+        from oro_federation.models import FederatedBelief
 
         # Missing required fields should raise validation error
         with pytest.raises((ValueError, TypeError, KeyError)):
@@ -217,7 +217,7 @@ class TestMaliciousPeerBehavior:
 
     def test_malformed_did_rejected(self):
         """Malformed DIDs must be rejected."""
-        from valence.federation.identity import parse_did
+        from oro_federation.identity import parse_did
 
         malformed_dids = [
             "not-a-did",
@@ -299,7 +299,7 @@ class TestFederationNodeImpersonation:
 
     def test_did_must_match_signature_key(self):
         """The DID claimed must match the key used to sign."""
-        from valence.federation.identity import (
+        from oro_federation.identity import (
             create_key_did,
             generate_keypair,
             sign_message,
@@ -327,7 +327,7 @@ class TestFederationNodeImpersonation:
 
     def test_web_did_resolution_validates_domain(self):
         """Web DID resolution must validate the domain ownership."""
-        from valence.federation.identity import create_web_did
+        from oro_federation.identity import create_web_did
 
         # Valid domain DIDs
         valid_did = create_web_did("example.com")
@@ -354,7 +354,7 @@ class TestBeliefIntegrity:
 
     def test_belief_signature_includes_content_hash(self):
         """Belief signatures must include content hash."""
-        from valence.federation.identity import (
+        from oro_federation.identity import (
             generate_keypair,
             sign_belief_content,
             verify_belief_signature,

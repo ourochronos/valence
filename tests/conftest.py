@@ -191,7 +191,7 @@ def mock_get_cursor():
     async def fake_get_cursor(dict_cursor: bool = True) -> AsyncGenerator:
         yield mock_conn
 
-    with patch("valence.core.db.get_cursor", fake_get_cursor):
+    with patch("oro_db.get_cursor", fake_get_cursor):
         yield mock_conn
 
 
@@ -203,18 +203,18 @@ def mock_get_cursor():
 @pytest.fixture(autouse=True)
 def reset_db_pool():
     """Reset the connection pool singleton before each test."""
-    from valence.core import db
+    import oro_db.db as db_mod
 
     # Reset the pool singleton
-    db.ConnectionPool._instance = None
-    db._pool = db.ConnectionPool.get_instance()
+    db_mod.ConnectionPool._instance = None
+    db_mod._pool = db_mod.ConnectionPool.get_instance()
     yield
     # Cleanup after test
     try:
-        db._pool.close_all()
+        db_mod._pool.close_all()
     except Exception:
         pass
-    db.ConnectionPool._instance = None
+    db_mod.ConnectionPool._instance = None
 
 
 @pytest.fixture
@@ -233,7 +233,7 @@ def mock_psycopg2_pool():
     mock_pool.putconn = MagicMock()
     mock_pool.closeall = MagicMock()
 
-    with patch("valence.core.db.psycopg2_pool.ThreadedConnectionPool") as mock_pool_class:
+    with patch("oro_db.db.psycopg2_pool.ThreadedConnectionPool") as mock_pool_class:
         mock_pool_class.return_value = mock_pool
         yield {
             "pool_class": mock_pool_class,
@@ -471,7 +471,7 @@ def source_row_factory():
 @pytest.fixture
 def mock_openai():
     """Mock OpenAI client for embedding generation."""
-    with patch("valence.embeddings.service.OpenAI") as mock_class:
+    with patch("oro_embeddings.service.OpenAI") as mock_class:
         mock_client = MagicMock()
         mock_class.return_value = mock_client
 

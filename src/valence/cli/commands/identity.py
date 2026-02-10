@@ -13,7 +13,7 @@ import argparse
 import json
 import sys
 
-from valence.identity.did_manager import (
+from oro_identity import (
     DIDError,
     DIDManager,
     DIDNotFoundError,
@@ -35,7 +35,7 @@ def _load_manager(store_path: str | None = None) -> tuple[DIDManager, InMemoryDI
     import os
     from pathlib import Path
 
-    from valence.identity.multi_did import DIDNode, IdentityCluster, LinkProof
+    from oro_identity import DIDNode, IdentityCluster, LinkProof
 
     path = Path(os.path.expanduser(store_path or _DEFAULT_STORE_PATH))
     store = InMemoryDIDStore()

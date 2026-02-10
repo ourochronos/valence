@@ -97,7 +97,7 @@ class TestCorroborationEndpointsSecurity:
         """Database errors should not leak connection details."""
         belief_id = uuid4()
 
-        with patch("valence.core.corroboration.get_corroboration") as mock_get:
+        with patch("oro_federation.corroboration.get_corroboration") as mock_get:
             # Simulate a database error with sensitive details
             mock_get.side_effect = Exception(
                 'psycopg2.OperationalError: connection to server at "localhost" (127.0.0.1), port 5432 failed: Connection refused'
@@ -123,7 +123,7 @@ class TestCorroborationEndpointsSecurity:
         """File errors should not leak path information."""
         belief_id = uuid4()
 
-        with patch("valence.core.corroboration.get_corroboration") as mock_get:
+        with patch("oro_federation.corroboration.get_corroboration") as mock_get:
             mock_get.side_effect = FileNotFoundError("[Errno 2] No such file or directory: '/home/user/app/data/config.json'")
 
             response = client.get(f"/beliefs/{belief_id}/corroboration")
@@ -137,7 +137,7 @@ class TestCorroborationEndpointsSecurity:
 
     def test_most_corroborated_error_no_leakage(self, client):
         """Most corroborated endpoint errors should not leak details."""
-        with patch("valence.core.corroboration.get_most_corroborated_beliefs") as mock_get:
+        with patch("oro_federation.corroboration.get_most_corroborated_beliefs") as mock_get:
             mock_get.side_effect = RuntimeError("SQLAlchemy error: Table 'beliefs' doesn't exist in schema 'public'")
 
             response = client.get("/beliefs/most-corroborated")

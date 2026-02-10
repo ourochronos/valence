@@ -32,7 +32,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
 def cmd_export(args: argparse.Namespace) -> int:
     """Export beliefs for sharing with a peer."""
-    from ...federation.peer_sync import export_beliefs
+    from oro_federation.peer_sync import export_beliefs
 
     try:
         package = export_beliefs(
@@ -81,7 +81,7 @@ def cmd_import(args: argparse.Namespace) -> int:
     """Import beliefs from a peer."""
     import sys
 
-    from ...federation.peer_sync import ExportPackage, get_trust_registry, import_beliefs
+    from oro_federation.peer_sync import ExportPackage, get_trust_registry, import_beliefs
 
     try:
         # Read input file

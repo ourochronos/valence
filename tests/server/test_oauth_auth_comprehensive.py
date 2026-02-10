@@ -95,7 +95,7 @@ def mock_db():
 
         return CM()
 
-    with patch("valence.core.db.get_cursor", mock_context):
+    with patch("oro_db.get_cursor", mock_context):
         yield mock_cursor
 
 

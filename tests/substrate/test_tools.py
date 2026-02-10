@@ -712,7 +712,7 @@ class TestBeliefCorroboration:
         """Test getting corroboration details."""
         belief_id = uuid4()
 
-        with patch("valence.core.corroboration.get_corroboration") as mock_corr:
+        with patch("oro_federation.corroboration.get_corroboration") as mock_corr:
             mock_corr.return_value = MagicMock(
                 belief_id=belief_id,
                 corroboration_count=3,
@@ -728,7 +728,7 @@ class TestBeliefCorroboration:
 
     def test_belief_corroboration_not_found(self):
         """Test corroboration for non-existent belief."""
-        with patch("valence.core.corroboration.get_corroboration") as mock_corr:
+        with patch("oro_federation.corroboration.get_corroboration") as mock_corr:
             mock_corr.return_value = None
 
             result = belief_corroboration(belief_id=str(uuid4()))

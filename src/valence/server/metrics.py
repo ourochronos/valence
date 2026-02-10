@@ -174,7 +174,7 @@ class MetricsCollector:
         lines: list[str] = []
 
         try:
-            from ..core.db import DatabaseStats
+            from ..core.health import DatabaseStats
 
             stats = DatabaseStats.collect()
             stats_dict = stats.to_dict()
@@ -224,7 +224,7 @@ class MetricsCollector:
         lines: list[str] = []
 
         try:
-            from ..federation.peer_sync import get_trust_registry
+            from oro_federation.peer_sync import get_trust_registry
 
             registry = get_trust_registry()
             peers = registry.list_peers()

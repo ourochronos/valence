@@ -23,8 +23,8 @@ from typing import Any
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
+from oro_db import init_schema
 
-from ..core.db import init_schema
 from ..core.exceptions import DatabaseException, ValidationException
 from ..core.health import cli_health_check, startup_checks
 from .tools import (

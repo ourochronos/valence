@@ -99,7 +99,7 @@ async def verify_did_signature(request: Request) -> dict[str, Any] | None:
 
     # Resolve the DID to get the public key
     try:
-        from ..federation.identity import resolve_did_sync, verify_signature
+        from oro_federation.identity import resolve_did_sync, verify_signature
 
         did_document = resolve_did_sync(did)
 
@@ -357,7 +357,7 @@ def _get_trust_anchors() -> list[dict[str, Any]]:
         List of trust anchor entries
     """
     try:
-        from ..core.db import get_cursor
+        from oro_db import get_cursor
 
         with get_cursor() as cur:
             cur.execute(
@@ -450,7 +450,7 @@ def _derive_did(settings: Any) -> str:
 def _get_federation_stats() -> dict[str, Any]:
     """Get federation statistics from database."""
     try:
-        from ..core.db import get_cursor
+        from oro_db import get_cursor
 
         with get_cursor() as cur:
             # Get node counts by status
@@ -546,7 +546,7 @@ async def federation_protocol(request: Request) -> JSONResponse:
             return missing_field_error("message type")
 
         # Import protocol handler
-        from ..federation.protocol import handle_message, parse_message
+        from oro_federation.protocol import handle_message, parse_message
 
         # Parse and handle the message
         message = parse_message(body)
@@ -587,7 +587,7 @@ async def federation_nodes_list(request: Request) -> JSONResponse:
     if not settings.federation_enabled:
         return feature_not_enabled_error("Federation")
 
-    from ..federation.tools import federation_node_list
+    from oro_federation.tools import federation_node_list
 
     # Get query parameters
     status = request.query_params.get("status")
@@ -616,7 +616,7 @@ async def federation_nodes_get(request: Request) -> JSONResponse:
     if not settings.federation_enabled:
         return feature_not_enabled_error("Federation")
 
-    from ..federation.tools import federation_node_get
+    from oro_federation.tools import federation_node_get
 
     node_id = request.path_params.get("node_id")
     result = federation_node_get(node_id=node_id, include_sync_state=True)
@@ -646,7 +646,7 @@ async def federation_nodes_discover(request: Request) -> JSONResponse:
         if not url_or_did:
             return missing_field_error("url_or_did")
 
-        from ..federation.tools import federation_node_discover
+        from oro_federation.tools import federation_node_discover
 
         result = federation_node_discover(
             url_or_did=url_or_did,
@@ -676,7 +676,7 @@ async def federation_trust_get(request: Request) -> JSONResponse:
     if not settings.federation_enabled:
         return feature_not_enabled_error("Federation")
 
-    from ..federation.tools import federation_trust_get as get_trust
+    from oro_federation.tools import federation_trust_get as get_trust
 
     node_id = request.path_params.get("node_id")
     domain = request.query_params.get("domain")
@@ -723,7 +723,7 @@ async def federation_trust_set(request: Request) -> JSONResponse:
         if not preference:
             return missing_field_error("preference")
 
-        from ..federation.tools import federation_trust_set_preference
+        from oro_federation.tools import federation_trust_set_preference
 
         result = federation_trust_set_preference(
             node_id=node_id,
@@ -756,7 +756,7 @@ async def federation_sync_status(request: Request) -> JSONResponse:
     if not settings.federation_enabled:
         return feature_not_enabled_error("Federation")
 
-    from ..federation.tools import federation_sync_status as get_sync_status
+    from oro_federation.tools import federation_sync_status as get_sync_status
 
     node_id = request.query_params.get("node_id")
     include_history = request.query_params.get("history", "false").lower() == "true"
@@ -785,7 +785,7 @@ async def federation_sync_trigger(request: Request) -> JSONResponse:
         body = await request.json() if await request.body() else {}
         node_id = body.get("node_id")
 
-        from ..federation.tools import federation_sync_trigger as trigger_sync
+        from oro_federation.tools import federation_sync_trigger as trigger_sync
 
         result = trigger_sync(node_id=node_id)
 
@@ -821,7 +821,7 @@ async def federation_belief_share(request: Request) -> JSONResponse:
         if not belief_id:
             return missing_field_error("belief_id")
 
-        from ..federation.tools import federation_belief_share as share_belief
+        from oro_federation.tools import federation_belief_share as share_belief
 
         result = share_belief(
             belief_id=belief_id,
@@ -858,7 +858,7 @@ async def federation_belief_query(request: Request) -> JSONResponse:
         if not query:
             return missing_field_error("query")
 
-        from ..federation.tools import federation_belief_query as query_beliefs
+        from oro_federation.tools import federation_belief_query as query_beliefs
 
         result = query_beliefs(
             query=query,
@@ -896,7 +896,7 @@ async def federation_corroboration_check(request: Request) -> JSONResponse:
         if not belief_id and not content:
             return missing_field_error("belief_id or content")
 
-        from ..federation.tools import (
+        from oro_federation.tools import (
             federation_corroboration_check as check_corroboration,
         )
 

@@ -25,31 +25,31 @@ class TestSecretsModuleUsage:
 
     def test_config_uses_secure_random(self):
         """TimingJitterConfig should use secrets.SystemRandom."""
-        from valence.network.config import _secure_random
+        from oro_network.config import _secure_random
 
         assert isinstance(_secure_random, secrets.SystemRandom), "config._secure_random must be secrets.SystemRandom"
 
     def test_messages_uses_secure_random(self):
         """Messages module should use secrets.SystemRandom."""
-        from valence.network.messages import _secure_random
+        from oro_network.messages import _secure_random
 
         assert isinstance(_secure_random, secrets.SystemRandom), "messages._secure_random must be secrets.SystemRandom"
 
     def test_router_client_uses_secure_random(self):
         """RouterClient should use secrets.SystemRandom."""
-        from valence.network.router_client import _secure_random
+        from oro_network.router_client import _secure_random
 
         assert isinstance(_secure_random, secrets.SystemRandom), "router_client._secure_random must be secrets.SystemRandom"
 
     def test_seed_uses_secure_random(self):
         """Seed module should use secrets.SystemRandom."""
-        from valence.network.seed import _secure_random
+        from oro_network.seed import _secure_random
 
         assert isinstance(_secure_random, secrets.SystemRandom), "seed._secure_random must be secrets.SystemRandom"
 
     def test_privacy_uses_secure_random(self):
         """Privacy module should use secrets.SystemRandom."""
-        from valence.federation.privacy import _secure_random
+        from oro_federation.privacy import _secure_random
 
         assert isinstance(_secure_random, secrets.SystemRandom), "privacy._secure_random must be secrets.SystemRandom"
 
@@ -59,7 +59,7 @@ class TestJitterRandomness:
 
     def test_jitter_uniform_distribution(self):
         """Uniform jitter should produce values in expected range."""
-        from valence.network.config import TimingJitterConfig
+        from oro_network.config import TimingJitterConfig
 
         config = TimingJitterConfig(enabled=True, min_delay_ms=100, max_delay_ms=500, distribution="uniform")
 
@@ -75,7 +75,7 @@ class TestJitterRandomness:
 
     def test_jitter_exponential_distribution(self):
         """Exponential jitter should produce values in expected range."""
-        from valence.network.config import TimingJitterConfig
+        from oro_network.config import TimingJitterConfig
 
         config = TimingJitterConfig(enabled=True, min_delay_ms=100, max_delay_ms=500, distribution="exponential")
 
@@ -88,7 +88,7 @@ class TestJitterRandomness:
 
     def test_jitter_disabled_returns_zero(self):
         """Disabled jitter should return 0."""
-        from valence.network.config import TimingJitterConfig
+        from oro_network.config import TimingJitterConfig
 
         config = TimingJitterConfig(enabled=False)
         assert config.get_jitter_delay() == 0.0
@@ -99,7 +99,7 @@ class TestCoverTrafficRandomness:
 
     def test_cover_content_bucket_selection(self):
         """Cover content should select from valid buckets."""
-        from valence.network.messages import (
+        from oro_network.messages import (
             generate_cover_content,
         )
 
@@ -117,7 +117,7 @@ class TestCoverTrafficRandomness:
 
     def test_cover_content_specific_bucket(self):
         """Cover content with specific bucket should match."""
-        from valence.network.messages import (
+        from oro_network.messages import (
             MESSAGE_SIZE_BUCKETS,
             generate_cover_content,
         )
@@ -133,7 +133,7 @@ class TestRouterSelectionRandomness:
 
     def test_router_selection_weighted(self):
         """Router selection should respect weights but be unpredictable."""
-        from valence.network.router_client import _secure_random
+        from oro_network.router_client import _secure_random
 
         # Create mock candidates with varying weights
         candidates = ["router_a", "router_b", "router_c"]
@@ -155,7 +155,7 @@ class TestSeedSamplingRandomness:
 
     def test_sample_unpredictable(self):
         """Router sampling should be unpredictable."""
-        from valence.network.seed import _secure_random
+        from oro_network.seed import _secure_random
 
         population = list(range(100))
 
@@ -172,7 +172,7 @@ class TestPrivacyDecisionRandomness:
 
     def test_random_produces_valid_range(self):
         """Privacy random() should produce values in [0, 1)."""
-        from valence.federation.privacy import _secure_random
+        from oro_federation.privacy import _secure_random
 
         values = [_secure_random.random() for _ in range(100)]
 
@@ -190,7 +190,7 @@ class TestNoStandardRandomInSecurityCode:
         """config.py should not use standard random for security operations."""
         import inspect
 
-        from valence.network import config
+        from oro_network import config
 
         source = inspect.getsource(config)
 
@@ -204,7 +204,7 @@ class TestNoStandardRandomInSecurityCode:
         """messages.py should not have inline random import for security ops."""
         import inspect
 
-        from valence.network import messages
+        from oro_network import messages
 
         source = inspect.getsource(messages)
 
@@ -219,7 +219,7 @@ class TestNoStandardRandomInSecurityCode:
         """router_client.py should use secrets, not standard random."""
         import inspect
 
-        from valence.network import router_client
+        from oro_network import router_client
 
         source = inspect.getsource(router_client)
 

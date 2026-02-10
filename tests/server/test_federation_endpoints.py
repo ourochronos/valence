@@ -116,7 +116,7 @@ def mock_db():
 
         return CM()
 
-    with patch("valence.core.db.get_cursor", mock_context):
+    with patch("oro_db.get_cursor", mock_context):
         yield mock_cursor
 
 
@@ -456,7 +456,7 @@ class TestGetFederationStats:
 
             return CM()
 
-        with patch("valence.core.db.get_cursor", mock_context):
+        with patch("oro_db.get_cursor", mock_context):
             from valence.server.federation_endpoints import _get_federation_stats
 
             stats = _get_federation_stats()
@@ -490,7 +490,7 @@ class TestGetTrustAnchors:
 
             return CM()
 
-        with patch("valence.core.db.get_cursor", mock_context):
+        with patch("oro_db.get_cursor", mock_context):
             from valence.server.federation_endpoints import _get_trust_anchors
 
             anchors = _get_trust_anchors()

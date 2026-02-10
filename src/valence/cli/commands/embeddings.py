@@ -90,7 +90,7 @@ def cmd_embeddings_backfill(args: argparse.Namespace) -> int:
     Wraps the backfill_embeddings() service function with CLI niceties:
     progress output, dry-run mode, content type filtering, and force re-embed.
     """
-    from ...embeddings.service import backfill_embeddings, embed_content
+    from oro_embeddings.service import backfill_embeddings, embed_content
 
     batch_size: int = args.batch_size
     dry_run: bool = args.dry_run

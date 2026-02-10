@@ -12,15 +12,15 @@ from collections.abc import Callable
 from typing import Any
 
 from mcp.types import Tool
-
-from ..core.confidence import (
+from oro_confidence import (
     DEFAULT_WEIGHTS,
     ConfidenceDimension,
     DimensionalConfidence,
     confidence_label,
 )
-from ..core.db import get_cursor
-from ..core.models import Belief, Entity, Tension
+from oro_db import get_cursor
+from oro_models import Belief, Entity, Tension
+
 from ..core.utils import escape_ilike
 
 logger = logging.getLogger(__name__)
@@ -960,7 +960,7 @@ def belief_corroboration(belief_id: str) -> dict[str, Any]:
     """
     from uuid import UUID
 
-    from ..core.corroboration import get_corroboration
+    from oro_federation.corroboration import get_corroboration
 
     try:
         belief_uuid = UUID(belief_id)
@@ -1005,7 +1005,7 @@ def belief_search(
 ) -> dict[str, Any]:
     """Semantic search for beliefs using embeddings."""
     try:
-        from ..embeddings.service import generate_embedding, vector_to_pgvector
+        from oro_embeddings.service import generate_embedding, vector_to_pgvector
     except ImportError:
         return {
             "success": False,

@@ -7,7 +7,7 @@ import argparse
 
 def cmd_query_federated(args: argparse.Namespace) -> int:
     """Search beliefs with source attribution (federated scope)."""
-    from ...federation.peer_sync import query_federated
+    from oro_federation.peer_sync import query_federated
 
     try:
         results = query_federated(

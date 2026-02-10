@@ -6,11 +6,11 @@ import json
 import struct
 
 import pytest
-
-from valence.federation.protocol import (
+from oro_federation.protocol import (
     AuthChallengeRequest,
     SyncRequest,
 )
+
 from valence.transport.message_codec import (
     MAX_FRAME_SIZE,
     CodecError,

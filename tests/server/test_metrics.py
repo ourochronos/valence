@@ -176,7 +176,7 @@ class TestMetricsCollector:
 class TestDatabaseMetrics:
     """Tests for database metrics collection."""
 
-    @patch("valence.core.db.DatabaseStats")
+    @patch("valence.core.health.DatabaseStats")
     def test_collect_database_metrics_success(self, mock_stats_class):
         """Database metrics are collected when available."""
         mock_stats = MagicMock()
@@ -201,7 +201,7 @@ class TestDatabaseMetrics:
         collector = MetricsCollector()
 
         # Mock the import to raise an exception
-        with patch("valence.core.db.DatabaseStats.collect", side_effect=Exception("DB error")):
+        with patch("valence.core.health.DatabaseStats.collect", side_effect=Exception("DB error")):
             lines = collector._collect_database_metrics()
 
         # Should return something (either metrics or error comment)
@@ -211,7 +211,7 @@ class TestDatabaseMetrics:
 class TestFederationMetrics:
     """Tests for federation metrics collection."""
 
-    @patch("valence.federation.peer_sync.get_trust_registry")
+    @patch("oro_federation.peer_sync.get_trust_registry")
     def test_collect_federation_metrics_success(self, mock_get_registry):
         """Federation metrics are collected when available."""
         mock_peer1 = MagicMock()
@@ -237,7 +237,7 @@ class TestFederationMetrics:
         assert any("valence_federation_beliefs_received_total 30" in line for line in lines)
         assert any("valence_federation_beliefs_sent_total 20" in line for line in lines)
 
-    @patch("valence.federation.peer_sync.get_trust_registry")
+    @patch("oro_federation.peer_sync.get_trust_registry")
     def test_collect_federation_metrics_no_peers(self, mock_get_registry):
         """Empty registry returns zero metrics."""
         mock_registry = MagicMock()

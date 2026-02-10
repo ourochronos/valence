@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 from uuid import UUID
 
-from valence.federation.protocol import (
+from oro_federation.protocol import (
     AuthChallengeRequest,
     AuthVerifyRequest,
     ErrorMessage,
@@ -36,6 +36,7 @@ from valence.federation.protocol import (
     TrustAttestationRequest,
     parse_message,
 )
+
 from valence.transport.message_codec import (
     CodecError,
     GossipSubCodec,
@@ -219,19 +220,19 @@ class SyncProtocolHandler(BaseStreamHandler):
             return ErrorMessage(message="Sender identification required").to_dict()
 
         if isinstance(msg, SyncRequest):
-            from valence.federation.protocol import handle_sync_request
+            from oro_federation.protocol import handle_sync_request
 
             result = handle_sync_request(msg, sender_node_id, sender_trust)
             return result.to_dict()
 
         if isinstance(msg, ShareBeliefRequest):
-            from valence.federation.protocol import handle_share_belief
+            from oro_federation.protocol import handle_share_belief
 
             share_result = handle_share_belief(msg, sender_node_id, sender_trust)
             return share_result.to_dict()
 
         if isinstance(msg, RequestBeliefsRequest):
-            from valence.federation.protocol import handle_request_beliefs
+            from oro_federation.protocol import handle_request_beliefs
 
             beliefs_result = handle_request_beliefs(msg, sender_node_id, sender_trust)
             return beliefs_result.to_dict()
@@ -278,7 +279,7 @@ class AuthProtocolHandler(BaseStreamHandler):
             return ErrorMessage(message="Unparseable auth message").to_dict()
 
         if isinstance(msg, AuthChallengeRequest):
-            from valence.federation.protocol import create_auth_challenge
+            from oro_federation.protocol import create_auth_challenge
 
             response = create_auth_challenge(msg.client_did)
             return response.to_dict()
@@ -289,7 +290,7 @@ class AuthProtocolHandler(BaseStreamHandler):
             if public_key is None:
                 return ErrorMessage(message=f"Unknown node: {msg.client_did}").to_dict()
 
-            from valence.federation.protocol import verify_auth_challenge
+            from oro_federation.protocol import verify_auth_challenge
 
             verify_response = verify_auth_challenge(
                 client_did=msg.client_did,
@@ -309,7 +310,7 @@ class AuthProtocolHandler(BaseStreamHandler):
         is not known.
         """
         try:
-            from valence.core.db import get_cursor
+            from oro_db import get_cursor
 
             with get_cursor() as cur:
                 cur.execute(
@@ -362,7 +363,7 @@ class TrustProtocolHandler(BaseStreamHandler):
                 return ErrorMessage(message="Sender identification required").to_dict()
 
             # Delegate to the existing VFP handler (sync, not async)
-            from valence.federation.protocol import _handle_trust_attestation
+            from oro_federation.protocol import _handle_trust_attestation
 
             result = _handle_trust_attestation(msg, sender_node_id, sender_trust)
             return result.to_dict()
@@ -441,7 +442,7 @@ class BeliefPropagationHandler:
             logger.warning("beliefs topic: could not identify sender")
             return None
 
-        from valence.federation.protocol import handle_share_belief
+        from oro_federation.protocol import handle_share_belief
 
         result = handle_share_belief(msg, sender_node_id, sender_trust)
         return result.to_dict()

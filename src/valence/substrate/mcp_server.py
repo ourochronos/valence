@@ -29,12 +29,12 @@ from typing import Any
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Resource, TextContent, TextResourceContents
+from oro_db import get_cursor, init_schema
+from oro_models import Belief
 from pydantic import AnyUrl
 
-from ..core.db import DatabaseStats, get_cursor, init_schema
 from ..core.exceptions import DatabaseException, ValidationException
-from ..core.health import cli_health_check, startup_checks
-from ..core.models import Belief
+from ..core.health import DatabaseStats, cli_health_check, startup_checks
 from .tools import SUBSTRATE_TOOLS, handle_substrate_tool
 
 logging.basicConfig(level=logging.INFO)

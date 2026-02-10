@@ -6,13 +6,13 @@ import json
 from uuid import uuid4
 
 import pytest
-
-from valence.federation.protocol import (
+from oro_federation.protocol import (
     AuthChallengeRequest,
     ShareBeliefRequest,
     SyncRequest,
     TrustAttestationRequest,
 )
+
 from valence.transport.message_codec import GossipSubCodec, StreamCodec
 from valence.transport.protocol_handler import (
     AuthProtocolHandler,

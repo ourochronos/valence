@@ -15,13 +15,13 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
-from valence.federation.models import (
+from oro_federation.models import (
     NodeTrust,
     ThreatLevel,
     TrustPhase,
     TrustPreference,
 )
-from valence.federation.trust import (
+from oro_federation.trust import (
     SIGNAL_WEIGHTS,
     TrustManager,
 )
@@ -65,7 +65,7 @@ class TestTrustScoreGaming:
 
     def test_trust_requires_sustained_behavior(self):
         """Reaching high trust phases requires sustained positive behavior."""
-        from valence.federation.trust_policy import PHASE_TRANSITION
+        from oro_federation.trust_policy import PHASE_TRANSITION
 
         # Check that phase transitions require significant interaction
         for phase, requirements in PHASE_TRANSITION.items():
@@ -111,7 +111,7 @@ class TestSybilAttackPrevention:
 
     def test_trust_requires_time_investment(self):
         """Trust increases require time investment to prevent rapid Sybil scaling."""
-        from valence.federation.trust_policy import PHASE_TRANSITION
+        from oro_federation.trust_policy import PHASE_TRANSITION
 
         # Phase transitions should have time requirements
         # At minimum, higher phases should require some criteria
@@ -138,7 +138,7 @@ class TestSybilAttackPrevention:
 
     def test_multiple_endorsements_required_for_progression(self):
         """Multiple independent endorsements required for trust phase progression."""
-        from valence.federation.trust_policy import PHASE_TRANSITION
+        from oro_federation.trust_policy import PHASE_TRANSITION
 
         # Check that higher phases require endorsements
         participant_reqs = PHASE_TRANSITION.get(TrustPhase.PARTICIPANT, {})
@@ -178,7 +178,7 @@ class TestTrustInflationAttacks:
 
     def test_trust_decay_over_inactivity(self):
         """Trust should decay when node is inactive."""
-        from valence.federation.trust_policy import (
+        from oro_federation.trust_policy import (
             DECAY_HALF_LIFE_DAYS,
             DECAY_MIN_THRESHOLD,
         )
@@ -207,7 +207,7 @@ class TestEndorsementManipulation:
 
     def test_endorsement_signature_verified(self):
         """Endorsement signatures must be verified."""
-        from valence.federation.models import TrustAttestation
+        from oro_federation.models import TrustAttestation
 
         # TrustAttestation includes signature field
         attestation = TrustAttestation(
@@ -307,14 +307,14 @@ class TestUserTrustOverrides:
 
     def test_user_preferences_override_federation_trust(self):
         """User preferences take precedence over computed federation trust."""
-        from valence.federation.trust_policy import PREFERENCE_MULTIPLIERS
+        from oro_federation.trust_policy import PREFERENCE_MULTIPLIERS
 
         # Blocked preference should result in zero multiplier
         assert PREFERENCE_MULTIPLIERS[TrustPreference.BLOCKED] == 0.0
 
     def test_anchor_trust_elevated(self):
         """Anchor nodes (user-endorsed) should have elevated trust."""
-        from valence.federation.trust_policy import PREFERENCE_MULTIPLIERS
+        from oro_federation.trust_policy import PREFERENCE_MULTIPLIERS
 
         # Anchor preference should boost trust
         assert PREFERENCE_MULTIPLIERS[TrustPreference.ANCHOR] > 1.0

@@ -13,16 +13,16 @@ import json
 import logging
 from typing import Any
 
-from starlette.requests import Request
-from starlette.responses import JSONResponse
-
-from ..privacy.sharing import (
+from oro_privacy.sharing import (
     RevokeRequest,
     Share,
     ShareRequest,
     SharingService,
 )
-from ..privacy.types import SharePolicy
+from oro_privacy.types import SharePolicy
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+
 from .errors import (
     CONFLICT_ALREADY_REVOKED,
     FORBIDDEN_NOT_OWNER,
