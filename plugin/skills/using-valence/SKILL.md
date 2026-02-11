@@ -38,23 +38,28 @@ Valence is your personal knowledge substrate. It stores beliefs, tracks conversa
 
 ## MCP Tools
 
-You can also use the raw MCP tools directly:
+All tools are served by the unified `valence` MCP server:
 
-### Knowledge (valence-substrate)
-- `belief_query` - Search beliefs by content, domain, or entity
-- `belief_create` - Store a new belief
+### Knowledge Substrate
+- `belief_query` - Search beliefs by content, domain, or entity (supports ranking weights)
+- `belief_create` - Store a new belief (auto-deduplicates via content hash)
 - `belief_supersede` - Update a belief while maintaining history
 - `belief_get` - Get a belief with full details
+- `belief_search` - Semantic search via embeddings
+- `belief_corroboration` - Check how many sources confirm a belief
 - `entity_get` - Get entity details and related beliefs
 - `entity_search` - Find entities by name
 - `tension_list` - List contradictions
 - `tension_resolve` - Resolve a contradiction
+- `trust_check` - Check trust levels for entities/topics
+- `confidence_explain` - Explain confidence score dimensions
 
-### Conversations (valence-vkb)
+### Conversation Tracking
 - `session_start/end/get/list` - Manage sessions
+- `session_find_by_room` - Find session by room ID
 - `exchange_add/list` - Record conversation turns
 - `pattern_record/reinforce/list/search` - Track patterns
-- `insight_extract/list` - Extract insights to KB
+- `insight_extract/list` - Extract insights to KB (auto-deduplicates)
 
 ## Best Practices
 

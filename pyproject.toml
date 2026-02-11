@@ -70,9 +70,9 @@ dev = [
 
 [project.scripts]
 valence = "valence.cli:main"
-valence-mcp = "valence.mcp_server:run"
-valence-substrate = "valence.substrate.mcp_server:run"
-valence-vkb = "valence.vkb.mcp_server:run"
+valence-mcp = "valence.mcp_server:run"  # unified MCP server (recommended)
+valence-substrate = "valence.substrate.mcp_server:run"  # legacy: substrate-only stdio server
+valence-vkb = "valence.vkb.mcp_server:run"  # legacy: vkb-only stdio server
 valence-server = "valence.server.app:run"
 valence-token = "valence.server.cli:main"
 valence-federation = "valence.cli.federation:main"

@@ -292,31 +292,25 @@ Present tensions for review and help resolve them.
 
 ## MCP Configuration
 
-**.mcp.json:**
+**.mcp.json** — uses the unified MCP server:
 ```json
 {
   "mcpServers": {
-    "valence-substrate": {
+    "valence": {
       "command": "python",
-      "args": ["-m", "valence.substrate.mcp_server"],
+      "args": ["-m", "valence.mcp_server"],
       "env": {
         "VKB_DB_HOST": "localhost",
         "VKB_DB_NAME": "valence",
-        "VKB_DB_USER": "valence"
-      }
-    },
-    "valence-vkb": {
-      "command": "python",
-      "args": ["-m", "valence.vkb.mcp_server"],
-      "env": {
-        "VKB_DB_HOST": "localhost",
-        "VKB_DB_NAME": "valence",
-        "VKB_DB_USER": "valence"
+        "VKB_DB_USER": "valence",
+        "VALENCE_MODE": "full"
       }
     }
   }
 }
 ```
+
+The legacy split servers (`valence-substrate`, `valence-vkb`) are still supported but the unified server is recommended.
 
 ## Installation
 

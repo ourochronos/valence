@@ -5,7 +5,7 @@
 Valence is a personal knowledge substrate with Claude Code at its core. Rather than building a separate bot that calls Claude, we make Claude Code itself the agent through:
 
 1. **Plugin** - Behavioral conditioning and skills
-2. **MCP Servers** - Knowledge substrate access
+2. **MCP Server** - Unified knowledge substrate access
 3. **Hooks** - Conversation capture and context injection
 4. **Sessions** - Continuity via resume
 
@@ -19,7 +19,7 @@ The key architectural insight is that Claude Code's session resumption, plugins,
 ┌─────────────────────────────────────────────────────────────┐
 │                     INTERFACES                               │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
-│  │ Claude Code │  │   Matrix    │  │   Future    │         │
+│  │ Claude Code │  │  Telegram   │  │   Future    │         │
 │  │  (Direct)   │  │    Bot      │  │  Clients    │         │
 │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘         │
 └─────────┼────────────────┼────────────────┼─────────────────┘
@@ -29,47 +29,44 @@ The key architectural insight is that Claude Code's session resumption, plugins,
 │                   VALENCE PLUGIN                             │
 │  ┌─────────────────────────────────────────────────────┐    │
 │  │ SessionStart Hook: Inject context + conditioning    │    │
-│  │ - Load relevant beliefs from substrate              │    │
-│  │ - Set behavioral rules (query before answering)     │    │
-│  │ - Establish session in VKB                          │    │
+│  │ SessionEnd Hook: Close session, auto-capture beliefs│    │
 │  └─────────────────────────────────────────────────────┘    │
 │  ┌─────────────────────────────────────────────────────┐    │
 │  │ Skills                                              │    │
-│  │ - /valence:query-knowledge                         │    │
-│  │ - /valence:capture-insight                         │    │
-│  │ - /valence:ingest-document                         │    │
-│  │ - /valence:review-tensions                         │    │
-│  └─────────────────────────────────────────────────────┘    │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │ PostToolUse Hook: Capture exchanges                 │    │
-│  │ SessionEnd Hook: Close session, extract patterns    │    │
+│  │ - /valence:using-valence                            │    │
+│  │ - /valence:query-knowledge                          │    │
+│  │ - /valence:capture-insight                          │    │
+│  │ - /valence:review-tensions                          │    │
 │  └─────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────┘
           │
           ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                   MCP SERVERS                                │
-│  ┌──────────────────┐  ┌──────────────────┐                 │
-│  │ valence-substrate │  │ valence-vkb      │                │
-│  │ (Knowledge Base)  │  │ (Conversations)  │                │
-│  │                   │  │                  │                │
-│  │ - belief_query    │  │ - session_*      │                │
-│  │ - belief_create   │  │ - exchange_*     │                │
-│  │ - entity_*        │  │ - pattern_*      │                │
-│  │ - tension_*       │  │ - insight_*      │                │
-│  └────────┬──────────┘  └────────┬─────────┘                │
-└───────────┼──────────────────────┼──────────────────────────┘
-            │                      │
-            ▼                      ▼
+│               UNIFIED MCP SERVER (valence)                   │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │ Knowledge Substrate        │ Conversation Tracking   │   │
+│  │ - belief_query/create/get  │ - session_*             │   │
+│  │ - belief_search/supersede  │ - exchange_*            │   │
+│  │ - entity_*                 │ - pattern_*             │   │
+│  │ - tension_*                │ - insight_*             │   │
+│  │ - trust_check              │                         │   │
+│  │ - confidence_explain       │                         │   │
+│  │ - belief_corroboration     │                         │   │
+│  └──────────────────────────────────────────────────────┘   │
+│  VALENCE_MODE: personal | connected | full                   │
+└─────────────────────────────────────────────────────────────┘
+          │
+          ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                   POSTGRESQL + pgvector                      │
 │  ┌──────────────────────────────────────────────────────┐   │
 │  │ Unified Schema                                        │   │
-│  │ - beliefs (with dimensional confidence)              │   │
-│  │ - entities (with aliases, relationships)             │   │
-│  │ - sources (provenance tracking)                      │   │
-│  │ - sessions, exchanges, patterns (VKB)               │   │
-│  │ - embeddings (pgvector for similarity search)        │   │
+│  │ - beliefs (dimensional confidence, 384-dim embeddings)│   │
+│  │ - entities (with aliases, relationships)              │   │
+│  │ - sources (provenance tracking)                       │   │
+│  │ - sessions, exchanges, patterns (VKB)                 │   │
+│  │ - belief_corroborations (dedup/reinforcement)         │   │
+│  │ - federation tables (nodes, trust, sync)              │   │
 │  └──────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -88,7 +85,7 @@ The key architectural insight is that Claude Code's session resumption, plugins,
 
 ### 3. Gradual Adoption
 - Plugin can be enabled/disabled without losing data
-- MCP servers work standalone
+- MCP server works standalone
 - Skills provide guided workflows for common tasks
 
 ### 4. Dimensional Confidence
@@ -106,6 +103,12 @@ Beliefs can have:
 - `valid_until`: When it stopped being true (null = still valid)
 - `supersedes_id`: What belief this replaced
 
+### 6. Belief Deduplication
+- Content-hash based exact duplicate detection
+- Embedding-based fuzzy duplicate detection (cosine > 0.90)
+- Duplicates reinforce existing beliefs instead of creating new ones
+- Corroboration count drives confidence escalation (tentative → emerging → established)
+
 ## Data Flow
 
 ### Session Start
@@ -118,105 +121,41 @@ Beliefs can have:
 ### During Session
 1. User sends message
 2. Claude responds (may use MCP tools)
-3. PostToolUse hook captures exchanges
-4. Embeddings generated asynchronously
+3. Belief creation auto-deduplicates
 
 ### Session End
 1. Hook fires on session end
-2. Summarize session themes
-3. Extract patterns if detected
+2. Auto-capture summary and themes as beliefs (with dedup)
+3. Generate embeddings for captured beliefs
 4. Mark session as completed
 
 ## MCP Server Design
 
-### valence-substrate (Knowledge)
-Primary tools for knowledge management:
+All tools are served by the unified `valence` MCP server. Legacy `valence-substrate` and `valence-vkb` stdio servers remain available for backward compatibility.
 
-| Tool | Purpose |
-|------|---------|
-| `belief_query` | Search beliefs by content, domain, entity |
-| `belief_create` | Store new belief with confidence and source |
-| `belief_supersede` | Replace old belief with new (maintains history) |
-| `entity_get` | Get entity details and related beliefs |
-| `entity_search` | Find entities by name or type |
-| `tension_list` | List contradictions/tensions in beliefs |
-| `tension_resolve` | Mark tension as resolved with explanation |
-
-### valence-vkb (Conversations)
-Primary tools for conversation tracking:
-
-| Tool | Purpose |
-|------|---------|
-| `session_start` | Begin a new session |
-| `session_end` | Close session with summary |
-| `session_get` | Get session details |
-| `exchange_add` | Record a conversation turn |
-| `exchange_list` | Get session exchanges |
-| `pattern_record` | Record a new behavioral pattern |
-| `pattern_reinforce` | Strengthen existing pattern |
-| `insight_extract` | Extract insight from session to KB |
+| Category | Tools |
+|----------|-------|
+| Belief Management | `belief_query`, `belief_create`, `belief_supersede`, `belief_get`, `belief_search` |
+| Entity Management | `entity_get`, `entity_search` |
+| Tensions | `tension_list`, `tension_resolve` |
+| Trust & Confidence | `trust_check`, `confidence_explain`, `belief_corroboration` |
+| Sessions | `session_start`, `session_end`, `session_get`, `session_list`, `session_find_by_room` |
+| Exchanges | `exchange_add`, `exchange_list` |
+| Patterns | `pattern_record`, `pattern_reinforce`, `pattern_list`, `pattern_search` |
+| Insights | `insight_extract`, `insight_list` |
 
 ## Plugin Structure
 
 ```
 plugin/
-├── .claude-plugin/
-│   └── plugin.json          # Plugin manifest
 ├── hooks/
 │   ├── hooks.json           # Hook configuration
 │   ├── session-start.py     # Context injection
-│   └── session-end.py       # Cleanup
+│   └── session-end.py       # Auto-capture and session closing
 ├── skills/
 │   ├── using-valence/SKILL.md
 │   ├── query-knowledge/SKILL.md
 │   ├── capture-insight/SKILL.md
-│   ├── ingest-document/SKILL.md
 │   └── review-tensions/SKILL.md
-└── .mcp.json                # Plugin-bundled MCP servers
+└── .mcp.json                # MCP server configuration
 ```
-
-## Session Management Strategy
-
-### Direct Claude Code Usage
-- Session state maintained by Claude Code itself
-- Hooks provide context injection at start
-- `--resume` flag continues sessions
-
-### Matrix Bot Integration
-```python
-# Store session IDs per room
-room_sessions: dict[str, str] = {}  # room_id -> claude_session_id
-
-# First message in room
-result = subprocess.run([
-    "claude", "-p", message,
-    "--plugin-dir", "/opt/valence/plugin",
-    "--output-format", "json"
-])
-session_id = json.loads(result.stdout)["session_id"]
-room_sessions[room_id] = session_id
-
-# Subsequent messages
-result = subprocess.run([
-    "claude", "-p", message,
-    "--resume", room_sessions[room_id],
-    "--plugin-dir", "/opt/valence/plugin"
-])
-```
-
-## Future Considerations
-
-### Federation
-- Design for single-user first
-- Schema supports scope/visibility fields
-- Entity resolution handles cross-source identity
-
-### L0 Storage
-- Raw transcripts stored separately from curated beliefs
-- Enables reprocessing with improved extraction
-- Storage in separate PostgreSQL table or file system
-
-### Multi-Model Embeddings
-- Embedding registry supports multiple models
-- Lazy backfilling when new models added
-- Fallback hierarchy for searches

@@ -18,6 +18,28 @@ Add Valence to your Claude Desktop configuration file:
 **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 **Linux**: `~/.config/Claude/claude_desktop_config.json`
 
+**Recommended: Unified server** (all tools in one process):
+```json
+{
+  "mcpServers": {
+    "valence": {
+      "command": "python",
+      "args": ["-m", "valence.mcp_server"],
+      "env": {
+        "VKB_DB_HOST": "localhost",
+        "VKB_DB_PORT": "5432",
+        "VKB_DB_NAME": "valence",
+        "VKB_DB_USER": "valence",
+        "VKB_DB_PASSWORD": "your-password",
+        "OPENAI_API_KEY": "sk-...",
+        "VALENCE_MODE": "full"
+      }
+    }
+  }
+}
+```
+
+**Legacy: Split servers** (still supported for backward compatibility):
 ```json
 {
   "mcpServers": {
@@ -26,7 +48,6 @@ Add Valence to your Claude Desktop configuration file:
       "args": ["-m", "valence.substrate.mcp_server"],
       "env": {
         "VKB_DB_HOST": "localhost",
-        "VKB_DB_PORT": "5432",
         "VKB_DB_NAME": "valence",
         "VKB_DB_USER": "valence",
         "VKB_DB_PASSWORD": "your-password",
@@ -38,7 +59,6 @@ Add Valence to your Claude Desktop configuration file:
       "args": ["-m", "valence.vkb.mcp_server"],
       "env": {
         "VKB_DB_HOST": "localhost",
-        "VKB_DB_PORT": "5432",
         "VKB_DB_NAME": "valence",
         "VKB_DB_USER": "valence",
         "VKB_DB_PASSWORD": "your-password"
@@ -56,19 +76,20 @@ After saving the configuration, restart Claude Desktop to load the MCP servers.
 
 ## Available Tools
 
-### Substrate Server (valence-substrate)
+### Unified Server Tools
 
-The substrate server provides access to your knowledge base:
+All tools are available through the unified `valence` MCP server. `VALENCE_MODE` controls which tools are exposed (`personal`, `connected`, or `full`).
 
 #### Belief Management
 
 | Tool | Description |
 |------|-------------|
-| `belief_query` | Full-text search using keywords |
+| `belief_query` | Full-text search using keywords (supports `ranking` with configurable weights) |
 | `belief_search` | **Semantic search** using embeddings (finds conceptually similar beliefs) |
-| `belief_create` | Create a new belief with confidence and entity links |
-| `belief_get` | Get full details of a belief including history |
+| `belief_create` | Create a new belief — **auto-deduplicates** via content hash and embedding similarity |
+| `belief_get` | Get full details of a belief including history and tensions |
 | `belief_supersede` | Update a belief while preserving history |
+| `belief_corroboration` | Check how many independent sources confirm a belief |
 
 #### Entity Management
 
@@ -82,7 +103,7 @@ The substrate server provides access to your knowledge base:
 | Tool | Description |
 |------|-------------|
 | `trust_check` | **Who do I trust on this topic?** Shows entities/nodes with authority |
-| `confidence_explain` | **Why this confidence?** Explains all contributing factors |
+| `confidence_explain` | **Why this confidence?** Explains all contributing dimensions with weights |
 
 #### Tension Resolution
 
@@ -91,17 +112,15 @@ The substrate server provides access to your knowledge base:
 | `tension_list` | List contradictions between beliefs |
 | `tension_resolve` | Resolve contradictions with explanation |
 
-### VKB Server (valence-vkb)
-
-The VKB server tracks conversations:
+#### Conversation Tracking
 
 | Tool | Description |
 |------|-------------|
-| `session_start` | Begin tracking a conversation |
-| `session_end` | Close session with summary |
-| `exchange_add` | Record conversation turns |
-| `pattern_record` | Record behavioral patterns |
-| `insight_extract` | Extract knowledge from conversations |
+| `session_start/end/get/list` | Manage conversation sessions |
+| `session_find_by_room` | Find session by external room ID |
+| `exchange_add/list` | Record and retrieve conversation turns |
+| `pattern_record/reinforce/list/search` | Track behavioral patterns |
+| `insight_extract/list` | Extract knowledge from conversations (**auto-deduplicates**) |
 
 ---
 
