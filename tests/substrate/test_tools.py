@@ -331,10 +331,19 @@ class TestBeliefQuery:
 class TestBeliefCreate:
     """Tests for belief_create function."""
 
+    @pytest.fixture(autouse=True)
+    def no_embeddings(self):
+        """Disable embedding-based fuzzy dedup for unit tests."""
+        with patch("our_embeddings.service.generate_embedding", side_effect=RuntimeError("test")):
+            yield
+
     def test_belief_create_basic(self, mock_get_cursor, sample_belief_row):
         """Test basic belief creation."""
         belief_id = uuid4()
-        mock_get_cursor.fetchone.return_value = sample_belief_row(id=belief_id, content="Test content")
+        mock_get_cursor.fetchone.side_effect = [
+            None,  # dedup hash check: no match
+            sample_belief_row(id=belief_id, content="Test content"),  # INSERT RETURNING
+        ]
 
         result = belief_create(content="Test content")
 
@@ -344,16 +353,21 @@ class TestBeliefCreate:
 
     def test_belief_create_with_confidence(self, mock_get_cursor, sample_belief_row):
         """Test belief creation with confidence."""
-        mock_get_cursor.fetchone.return_value = sample_belief_row()
+        mock_get_cursor.fetchone.side_effect = [
+            None,  # dedup hash check: no match
+            sample_belief_row(),  # INSERT RETURNING
+        ]
 
         result = belief_create(content="Test", confidence={"overall": 0.9, "source_reliability": 0.8})
 
         assert result["success"] is True
-        # Verify confidence was serialized in the call
 
     def test_belief_create_with_domain_path(self, mock_get_cursor, sample_belief_row):
         """Test belief creation with domain path."""
-        mock_get_cursor.fetchone.return_value = sample_belief_row()
+        mock_get_cursor.fetchone.side_effect = [
+            None,  # dedup hash check: no match
+            sample_belief_row(),  # INSERT RETURNING
+        ]
 
         result = belief_create(content="Test", domain_path=["tech", "python", "testing"])
 
@@ -363,8 +377,8 @@ class TestBeliefCreate:
         """Test belief creation with source."""
         source_id = uuid4()
 
-        # First call returns source id, second returns belief
         mock_get_cursor.fetchone.side_effect = [
+            None,  # dedup hash check: no match
             {"id": source_id},  # source insert
             sample_belief_row(),  # belief insert
         ]
@@ -375,13 +389,14 @@ class TestBeliefCreate:
 
     def test_belief_create_with_opt_out_federation(self, mock_get_cursor, sample_belief_row):
         """Test belief creation with federation opt-out (Issue #26)."""
-        mock_get_cursor.fetchone.return_value = sample_belief_row(opt_out_federation=True)
+        mock_get_cursor.fetchone.side_effect = [
+            None,  # dedup hash check: no match
+            sample_belief_row(opt_out_federation=True),  # INSERT RETURNING
+        ]
 
         result = belief_create(content="Private belief", opt_out_federation=True)
 
         assert result["success"] is True
-        # Verify opt_out_federation was passed
-        # The INSERT should include opt_out_federation
 
     def test_belief_create_with_entities(self, mock_get_cursor, sample_belief_row):
         """Test belief creation with entity links."""
@@ -390,6 +405,7 @@ class TestBeliefCreate:
         entity2_id = uuid4()
 
         mock_get_cursor.fetchone.side_effect = [
+            None,  # dedup hash check: no match
             sample_belief_row(id=belief_id),  # belief insert
             {"id": entity1_id},  # entity 1 upsert
             {"id": entity2_id},  # entity 2 upsert

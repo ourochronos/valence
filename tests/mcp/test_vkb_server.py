@@ -964,6 +964,7 @@ class TestInsightExtract:
         now = datetime.now()
 
         mock_get_cursor.fetchone.side_effect = [
+            None,  # dedup hash check: no match
             {"id": source_id},  # Get source
             {
                 "id": belief_id,
@@ -998,6 +999,7 @@ class TestInsightExtract:
         now = datetime.now()
 
         mock_get_cursor.fetchone.side_effect = [
+            None,  # dedup hash check: no match
             {"id": uuid4()},
             {
                 "id": belief_id,
@@ -1031,6 +1033,7 @@ class TestInsightExtract:
         now = datetime.now()
 
         mock_get_cursor.fetchone.side_effect = [
+            None,  # dedup hash check: no match
             {"id": uuid4()},  # Source
             {
                 "id": belief_id,

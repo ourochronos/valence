@@ -6,6 +6,7 @@ Descriptions include behavioral conditioning for proactive Claude usage.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from collections.abc import Callable
@@ -616,6 +617,48 @@ def belief_query(
         }
 
 
+def _content_hash(content: str) -> str:
+    """Compute deterministic hash for belief content deduplication."""
+    return hashlib.sha256(content.strip().lower().encode()).hexdigest()
+
+
+def _reinforce_belief(cur: Any, belief_id: Any, confidence_json: dict, source_ref: str | None = None) -> dict[str, Any]:
+    """Reinforce an existing belief: bump corroboration count and update confidence per escalation ladder."""
+    from ..core.curation import corroboration_confidence
+
+    # Count existing corroborations
+    cur.execute("SELECT COUNT(*) as cnt FROM belief_corroborations WHERE belief_id = %s", (belief_id,))
+    count = cur.fetchone()["cnt"]
+
+    # Record new corroboration
+    cur.execute(
+        """INSERT INTO belief_corroborations (belief_id, source_type, similarity_score)
+        VALUES (%s, 'session', 1.0)""",
+        (belief_id,),
+    )
+
+    # Update confidence based on corroboration ladder
+    new_count = count + 1
+    new_overall = corroboration_confidence(new_count)
+    confidence_json["overall"] = max(confidence_json.get("overall", 0.5), new_overall)
+    confidence_json["corroboration"] = new_overall
+
+    cur.execute(
+        "UPDATE beliefs SET confidence = %s, modified_at = NOW() WHERE id = %s RETURNING *",
+        (json.dumps(confidence_json), belief_id),
+    )
+    updated_row = cur.fetchone()
+
+    belief = Belief.from_row(dict(updated_row))
+    return {
+        "success": True,
+        "deduplicated": True,
+        "action": "reinforced",
+        "corroboration_count": new_count,
+        "belief": belief.to_dict(),
+    }
+
+
 def belief_create(
     content: str,
     confidence: dict[str, Any] | None = None,
@@ -625,7 +668,15 @@ def belief_create(
     opt_out_federation: bool = False,
     entities: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
-    """Create a new belief.
+    """Create a new belief, or reinforce an existing one if duplicate detected.
+
+    Deduplication checks:
+    1. Exact content hash match against active beliefs
+    2. Semantic similarity (cosine > 0.90) if embeddings available
+
+    If a duplicate is found, the existing belief is reinforced (corroboration
+    count incremented, confidence updated per escalation ladder) instead of
+    creating a new belief.
 
     Args:
         content: The belief content
@@ -633,16 +684,50 @@ def belief_create(
         domain_path: Domain classification
         source_type: Type of source
         source_ref: Reference to source
-        opt_out_federation: If True, belief won't be shared via federation (Issue #26)
+        opt_out_federation: If True, belief won't be shared via federation
         entities: Entities to link
 
     Returns:
-        Created belief data
+        Created or reinforced belief data
     """
     confidence_obj = DimensionalConfidence.from_dict(confidence or {"overall": 0.7})
+    content_hash_val = _content_hash(content)
 
     with get_cursor() as cur:
-        # Create source if provided
+        # --- Dedup check: exact content hash match ---
+        cur.execute(
+            "SELECT id, confidence FROM beliefs WHERE content_hash = %s AND status = 'active' AND superseded_by_id IS NULL",
+            (content_hash_val,),
+        )
+        exact_match = cur.fetchone()
+        if exact_match:
+            existing_conf = exact_match["confidence"] if isinstance(exact_match["confidence"], dict) else json.loads(exact_match["confidence"])
+            return _reinforce_belief(cur, exact_match["id"], existing_conf, source_ref)
+
+        # --- Dedup check: fuzzy semantic match (cosine > 0.90) ---
+        try:
+            from our_embeddings.service import generate_embedding, vector_to_pgvector
+
+            query_vector = generate_embedding(content)
+            query_str = vector_to_pgvector(query_vector)
+
+            cur.execute(
+                """SELECT id, confidence, 1 - (embedding <=> %s::vector) as similarity
+                FROM beliefs
+                WHERE embedding IS NOT NULL AND status = 'active' AND superseded_by_id IS NULL
+                AND 1 - (embedding <=> %s::vector) > 0.90
+                ORDER BY embedding <=> %s::vector
+                LIMIT 1""",
+                (query_str, query_str, query_str),
+            )
+            fuzzy_match = cur.fetchone()
+            if fuzzy_match:
+                existing_conf = fuzzy_match["confidence"] if isinstance(fuzzy_match["confidence"], dict) else json.loads(fuzzy_match["confidence"])
+                return _reinforce_belief(cur, fuzzy_match["id"], existing_conf, source_ref)
+        except Exception:
+            pass  # Embedding unavailable — skip fuzzy check
+
+        # --- No duplicate found: create new belief ---
         source_id = None
         if source_type:
             cur.execute(
@@ -651,11 +736,10 @@ def belief_create(
             )
             source_id = cur.fetchone()["id"]
 
-        # Create belief with opt_out_federation flag
         cur.execute(
             """
-            INSERT INTO beliefs (content, confidence, domain_path, source_id, opt_out_federation)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO beliefs (content, confidence, domain_path, source_id, opt_out_federation, content_hash)
+            VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING *
             """,
             (
@@ -664,6 +748,7 @@ def belief_create(
                 domain_path or [],
                 source_id,
                 opt_out_federation,
+                content_hash_val,
             ),
         )
         belief_row = cur.fetchone()
@@ -672,7 +757,6 @@ def belief_create(
         # Link entities
         if entities:
             for entity in entities:
-                # Find or create entity
                 cur.execute(
                     """
                     INSERT INTO entities (name, type)
@@ -685,7 +769,6 @@ def belief_create(
                 )
                 entity_id = cur.fetchone()["id"]
 
-                # Link to belief
                 cur.execute(
                     """
                     INSERT INTO belief_entities (belief_id, entity_id, role)

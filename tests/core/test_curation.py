@@ -11,6 +11,7 @@ from valence.core.curation import (
     MIN_SUMMARY_LENGTH,
     MIN_THEME_LENGTH,
     SIGNAL_CONFIDENCE,
+    corroboration_confidence,
     get_confidence,
     should_capture,
 )
@@ -64,10 +65,38 @@ class TestGetConfidence:
     """Tests for get_confidence function."""
 
     def test_known_signal(self):
-        assert get_confidence("session_summary") == 0.65
+        assert get_confidence("session_summary") == 0.50
 
     def test_unknown_signal_returns_default(self):
         assert get_confidence("unknown") == 0.5
+
+
+class TestCorroborationConfidence:
+    """Tests for corroboration_confidence escalation ladder."""
+
+    def test_zero_corroborations(self):
+        assert corroboration_confidence(0) == 0.50
+
+    def test_single_corroboration(self):
+        assert corroboration_confidence(1) == 0.50
+
+    def test_two_corroborations(self):
+        assert corroboration_confidence(2) == 0.65
+
+    def test_three_corroborations(self):
+        assert corroboration_confidence(3) == 0.80
+
+    def test_many_corroborations(self):
+        assert corroboration_confidence(10) == 0.80
+        assert corroboration_confidence(100) == 0.80
+
+    def test_monotonically_increasing(self):
+        """Confidence should never decrease with more corroborations."""
+        prev = 0.0
+        for i in range(20):
+            c = corroboration_confidence(i)
+            assert c >= prev, f"Confidence decreased at count={i}: {c} < {prev}"
+            prev = c
 
 
 class TestConstants:

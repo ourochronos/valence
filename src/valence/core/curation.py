@@ -17,8 +17,8 @@ SIGNAL_CONFIDENCE: dict[str, float] = {
     "stated_preference": 0.75,
     "correction": 0.70,
     "project_fact": 0.65,
-    "session_summary": 0.65,
-    "session_theme": 0.55,
+    "session_summary": 0.50,        # lowered: corroboration will raise it
+    "session_theme": 0.50,          # lowered: corroboration will raise it
     "mentioned_in_passing": 0.35,
 }
 
@@ -42,3 +42,18 @@ def should_capture(signal_type: str) -> bool:
 def get_confidence(signal_type: str) -> float:
     """Get the confidence score for a signal type."""
     return SIGNAL_CONFIDENCE.get(signal_type, 0.5)
+
+
+def corroboration_confidence(corroboration_count: int) -> float:
+    """Map corroboration count to confidence level.
+
+    Implements a step-wise escalation ladder:
+    - 0-1 corroborations: 0.50 (tentative)
+    - 2 corroborations: 0.65 (emerging)
+    - 3+ corroborations: 0.80 (established)
+    """
+    if corroboration_count <= 1:
+        return 0.50
+    if corroboration_count == 2:
+        return 0.65
+    return 0.80

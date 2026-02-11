@@ -35,6 +35,9 @@ def mock_conn():
     conn.cursor.return_value.__enter__ = MagicMock(return_value=cursor)
     conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
+    # Default: no existing belief found (dedup hash check returns None)
+    cursor.fetchone.return_value = None
+
     return conn, cursor, dict_cursor
 
 
@@ -59,9 +62,9 @@ class TestAutoCapture:
         calls = cursor.execute.call_args_list
         insert_call = [c for c in calls if "INSERT INTO beliefs" in str(c)]
         assert len(insert_call) >= 1
-        # Confidence should be 0.65 (SUMMARY_CONFIDENCE)
+        # Confidence should be 0.50 (SUMMARY_CONFIDENCE, lowered for corroboration)
         args = insert_call[0][0][1]  # params tuple
-        assert json.loads(args[2])["overall"] == 0.65
+        assert json.loads(args[2])["overall"] == 0.50
 
     def test_no_summary_no_beliefs(self, hook_module, mock_conn):
         """No summary should not create beliefs."""
@@ -141,8 +144,8 @@ class TestAutoCapture:
         count = hook_module.auto_capture_beliefs(conn, "test-session-id", session_data)
         assert count == 0
 
-    def test_theme_confidence_is_055(self, hook_module, mock_conn):
-        """Theme beliefs should have confidence 0.55."""
+    def test_theme_confidence_is_045(self, hook_module, mock_conn):
+        """Theme beliefs should have confidence 0.45."""
         conn, cursor, _ = mock_conn
         cursor.execute = MagicMock()
 
@@ -158,7 +161,7 @@ class TestAutoCapture:
         insert_call = [c for c in calls if "INSERT INTO beliefs" in str(c)]
         assert len(insert_call) >= 1
         args = insert_call[0][0][1]
-        assert json.loads(args[2])["overall"] == 0.55
+        assert json.loads(args[2])["overall"] == 0.45
 
     def test_domain_path_from_project_context(self, hook_module, mock_conn):
         """Beliefs should use project_context as domain_path."""

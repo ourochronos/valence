@@ -136,27 +136,36 @@ class TestBeliefQuery:
 class TestBeliefCreate:
     """Tests for belief_create function."""
 
+    @pytest.fixture(autouse=True)
+    def no_embeddings(self):
+        """Disable embedding-based fuzzy dedup for unit tests."""
+        with patch("our_embeddings.service.generate_embedding", side_effect=RuntimeError("test")):
+            yield
+
     def test_basic_creation(self, mock_get_cursor):
         """Should create a basic belief."""
         from valence.substrate.tools import belief_create
 
         belief_id = uuid4()
         now = datetime.now()
-        mock_get_cursor.fetchone.return_value = {
-            "id": belief_id,
-            "content": "New belief",
-            "confidence": {"overall": 0.7},
-            "domain_path": [],
-            "valid_from": None,
-            "valid_until": None,
-            "created_at": now,
-            "modified_at": now,
-            "source_id": None,
-            "extraction_method": None,
-            "supersedes_id": None,
-            "superseded_by_id": None,
-            "status": "active",
-        }
+        mock_get_cursor.fetchone.side_effect = [
+            None,  # dedup hash check: no match
+            {
+                "id": belief_id,
+                "content": "New belief",
+                "confidence": {"overall": 0.7},
+                "domain_path": [],
+                "valid_from": None,
+                "valid_until": None,
+                "created_at": now,
+                "modified_at": now,
+                "source_id": None,
+                "extraction_method": None,
+                "supersedes_id": None,
+                "superseded_by_id": None,
+                "status": "active",
+            },
+        ]
 
         result = belief_create("New belief")
 
@@ -169,21 +178,24 @@ class TestBeliefCreate:
 
         belief_id = uuid4()
         now = datetime.now()
-        mock_get_cursor.fetchone.return_value = {
-            "id": belief_id,
-            "content": "Test",
-            "confidence": {"overall": 0.9, "source_reliability": 0.95},
-            "domain_path": [],
-            "valid_from": None,
-            "valid_until": None,
-            "created_at": now,
-            "modified_at": now,
-            "source_id": None,
-            "extraction_method": None,
-            "supersedes_id": None,
-            "superseded_by_id": None,
-            "status": "active",
-        }
+        mock_get_cursor.fetchone.side_effect = [
+            None,  # dedup hash check: no match
+            {
+                "id": belief_id,
+                "content": "Test",
+                "confidence": {"overall": 0.9, "source_reliability": 0.95},
+                "domain_path": [],
+                "valid_from": None,
+                "valid_until": None,
+                "created_at": now,
+                "modified_at": now,
+                "source_id": None,
+                "extraction_method": None,
+                "supersedes_id": None,
+                "superseded_by_id": None,
+                "status": "active",
+            },
+        ]
 
         result = belief_create("Test", confidence={"overall": 0.9, "source_reliability": 0.95})
 
@@ -197,8 +209,8 @@ class TestBeliefCreate:
         belief_id = uuid4()
         now = datetime.now()
 
-        # First call creates source, second creates belief
         mock_get_cursor.fetchone.side_effect = [
+            None,  # dedup hash check: no match
             {"id": source_id},  # Source creation
             {
                 "id": belief_id,
@@ -230,6 +242,7 @@ class TestBeliefCreate:
         now = datetime.now()
 
         mock_get_cursor.fetchone.side_effect = [
+            None,  # dedup hash check: no match
             # Belief creation
             {
                 "id": belief_id,

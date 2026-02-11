@@ -4,13 +4,14 @@ Valence SessionEnd Hook
 Closes VKB session and auto-captures beliefs from session summary/themes.
 
 Auto-capture creates beliefs from:
-1. Session summary (if substantive) at confidence 0.65
-2. Individual themes at confidence 0.55
+1. Session summary (if substantive) at confidence 0.50
+2. Individual themes at confidence 0.45
 3. Links beliefs to session via vkb_session_insights
 
 Uses parameterized queries to prevent SQL injection.
 """
 
+import hashlib
 import json
 import os
 import sys
@@ -25,8 +26,8 @@ except ImportError:
     HAS_PSYCOPG2 = False
 
 # Curation constants (duplicated from core/curation.py — hooks are standalone)
-SUMMARY_CONFIDENCE = 0.65
-THEME_CONFIDENCE = 0.55
+SUMMARY_CONFIDENCE = 0.50  # lowered: corroboration will raise it
+THEME_CONFIDENCE = 0.45    # lowered: corroboration will raise it
 MAX_AUTO_BELIEFS_PER_SESSION = 10
 MIN_SUMMARY_LENGTH = 20
 MIN_THEME_LENGTH = 10
@@ -70,16 +71,46 @@ def get_session(conn, session_id: str) -> dict | None:
 
 
 def create_belief(conn, content: str, confidence: float, domain_path: list[str] | None = None) -> str | None:
-    """Create a belief and return its ID."""
+    """Create a belief and return its ID. Deduplicates by content hash.
+
+    If an exact duplicate exists, reinforces the existing belief instead
+    of creating a new one.
+    """
+    content_hash = hashlib.sha256(content.strip().lower().encode()).hexdigest()
     try:
-        belief_id = str(uuid.uuid4())
-        with conn.cursor() as cur:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            # Check for exact duplicate
+            cur.execute(
+                "SELECT id, confidence FROM beliefs WHERE content_hash = %s AND status = 'active' AND superseded_by_id IS NULL",
+                (content_hash,),
+            )
+            existing = cur.fetchone()
+            if existing:
+                # Reinforce: record corroboration and bump confidence
+                existing_id = str(existing["id"])
+                cur.execute("SELECT COUNT(*) as cnt FROM belief_corroborations WHERE belief_id = %s", (existing_id,))
+                count = cur.fetchone()["cnt"]
+                cur.execute(
+                    "INSERT INTO belief_corroborations (belief_id, source_type) VALUES (%s, 'session')",
+                    (existing_id,),
+                )
+                # Simple escalation: 0-1→0.50, 2→0.65, 3+→0.80
+                new_count = count + 1
+                new_overall = 0.50 if new_count <= 1 else (0.65 if new_count == 2 else 0.80)
+                existing_conf = existing["confidence"] if isinstance(existing["confidence"], dict) else json.loads(existing["confidence"])
+                existing_conf["overall"] = max(existing_conf.get("overall", 0.5), new_overall)
+                existing_conf["corroboration"] = new_overall
+                cur.execute("UPDATE beliefs SET confidence = %s, modified_at = NOW() WHERE id = %s", (json.dumps(existing_conf), existing_id))
+                return existing_id
+
+            # No duplicate — create new
+            belief_id = str(uuid.uuid4())
             cur.execute(
                 """
-                INSERT INTO beliefs (id, content, confidence, domain_path, extraction_method, status)
-                VALUES (%s, %s, %s, %s, 'auto', 'active')
+                INSERT INTO beliefs (id, content, confidence, domain_path, extraction_method, content_hash, status)
+                VALUES (%s, %s, %s, %s, 'auto', %s, 'active')
                 """,
-                (belief_id, content, json.dumps({"overall": confidence}), domain_path or [])
+                (belief_id, content, json.dumps({"overall": confidence}), domain_path or [], content_hash),
             )
             return belief_id
     except psycopg2.Error:

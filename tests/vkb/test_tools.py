@@ -672,6 +672,7 @@ class TestInsightExtract:
         insight_id = uuid4()
 
         mock_get_cursor.fetchone.side_effect = [
+            None,  # dedup hash check: no match
             {"id": source_id},  # source lookup
             {
                 "id": belief_id,
@@ -703,6 +704,7 @@ class TestInsightExtract:
         belief_id = uuid4()
 
         mock_get_cursor.fetchone.side_effect = [
+            None,  # dedup hash check: no match
             {"id": uuid4()},  # source
             {
                 "id": belief_id,
@@ -736,6 +738,7 @@ class TestInsightExtract:
         session_id = uuid4()
 
         mock_get_cursor.fetchone.side_effect = [
+            None,  # dedup hash check: no match
             {"id": uuid4()},  # source
             {
                 "id": uuid4(),
