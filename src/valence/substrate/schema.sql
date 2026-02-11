@@ -89,8 +89,8 @@ CREATE TABLE IF NOT EXISTS beliefs (
     status TEXT NOT NULL DEFAULT 'active',
     -- Values: active, superseded, disputed, archived
 
-    -- Vector embedding for similarity search
-    embedding VECTOR(1536),
+    -- Vector embedding for similarity search (384-dim, BAAI/bge-small-en-v1.5)
+    embedding VECTOR(384),
 
     -- Full-text search
     content_tsv TSVECTOR GENERATED ALWAYS AS (
@@ -285,8 +285,8 @@ CREATE TABLE IF NOT EXISTS vkb_exchanges (
     -- Tools used in this turn
     tool_uses JSONB DEFAULT '[]',
 
-    -- Vector embedding
-    embedding VECTOR(1536),
+    -- Vector embedding (384-dim, BAAI/bge-small-en-v1.5)
+    embedding VECTOR(384),
 
     UNIQUE (session_id, sequence),
     CONSTRAINT vkb_exchanges_valid_role CHECK (role IN ('user', 'assistant', 'system'))
@@ -326,8 +326,8 @@ CREATE TABLE IF NOT EXISTS vkb_patterns (
     first_observed TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_observed TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-    -- Vector embedding
-    embedding VECTOR(1536),
+    -- Vector embedding (384-dim, BAAI/bge-small-en-v1.5)
+    embedding VECTOR(384),
 
     CONSTRAINT vkb_patterns_valid_confidence CHECK (confidence >= 0 AND confidence <= 1),
     CONSTRAINT vkb_patterns_valid_status CHECK (status IN ('emerging', 'established', 'fading', 'archived'))
@@ -354,6 +354,20 @@ CREATE TABLE IF NOT EXISTS vkb_session_insights (
 
 CREATE INDEX IF NOT EXISTS idx_vkb_session_insights_session ON vkb_session_insights(session_id);
 CREATE INDEX IF NOT EXISTS idx_vkb_session_insights_belief ON vkb_session_insights(belief_id);
+
+-- Belief Corroborations: Track deduplication and reinforcement events
+CREATE TABLE IF NOT EXISTS belief_corroborations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    belief_id UUID NOT NULL REFERENCES beliefs(id) ON DELETE CASCADE,
+    source_session_id UUID REFERENCES vkb_sessions(id) ON DELETE SET NULL,
+    source_type TEXT NOT NULL DEFAULT 'session',
+    corroborated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    similarity_score NUMERIC(4,3),
+    CONSTRAINT belief_corroborations_valid_type
+        CHECK (source_type IN ('session', 'user_confirm', 'federation'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_belief_corroborations_belief ON belief_corroborations(belief_id);
 
 -- Belief Retrievals: Track which beliefs are accessed (feedback loop)
 CREATE TABLE IF NOT EXISTS belief_retrievals (
@@ -1172,9 +1186,9 @@ WHERE fn.status = 'active';
 -- DEFAULT DATA
 -- ============================================================================
 
--- Insert default embedding type
+-- Insert default embedding type (local BAAI/bge-small-en-v1.5, 384 dims)
 INSERT INTO embedding_types (id, provider, model, dimensions, is_default, status)
-VALUES ('openai_text3_small', 'openai', 'text-embedding-3-small', 1536, TRUE, 'active')
+VALUES ('local_bge_small', 'local', 'BAAI/bge-small-en-v1.5', 384, TRUE, 'active')
 ON CONFLICT (id) DO NOTHING;
 -- Migration 002: Add sharing tables (Issue #50)
 -- Implements consent chains and encrypted shares for DIRECT sharing level
