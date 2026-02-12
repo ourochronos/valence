@@ -174,10 +174,16 @@ class TestRunFullMaintenance:
 
     def test_executes_all_operations(self):
         cur = MagicMock()
-        # Retention results
-        cur.fetchall.return_value = [
-            {"table_name": "belief_retrievals", "deleted_count": 10},
-            {"table_name": "audit_log", "deleted_count": 0},
+        # Retention results (fetchall call 1), compaction candidates (fetchall call 2), refresh_views (fetchall call 3)
+        cur.fetchall.side_effect = [
+            [
+                {"table_name": "belief_retrievals", "deleted_count": 10},
+                {"table_name": "audit_log", "deleted_count": 0},
+            ],
+            [],  # No compaction candidates
+            [
+                {"view_name": "beliefs_current_mat", "refreshed": True, "error_msg": None},
+            ],
         ]
         # Archival and tombstone results
         cur.fetchone.side_effect = [
@@ -187,15 +193,17 @@ class TestRunFullMaintenance:
 
         results = run_full_maintenance(cur, skip_vacuum=True)
 
-        # retention (2) + archival (1) + tombstone (1) = 4
-        assert len(results) == 4
+        # retention (2) + archival (1) + tombstone (1) + compaction (1) + refresh_views (1) = 6
+        assert len(results) == 6
         assert results[0].operation == "retention"
         assert results[2].operation == "archival"
         assert results[3].operation == "tombstone_cleanup"
+        assert results[4].operation == "exchange_compaction"
+        assert results[5].operation == "refresh_views"
 
-    def test_dry_run_skips_vacuum(self):
+    def test_dry_run_skips_vacuum_and_views(self):
         cur = MagicMock()
-        cur.fetchall.return_value = []
+        cur.fetchall.return_value = []  # No retention rows, no compaction candidates
         cur.fetchone.side_effect = [
             {"archived_count": 0, "freed_embeddings": 0},
             {"count": 0},
@@ -203,6 +211,8 @@ class TestRunFullMaintenance:
 
         results = run_full_maintenance(cur, dry_run=True)
 
-        # No vacuum in dry run
+        # No vacuum or views in dry run
         assert all(r.operation != "vacuum_analyze" for r in results)
-        assert all(r.dry_run for r in results)
+        assert all(r.operation != "refresh_views" for r in results)
+        # Compaction still runs in dry_run (reports what would happen)
+        assert any(r.operation == "exchange_compaction" for r in results)

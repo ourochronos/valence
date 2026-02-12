@@ -349,6 +349,11 @@ def _build_did_document(settings: Any) -> dict[str, Any]:
     doc_dict["vfp:capabilities"] = settings.federation_capabilities or ["belief_sync"]
     doc_dict["vfp:protocolVersion"] = "1.0"
 
+    # Embedding capability advertisement (#356)
+    from ..core.embedding_interop import build_embedding_capability_advertisement
+
+    doc_dict.update(build_embedding_capability_advertisement())
+
     # Optional profile
     profile = {}
     if settings.federation_node_name:

@@ -12,6 +12,7 @@ from . import (
     embeddings,
     identity,
     io,
+    maintenance,
     migration,
     peers,
     qos,
@@ -34,6 +35,7 @@ from .qos import cmd_qos
 from .resources import cmd_resources
 from .schema import cmd_schema
 from .stats import cmd_stats
+from .maintenance import cmd_maintenance
 from .trust import cmd_trust
 
 # All command modules with register() functions, in registration order.
@@ -52,6 +54,7 @@ COMMAND_MODULES = [
     schema,
     qos,
     identity,
+    maintenance,
 ]
 
 __all__ = [
@@ -78,6 +81,7 @@ __all__ = [
     "cmd_resources",
     "cmd_schema",
     "cmd_stats",
+    "cmd_maintenance",
     "cmd_trust",
     "register_identity_commands",
 ]

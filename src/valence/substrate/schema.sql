@@ -254,6 +254,10 @@ CREATE TABLE IF NOT EXISTS vkb_sessions (
     -- Flexible metadata
     metadata JSONB DEFAULT '{}',
 
+    -- Exchange compaction (#359)
+    compacted_summary JSONB,
+    compacted_at TIMESTAMPTZ,
+
     CONSTRAINT vkb_sessions_valid_status CHECK (status IN ('active', 'completed', 'abandoned')),
     CONSTRAINT vkb_sessions_valid_platform CHECK (platform IN (
         'claude-code', 'matrix', 'api', 'slack',
