@@ -8,12 +8,7 @@
         "VKB_DB_PORT": "${VKB_DB_PORT:-5433}",
         "VKB_DB_NAME": "${VKB_DB_NAME:-valence}",
         "VKB_DB_USER": "${VKB_DB_USER:-valence}",
-        "VKB_DB_PASSWORD": "${VKB_DB_PASSWORD:-}",
-        "ORO_DB_HOST": "${VKB_DB_HOST:-localhost}",
-        "ORO_DB_PORT": "${VKB_DB_PORT:-5433}",
-        "ORO_DB_NAME": "${VKB_DB_NAME:-valence}",
-        "ORO_DB_USER": "${VKB_DB_USER:-valence}",
-        "ORO_DB_PASSWORD": "${VKB_DB_PASSWORD:-}"
+        "VKB_DB_PASSWORD": "${VKB_DB_PASSWORD:-}"
       },
       "description": "Valence knowledge substrate - beliefs, entities, tensions, sessions, patterns"
     }

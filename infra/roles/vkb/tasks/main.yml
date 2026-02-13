@@ -47,6 +47,11 @@
     cd /opt/valence/repo
     psql -h localhost -U {{ postgres_user }} -d {{ postgres_db }} -f src/valence/substrate/schema.sql
     psql -h localhost -U {{ postgres_user }} -d {{ postgres_db }} -f src/valence/substrate/procedures.sql
+    for f in migrations/*.sql; do
+      [ -f "$f" ] || continue
+      echo "Applying migration: $(basename "$f")"
+      psql -v ON_ERROR_STOP=0 -h localhost -U {{ postgres_user }} -d {{ postgres_db }} -f "$f"
+    done
   environment:
     PGPASSWORD: "{{ postgres_password }}"
   become_user: valence
@@ -79,17 +84,7 @@
     enabled: yes
 
 # HTTP MCP Server
-- name: Create token storage file with secure permissions
-  file:
-    path: /opt/valence/config/tokens.json
-    state: touch
-    owner: valence
-    group: valence
-    mode: '0600'
-    modification_time: preserve
-    access_time: preserve
-
-- name: Initialize empty token store if not exists
+- name: Initialize token store if not exists
   copy:
     content: '{"tokens": []}'
     dest: /opt/valence/config/tokens.json
@@ -173,3 +168,6 @@
     mode: '0644'
   notify:
     - reload nginx
+
+- name: Ensure nginx picks up SSL and proxy config
+  meta: flush_handlers

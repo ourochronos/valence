@@ -43,9 +43,6 @@ def cmd_stats(args: argparse.Namespace) -> int:
             logger.debug(f"Could not count domains (column may not exist): {e}")
             domains = 0
 
-        cur.execute("SELECT COUNT(*) as derivations FROM belief_derivations")
-        derivations = cur.fetchone()["derivations"]
-
         # Count federated beliefs
         try:
             cur.execute("SELECT COUNT(*) as federated FROM beliefs WHERE is_local = FALSE")
@@ -61,7 +58,6 @@ def cmd_stats(args: argparse.Namespace) -> int:
         print(f"  Local beliefs:      {active - federated}")
         print(f"  Federated beliefs:  {federated}")
         print(f"  With embeddings:    {with_embedding}")
-        print(f"  Derivation records: {derivations}")
         print(f"  Unique domains:     {domains}")
         print(f"  Unresolved tensions:{tensions}")
 

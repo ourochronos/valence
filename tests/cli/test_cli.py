@@ -338,8 +338,8 @@ class TestAddCommand:
         result = cmd_add(args)
 
         assert result == 0
-        # Check derivation insert
-        insert_calls = [c for c in mock_cur.execute.call_args_list if "INSERT INTO belief_derivations" in str(c)]
+        # extraction_method should be set via the beliefs INSERT
+        insert_calls = [c for c in mock_cur.execute.call_args_list if "INSERT INTO beliefs" in str(c)]
         assert len(insert_calls) == 1
 
 
@@ -357,7 +357,7 @@ class TestQueryCommand:
         source_id = uuid4()
         belief_id = uuid4()
 
-        # Query result with derivation info
+        # Query result with extraction method
         mock_cur.fetchall.return_value = [
             {
                 "id": belief_id,
@@ -368,21 +368,14 @@ class TestQueryCommand:
                 "extraction_method": "inference",
                 "supersedes_id": None,
                 "similarity": 0.95,
-                "derivation_type": "inference",
-                "method_description": "Derived via logical deduction",
-                "confidence_rationale": "Strong evidence",
-                "derivation_sources": [
-                    {
-                        "source_belief_id": str(source_id),
-                        "contribution_type": "primary",
-                        "external_ref": None,
-                    }
-                ],
+                "confidence_source": 0.5,
+                "confidence_method": 0.5,
+                "confidence_consistency": 1.0,
+                "confidence_freshness": 1.0,
+                "confidence_corroboration": 0.1,
+                "confidence_applicability": 0.8,
             }
         ]
-
-        # Source belief lookup
-        mock_cur.fetchone.return_value = {"content": "Original observation source"}
 
         parser = app()
         args = parser.parse_args(["query", "test"])
@@ -391,10 +384,8 @@ class TestQueryCommand:
         assert result == 0
 
         captured = capsys.readouterr()
-        # Verify derivation info is shown
-        assert "Derivation: inference" in captured.out
-        assert "Method: Derived via logical deduction" in captured.out
-        assert "Derived from" in captured.out or "primary" in captured.out
+        # Verify extraction method is shown
+        assert "Method: inference" in captured.out
 
     @patch("valence.cli.commands.beliefs.get_db_connection")
     @patch("valence.cli.commands.beliefs.get_embedding")
@@ -565,13 +556,13 @@ class TestStatsCommand:
 # ============================================================================
 
 
-class TestDerivationChains:
-    """Test derivation chain visibility."""
+class TestExtractionMethod:
+    """Test extraction method visibility in query results."""
 
     @patch("valence.cli.commands.beliefs.get_db_connection")
     @patch("valence.cli.commands.beliefs.get_embedding")
-    def test_shows_external_ref(self, mock_embed, mock_get_conn, mock_db, capsys):
-        """Show external references in derivation."""
+    def test_shows_extraction_method(self, mock_embed, mock_get_conn, mock_db, capsys):
+        """Show extraction method in query output."""
         mock_conn, mock_cur = mock_db
         mock_get_conn.return_value = mock_conn
         mock_embed.return_value = [0.1] * 1536
@@ -586,16 +577,12 @@ class TestDerivationChains:
                 "extraction_method": "hearsay",
                 "supersedes_id": None,
                 "similarity": 0.9,
-                "derivation_type": "hearsay",
-                "method_description": "Reported by trusted source",
-                "confidence_rationale": None,
-                "derivation_sources": [
-                    {
-                        "source_belief_id": None,
-                        "contribution_type": "primary",
-                        "external_ref": "https://example.com/doc",
-                    }
-                ],
+                "confidence_source": 0.5,
+                "confidence_method": 0.5,
+                "confidence_consistency": 1.0,
+                "confidence_freshness": 1.0,
+                "confidence_corroboration": 0.1,
+                "confidence_applicability": 0.8,
             }
         ]
 
@@ -605,8 +592,7 @@ class TestDerivationChains:
 
         assert result == 0
         captured = capsys.readouterr()
-        assert "External" in captured.out
-        assert "example.com" in captured.out
+        assert "Method: hearsay" in captured.out
 
     @patch("valence.cli.commands.beliefs.get_db_connection")
     @patch("valence.cli.commands.beliefs.get_embedding")
@@ -628,10 +614,12 @@ class TestDerivationChains:
                 "extraction_method": "correction",
                 "supersedes_id": old_id,
                 "similarity": 0.95,
-                "derivation_type": "correction",
-                "method_description": "Corrected previous error",
-                "confidence_rationale": None,
-                "derivation_sources": [],
+                "confidence_source": 0.5,
+                "confidence_method": 0.5,
+                "confidence_consistency": 1.0,
+                "confidence_freshness": 1.0,
+                "confidence_corroboration": 0.1,
+                "confidence_applicability": 0.8,
             }
         ]
 

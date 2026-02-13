@@ -1,5 +1,5 @@
 [project]
-name = "valence"
+name = "ourochronos-valence"
 version = "1.0.1"
 description = "Personal knowledge substrate for AI agents - beliefs, conversations, patterns"
 readme = "README.md"
@@ -15,6 +15,20 @@ keywords = [
     "mcp",
     "agent",
     "memory",
+    "beliefs",
+    "substrate",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Database",
 ]
 
 dependencies = [
@@ -67,6 +81,11 @@ dev = [
     "types-PyYAML>=6.0",
     "requests>=2.31",
 ]
+test = [
+    "ourochronos-valence[dev]",
+    "libp2p>=0.5.0",
+    "trio>=0.22",
+]
 
 [project.scripts]
 valence = "valence.cli:main"
@@ -78,6 +97,12 @@ valence-token = "valence.server.cli:main"
 valence-federation = "valence.cli.federation:main"
 valence-seed = "valence.cli.seed:main"
 valence-router = "valence.cli.router:main"
+
+[project.urls]
+Homepage = "https://github.com/ourochronos/valence"
+Repository = "https://github.com/ourochronos/valence"
+Documentation = "https://github.com/ourochronos/valence/blob/main/docs/getting-started.md"
+Issues = "https://github.com/ourochronos/valence/issues"
 
 [build-system]
 requires = ["hatchling"]

@@ -13,17 +13,21 @@
   when: verify_wait | default(true)
 
 # === Service Status Checks ===
-- name: Check PostgreSQL service
-  service_facts:
-  register: service_facts
+- name: Check PostgreSQL is accepting connections
+  command: pg_isready -h localhost -p 5432
+  register: pg_ready
+  changed_when: false
 
 - name: Verify PostgreSQL is running
   assert:
     that:
-      - "'postgresql.service' in ansible_facts.services"
-      - "ansible_facts.services['postgresql.service'].state == 'running'"
-    fail_msg: "PostgreSQL service is not running"
-    success_msg: "PostgreSQL service is running"
+      - pg_ready.rc == 0
+    fail_msg: "PostgreSQL is not accepting connections"
+    success_msg: "PostgreSQL is accepting connections"
+
+- name: Check service states
+  service_facts:
+  register: service_facts
 
 - name: Verify nginx is running
   assert:
@@ -140,15 +144,22 @@
   when: info_check is defined
 
 # === Log Error Check ===
-- name: Check valence-server logs for recent errors
-  shell: journalctl -u valence-server --since "10 minutes ago" --no-pager 2>/dev/null | grep -ci error || echo 0
+- name: Get valence-server activation time
+  shell: systemctl show valence-server --property=ActiveEnterTimestamp --value
+  register: server_start_time
+  changed_when: false
+
+- name: Check valence-server logs for errors since last start
+  shell: >
+    journalctl -u valence-server --since "{{ server_start_time.stdout }}"
+    --no-pager 2>/dev/null | grep -ci error || echo 0
   register: server_errors
   changed_when: false
   failed_when: false
 
 - name: Warn about valence-server errors
   debug:
-    msg: "WARNING: Found {{ server_errors.stdout }} error(s) in recent valence-server logs"
+    msg: "WARNING: Found {{ server_errors.stdout }} error(s) in valence-server logs since last start"
   when: server_errors.stdout | int > 0
 
 # === Resource Checks ===

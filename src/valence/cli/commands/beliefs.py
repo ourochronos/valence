@@ -264,37 +264,11 @@ def cmd_init(args: argparse.Namespace) -> int:
         """
         )
 
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS belief_derivations (
-                belief_id UUID PRIMARY KEY REFERENCES beliefs(id) ON DELETE CASCADE,
-                derivation_type TEXT NOT NULL DEFAULT 'assumption',
-                method_description TEXT,
-                confidence_rationale TEXT,
-                created_at TIMESTAMPTZ DEFAULT NOW()
-            )
-        """
-        )
-
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS derivation_sources (
-                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                belief_id UUID NOT NULL REFERENCES beliefs(id) ON DELETE CASCADE,
-                source_belief_id UUID REFERENCES beliefs(id),
-                external_ref TEXT,
-                contribution_type TEXT DEFAULT 'primary',
-                weight REAL DEFAULT 1.0
-            )
-        """
-        )
-
         # Create indexes
         cur.execute("CREATE INDEX IF NOT EXISTS idx_beliefs_embedding ON beliefs USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_beliefs_status ON beliefs(status)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_beliefs_domain ON beliefs USING GIN(domain_path)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_beliefs_created ON beliefs(created_at DESC)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_derivation_sources_belief ON derivation_sources(belief_id)")
 
         # Create text search
         cur.execute(
@@ -382,25 +356,6 @@ def cmd_add(args: argparse.Namespace) -> int:
         row = cur.fetchone()
         belief_id = row["id"]
 
-        # Add derivation record
-        cur.execute(
-            """
-            INSERT INTO belief_derivations (belief_id, derivation_type, method_description)
-            VALUES (%s, %s, %s)
-        """,
-            (belief_id, derivation_type, args.method or None),
-        )
-
-        # Link derived_from if provided
-        if derived_from:
-            cur.execute(
-                """
-                INSERT INTO derivation_sources (belief_id, source_belief_id, contribution_type)
-                VALUES (%s, %s, 'primary')
-            """,
-                (belief_id, derived_from),
-            )
-
         conn.commit()
 
         print(f"✅ Belief added: {str(belief_id)[:8]}...")
@@ -466,48 +421,33 @@ def cmd_query(args: argparse.Namespace) -> int:
         if embedding:
             embedding_str = f"[{','.join(str(x) for x in embedding)}]"
 
-            # Semantic search with derivation info AND 6D confidence columns
+            # Semantic search with 6D confidence columns
             cur.execute(
                 """
-                WITH ranked AS (
-                    SELECT
-                        b.id,
-                        b.content,
-                        b.confidence,
-                        b.domain_path,
-                        b.created_at,
-                        b.extraction_method,
-                        b.supersedes_id,
-                        b.confidence_source,
-                        b.confidence_method,
-                        b.confidence_consistency,
-                        b.confidence_freshness,
-                        b.confidence_corroboration,
-                        b.confidence_applicability,
-                        1 - (b.embedding <=> %s::vector) as similarity,
-                        d.derivation_type,
-                        d.method_description,
-                        d.confidence_rationale
-                    FROM beliefs b
-                    LEFT JOIN belief_derivations d ON d.belief_id = b.id
-                    WHERE b.embedding IS NOT NULL
-                      AND b.status = 'active'
-                      AND b.superseded_by_id IS NULL
-                    ORDER BY b.embedding <=> %s::vector
-                    LIMIT %s
-                )
-                SELECT r.*,
-                    (SELECT json_agg(json_build_object(
-                        'source_belief_id', ds.source_belief_id,
-                        'external_ref', ds.external_ref,
-                        'contribution_type', ds.contribution_type
-                    ))
-                    FROM derivation_sources ds
-                    WHERE ds.belief_id = r.id) as derivation_sources
-                FROM ranked r
-                WHERE r.similarity >= %s
+                SELECT
+                    b.id,
+                    b.content,
+                    b.confidence,
+                    b.domain_path,
+                    b.created_at,
+                    b.extraction_method,
+                    b.supersedes_id,
+                    b.confidence_source,
+                    b.confidence_method,
+                    b.confidence_consistency,
+                    b.confidence_freshness,
+                    b.confidence_corroboration,
+                    b.confidence_applicability,
+                    1 - (b.embedding <=> %s::vector) as similarity
+                FROM beliefs b
+                WHERE b.embedding IS NOT NULL
+                  AND b.status = 'active'
+                  AND b.superseded_by_id IS NULL
+                  AND 1 - (b.embedding <=> %s::vector) >= %s
+                ORDER BY b.embedding <=> %s::vector
+                LIMIT %s
             """,
-                (embedding_str, embedding_str, args.limit * 2, args.threshold),
+                (embedding_str, embedding_str, args.threshold, embedding_str, args.limit * 2),
             )  # Get extra for filtering
 
             results = cur.fetchall()
@@ -530,19 +470,8 @@ def cmd_query(args: argparse.Namespace) -> int:
                     b.confidence_freshness,
                     b.confidence_corroboration,
                     b.confidence_applicability,
-                    ts_rank(b.content_tsv, websearch_to_tsquery('english', %s)) as similarity,
-                    d.derivation_type,
-                    d.method_description,
-                    d.confidence_rationale,
-                    (SELECT json_agg(json_build_object(
-                        'source_belief_id', ds.source_belief_id,
-                        'external_ref', ds.external_ref,
-                        'contribution_type', ds.contribution_type
-                    ))
-                    FROM derivation_sources ds
-                    WHERE ds.belief_id = b.id) as derivation_sources
+                    ts_rank(b.content_tsv, websearch_to_tsquery('english', %s)) as similarity
                 FROM beliefs b
-                LEFT JOIN belief_derivations d ON d.belief_id = b.id
                 WHERE b.content_tsv @@ websearch_to_tsquery('english', %s)
                   AND b.status = 'active'
                   AND b.superseded_by_id IS NULL
@@ -612,31 +541,9 @@ def cmd_query(args: argparse.Namespace) -> int:
                 print(f"    │  Final:      {bd['final']:.3f}")
                 print("    └─")
 
-            # === DERIVATION CHAIN ===
-            derivation_type = r.get("derivation_type") or r.get("extraction_method") or "unknown"
-            print(f"    ┌─ Derivation: {derivation_type}")
-
-            if r.get("method_description"):
-                print(f"    │  Method: {r['method_description']}")
-
-            if r.get("confidence_rationale"):
-                print(f"    │  Rationale: {r['confidence_rationale']}")
-
-            # Show source beliefs
-            sources = r.get("derivation_sources") or []
-            if sources:
-                for src in sources:
-                    if src.get("source_belief_id"):
-                        # Fetch source belief content
-                        cur.execute(
-                            "SELECT content FROM beliefs WHERE id = %s",
-                            (src["source_belief_id"],),
-                        )
-                        src_row = cur.fetchone()
-                        src_content = src_row["content"][:50] if src_row else "?"
-                        print(f"    │  ← Derived from ({src.get('contribution_type', 'primary')}): {src_content}...")
-                    elif src.get("external_ref"):
-                        print(f"    │  ← External: {src['external_ref']}")
+            # === EXTRACTION METHOD ===
+            extraction_method = r.get("extraction_method") or "unknown"
+            print(f"    ┌─ Method: {extraction_method}")
 
             # Show supersession chain if exists
             if r.get("supersedes_id"):
@@ -695,9 +602,8 @@ def cmd_list(args: argparse.Namespace) -> int:
                 b.confidence,
                 b.domain_path,
                 b.created_at,
-                d.derivation_type
+                b.extraction_method
             FROM beliefs b
-            LEFT JOIN belief_derivations d ON d.belief_id = b.id
             WHERE b.status = 'active'
               AND b.superseded_by_id IS NULL
         """
@@ -722,7 +628,7 @@ def cmd_list(args: argparse.Namespace) -> int:
         for r in results:
             conf = format_confidence(r.get("confidence", {}))
             age = format_age(r.get("created_at"))
-            deriv_raw = r.get("derivation_type") or "?"
+            deriv_raw = r.get("extraction_method") or "?"
             deriv = deriv_raw[:6] if deriv_raw else "?"
             content = r["content"][:55] + "..." if len(r["content"]) > 55 else r["content"]
 

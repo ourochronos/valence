@@ -156,28 +156,10 @@ class TestInitSchemaExceptionHandling:
 
 
 class TestMCPPluginConfig:
-    """Plugin .mcp.json must include ORO_DB_* env vars for our_db compatibility."""
-
-    def test_plugin_config_has_oro_vars(self):
-        """Plugin config must pass ORO_DB_* vars alongside VKB_DB_*."""
-        import json
-
-        config_path = Path(__file__).parent.parent.parent / "plugin" / ".mcp.json"
-        config = json.loads(config_path.read_text())
-
-        # Unified server ("valence") or legacy split servers
-        server_names = list(config["mcpServers"].keys())
-        for server_name in server_names:
-            env = config["mcpServers"][server_name]["env"]
-            # Must have ORO_DB_ vars (what our_db reads)
-            assert "ORO_DB_HOST" in env, f"{server_name} missing ORO_DB_HOST"
-            assert "ORO_DB_PORT" in env, f"{server_name} missing ORO_DB_PORT"
-            assert "ORO_DB_NAME" in env, f"{server_name} missing ORO_DB_NAME"
-            assert "ORO_DB_USER" in env, f"{server_name} missing ORO_DB_USER"
-            assert "ORO_DB_PASSWORD" in env, f"{server_name} missing ORO_DB_PASSWORD"
+    """Plugin .mcp.json must include VKB_DB_* env vars (bridge_db_env handles ORO_DB_*)."""
 
     def test_plugin_config_has_vkb_vars(self):
-        """Plugin config must still pass VKB_DB_* vars for valence.core.config."""
+        """Plugin config must pass VKB_DB_* vars for valence.core.config."""
         import json
 
         config_path = Path(__file__).parent.parent.parent / "plugin" / ".mcp.json"
@@ -188,6 +170,21 @@ class TestMCPPluginConfig:
             env = config["mcpServers"][server_name]["env"]
             assert "VKB_DB_HOST" in env, f"{server_name} missing VKB_DB_HOST"
             assert "VKB_DB_PORT" in env, f"{server_name} missing VKB_DB_PORT"
+            assert "VKB_DB_NAME" in env, f"{server_name} missing VKB_DB_NAME"
+            assert "VKB_DB_USER" in env, f"{server_name} missing VKB_DB_USER"
+            assert "VKB_DB_PASSWORD" in env, f"{server_name} missing VKB_DB_PASSWORD"
+
+    def test_plugin_config_no_oro_vars(self):
+        """Plugin config should NOT duplicate ORO_DB_* — bridge_db_env() handles it."""
+        import json
+
+        config_path = Path(__file__).parent.parent.parent / "plugin" / ".mcp.json"
+        config = json.loads(config_path.read_text())
+
+        server_names = list(config["mcpServers"].keys())
+        for server_name in server_names:
+            env = config["mcpServers"][server_name]["env"]
+            assert "ORO_DB_HOST" not in env, f"{server_name} has ORO_DB_HOST (should use bridge_db_env)"
 
     def test_plugin_config_default_port_is_5433(self):
         """Default port should be 5433 (Docker container port)."""
@@ -199,5 +196,4 @@ class TestMCPPluginConfig:
         server_names = list(config["mcpServers"].keys())
         for server_name in server_names:
             env = config["mcpServers"][server_name]["env"]
-            assert "5433" in env.get("ORO_DB_PORT", "")
             assert "5433" in env.get("VKB_DB_PORT", "")

@@ -20,7 +20,7 @@ def get_package_version() -> str:
     or a dev fallback when running from source without install.
     """
     try:
-        return version("valence")
+        return version("ourochronos-valence")
     except PackageNotFoundError:
         return "0.0.0-dev"
 
@@ -219,11 +219,13 @@ class ServerSettings(BaseSettings):
 
         if is_production and self.oauth_enabled:
             if not self.oauth_jwt_secret:
-                raise ValueError(
-                    "VALENCE_OAUTH_JWT_SECRET is required in production. Generate one with: python -c 'import secrets; print(secrets.token_hex(32))'"
+                logger.warning(
+                    "VALENCE_OAUTH_JWT_SECRET not set — disabling OAuth. "
+                    "Bearer token auth still works. Generate a secret with: "
+                    "python -c 'import secrets; print(secrets.token_hex(32))'"
                 )
-            # Warn if secret looks weak (too short)
-            if len(self.oauth_jwt_secret) < 32:
+                object.__setattr__(self, "oauth_enabled", False)
+            elif len(self.oauth_jwt_secret) < 32:
                 raise ValueError(
                     "VALENCE_OAUTH_JWT_SECRET must be at least 32 characters. "
                     "Generate a secure one with: python -c 'import secrets; print(secrets.token_hex(32))'"
