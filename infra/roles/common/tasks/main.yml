@@ -44,6 +44,7 @@
       - "--exclude=*.sqlite"
       - "--exclude=*.db"
       - "--exclude=infra/.env.*"
+  register: code_sync
 
 - name: Set ownership of Valence repo
   file:

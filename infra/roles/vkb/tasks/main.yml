@@ -19,6 +19,9 @@
     virtualenv: /opt/valence/venv
     editable: yes
   become_user: valence
+  notify:
+    - restart valence-server
+    - restart vkb
 
 - name: Create VKB config directory
   file:
