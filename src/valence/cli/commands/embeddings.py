@@ -100,9 +100,9 @@ def _count_missing_embeddings(cur, content_type: str) -> int:
     if content_type == "belief":
         cur.execute("SELECT COUNT(*) as count FROM beliefs WHERE embedding IS NULL AND status = 'active'")
     elif content_type == "exchange":
-        cur.execute("SELECT COUNT(*) as count FROM exchanges WHERE embedding IS NULL")
+        cur.execute("SELECT COUNT(*) as count FROM vkb_exchanges WHERE embedding IS NULL")
     elif content_type == "pattern":
-        cur.execute("SELECT COUNT(*) as count FROM patterns WHERE embedding IS NULL")
+        cur.execute("SELECT COUNT(*) as count FROM vkb_patterns WHERE embedding IS NULL")
     else:
         return 0
     return cur.fetchone()["count"]
@@ -113,9 +113,9 @@ def _count_all_embeddings(cur, content_type: str) -> int:
     if content_type == "belief":
         cur.execute("SELECT COUNT(*) as count FROM beliefs WHERE status = 'active'")
     elif content_type == "exchange":
-        cur.execute("SELECT COUNT(*) as count FROM exchanges")
+        cur.execute("SELECT COUNT(*) as count FROM vkb_exchanges")
     elif content_type == "pattern":
-        cur.execute("SELECT COUNT(*) as count FROM patterns")
+        cur.execute("SELECT COUNT(*) as count FROM vkb_patterns")
     else:
         return 0
     return cur.fetchone()["count"]
@@ -238,12 +238,12 @@ def _backfill_force(cur, conn, content_type: str, batch_size: int, embed_fn) -> 
         )
     elif content_type == "exchange":
         cur.execute(
-            "SELECT id, content FROM exchanges LIMIT %s",
+            "SELECT id, content FROM vkb_exchanges LIMIT %s",
             (batch_size,),
         )
     elif content_type == "pattern":
         cur.execute(
-            "SELECT id, description as content FROM patterns LIMIT %s",
+            "SELECT id, description as content FROM vkb_patterns LIMIT %s",
             (batch_size,),
         )
     else:
