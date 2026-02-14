@@ -66,6 +66,25 @@ tags:
     description: Federation protocol and node management
   - name: Beliefs
     description: Belief management and corroboration
+  - name: Substrate
+    description: |
+      Knowledge substrate REST API. Provides direct access to beliefs, entities,
+      tensions, confidence, and trust without JSON-RPC.
+      Requires `substrate:read` or `substrate:write` scope.
+  - name: Entities
+    description: Entity management (people, tools, concepts)
+  - name: Tensions
+    description: Contradictions between beliefs
+  - name: Trust
+    description: Trust level checks for entities and topics
+  - name: Sessions
+    description: Conversation session management
+  - name: Exchanges
+    description: Conversation turn tracking within sessions
+  - name: Patterns
+    description: Behavioral pattern tracking across sessions
+  - name: Insights
+    description: Extract insights from sessions into the knowledge base
   - name: Compliance
     description: GDPR and compliance endpoints
 
@@ -662,6 +681,1146 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  # Substrate REST Endpoints (Issue #381)
+  /api/v1/beliefs:
+    get:
+      tags:
+        - Substrate
+      summary: Search beliefs
+      description: Search beliefs by keyword with optional domain, entity, and archive filters.
+      operationId: listBeliefs
+      security:
+        - bearerAuth: []
+        - oauth2: [substrate:read]
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Search query string
+        - name: domain_filter
+          in: query
+          schema:
+            type: string
+          description: Comma-separated domain path filter (e.g., "tech,python")
+        - name: entity_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filter by related entity UUID
+        - name: include_superseded
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Include superseded beliefs
+        - name: include_revoked
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Include beliefs with revoked consent chains
+        - name: include_archived
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Include archived beliefs
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+          description: Maximum number of results
+        - name: ranking
+          in: query
+          schema:
+            type: string
+          description: JSON-encoded ranking configuration (e.g., {"semantic_weight":0.5,"confidence_weight":0.35,"recency_weight":0.15})
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BeliefListResponse'
+        '400':
+          description: Missing query parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+        - Substrate
+      summary: Create a belief
+      description: Create a new belief with optional confidence, domain classification, and entity links.
+      operationId: createBelief
+      security:
+        - bearerAuth: []
+        - oauth2: [substrate:write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBeliefRequest'
+            example:
+              content: "Python is excellent for rapid prototyping"
+              domain_path: ["tech", "python"]
+              confidence:
+                overall: 0.85
+              entities:
+                - name: Python
+                  type: tool
+                  role: subject
+      responses:
+        '201':
+          description: Belief created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BeliefResponse'
+        '400':
+          description: Missing required field or validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/beliefs/search:
+    get:
+      tags:
+        - Substrate
+      summary: Semantic search beliefs
+      description: Search beliefs using vector embeddings for semantic similarity. Requires embeddings to be enabled.
+      operationId: searchBeliefs
+      security:
+        - bearerAuth: []
+        - oauth2: [substrate:read]
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Natural language search query
+        - name: min_similarity
+          in: query
+          schema:
+            type: number
+            default: 0.5
+            minimum: 0
+            maximum: 1
+          description: Minimum similarity threshold
+        - name: min_confidence
+          in: query
+          schema:
+            type: number
+            minimum: 0
+            maximum: 1
+          description: Filter by minimum overall confidence
+        - name: domain_filter
+          in: query
+          schema:
+            type: string
+          description: Comma-separated domain path filter
+        - name: include_archived
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 100
+        - name: ranking
+          in: query
+          schema:
+            type: string
+          description: JSON-encoded ranking configuration
+      responses:
+        '200':
+          description: Semantic search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BeliefSearchResponse'
+        '400':
+          description: Missing query parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/beliefs/{belief_id}:
+    get:
+      tags:
+        - Substrate
+      summary: Get belief by ID
+      description: Retrieve a specific belief with optional history and tension details.
+      operationId: getBelief
+      security:
+        - bearerAuth: []
+        - oauth2: [substrate:read]
+      parameters:
+        - name: belief_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID of the belief
+        - name: include_history
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Include supersession chain history
+        - name: include_tensions
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Include related tensions
+      responses:
+        '200':
+          description: Belief details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BeliefResponse'
+        '404':
+          description: Belief not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/beliefs/{belief_id}/supersede:
+    post:
+      tags:
+        - Substrate
+      summary: Supersede a belief
+      description: Replace an existing belief with updated content, maintaining the history chain.
+      operationId: supersedeBelief
+      security:
+        - bearerAuth: []
+        - oauth2: [substrate:write]
+      parameters:
+        - name: belief_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID of the belief to supersede
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupersedeBeliefRequest'
+            example:
+              new_content: "Python 3.12+ is excellent for rapid prototyping"
+              reason: "Updated to specify version requirement"
+      responses:
+        '200':
+          description: Belief superseded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BeliefResponse'
+        '400':
+          description: Missing required fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestError'
+        '404':
+          description: Original belief not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/beliefs/{belief_id}/confidence:
+    get:
+      tags:
+        - Substrate
+      summary: Explain confidence score
+      description: Get a detailed breakdown of a belief's confidence score across all dimensions.
+      operationId: explainConfidence
+      security:
+        - bearerAuth: []
+        - oauth2: [substrate:read]
+      parameters:
+        - name: belief_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID of the belief
+      responses:
+        '200':
+          description: Confidence breakdown
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfidenceExplainResponse'
+        '404':
+          description: Belief not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/entities:
+    get:
+      tags:
+        - Entities
+      summary: Search entities
+      description: Search entities by name with optional type filter.
+      operationId: searchEntities
+      security:
+        - bearerAuth: []
+        - oauth2: [substrate:read]
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Search query (matches name and aliases)
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [person, organization, tool, concept, project, location, service]
+          description: Filter by entity type
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: Entity search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntityListResponse'
+        '400':
+          description: Missing query parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/entities/{id}:
+    get:
+      tags:
+        - Entities
+      summary: Get entity by ID
+      description: Retrieve a specific entity with optional related beliefs.
+      operationId: getEntity
+      security:
+        - bearerAuth: []
+        - oauth2: [substrate:read]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID of the entity
+        - name: include_beliefs
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Include related beliefs
+        - name: belief_limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 100
+          description: Maximum number of related beliefs to return
+      responses:
+        '200':
+          description: Entity details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntityResponse'
+        '404':
+          description: Entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/tensions:
+    get:
+      tags:
+        - Tensions
+      summary: List tensions
+      description: List contradictions between beliefs with optional filters.
+      operationId: listTensions
+      security:
+        - bearerAuth: []
+        - oauth2: [substrate:read]
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [detected, investigating, resolved, accepted]
+          description: Filter by tension status
+        - name: severity
+          in: query
+          schema:
+            type: string
+            enum: [low, medium, high, critical]
+          description: Filter by minimum severity
+        - name: entity_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filter by related entity
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: List of tensions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TensionListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/tensions/{id}/resolve:
+    post:
+      tags:
+        - Tensions
+      summary: Resolve a tension
+      description: Mark a tension as resolved with an explanation and action.
+      operationId: resolveTension
+      security:
+        - bearerAuth: []
+        - oauth2: [substrate:write]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID of the tension
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveTensionRequest'
+            example:
+              resolution: "Belief A is more recent and accurate"
+              action: supersede_b
+      responses:
+        '200':
+          description: Tension resolved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Missing required fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestError'
+        '404':
+          description: Tension not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/trust:
+    get:
+      tags:
+        - Trust
+      summary: Check trust levels
+      description: Check trust levels for entities or federation nodes on a specific topic.
+      operationId: checkTrust
+      security:
+        - bearerAuth: []
+        - oauth2: [substrate:read]
+      parameters:
+        - name: topic
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Topic or domain to check trust for
+        - name: entity_name
+          in: query
+          schema:
+            type: string
+          description: Specific entity to check trust for
+        - name: include_federated
+          in: query
+          schema:
+            type: boolean
+            default: true
+          description: Include federated node trust
+        - name: min_trust
+          in: query
+          schema:
+            type: number
+            default: 0.3
+            minimum: 0
+            maximum: 1
+          description: Minimum trust threshold
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 100
+        - name: domain
+          in: query
+          schema:
+            type: string
+          description: Domain context for trust check
+      responses:
+        '200':
+          description: Trust check results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrustCheckResponse'
+        '400':
+          description: Missing topic parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # VKB REST Endpoints (Issue #380)
+  /api/v1/sessions:
+    post:
+      tags:
+        - Sessions
+      summary: Start a new session
+      description: Start a new conversation tracking session.
+      operationId: createSession
+      security:
+        - bearerAuth: []
+        - oauth2: [vkb:write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSessionRequest'
+            example:
+              platform: openclaw
+              external_room_id: "room-42"
+              project_context: "valence-integration"
+      responses:
+        '201':
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionResponse'
+        '400':
+          description: Missing platform field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    get:
+      tags:
+        - Sessions
+      summary: List sessions
+      description: List sessions with optional filters for platform, project, and status.
+      operationId: listSessions
+      security:
+        - bearerAuth: []
+        - oauth2: [vkb:read]
+      parameters:
+        - name: platform
+          in: query
+          schema:
+            type: string
+            enum: [claude-code, api, slack, claude-web, claude-desktop, claude-mobile, openclaw]
+          description: Filter by platform
+        - name: project_context
+          in: query
+          schema:
+            type: string
+          description: Filter by project context
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, completed, abandoned]
+          description: Filter by session status
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: List of sessions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/sessions/by-room/{room_id}:
+    get:
+      tags:
+        - Sessions
+      summary: Find session by room ID
+      description: Find an active session by its external room/channel ID.
+      operationId: findSessionByRoom
+      security:
+        - bearerAuth: []
+        - oauth2: [vkb:read]
+      parameters:
+        - name: room_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: External room or channel ID
+      responses:
+        '200':
+          description: Active session found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionResponse'
+        '404':
+          description: No active session found for this room
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/sessions/{id}:
+    get:
+      tags:
+        - Sessions
+      summary: Get session by ID
+      description: Get session details with optional exchange history.
+      operationId: getSession
+      security:
+        - bearerAuth: []
+        - oauth2: [vkb:read]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Session UUID
+        - name: include_exchanges
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Include recent exchanges
+        - name: exchange_limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 100
+          description: Maximum exchanges to include
+      responses:
+        '200':
+          description: Session details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionResponse'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/sessions/{id}/end:
+    post:
+      tags:
+        - Sessions
+      summary: End a session
+      description: Close a session with optional summary and themes.
+      operationId: endSession
+      security:
+        - bearerAuth: []
+        - oauth2: [vkb:write]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Session UUID
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EndSessionRequest'
+            example:
+              summary: "Discussed REST API design for Valence"
+              themes: ["api-design", "rest", "openapi"]
+              status: completed
+      responses:
+        '200':
+          description: Session ended
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/sessions/{id}/exchanges:
+    post:
+      tags:
+        - Exchanges
+      summary: Add an exchange
+      description: Record a conversation turn (exchange) in a session.
+      operationId: addExchange
+      security:
+        - bearerAuth: []
+        - oauth2: [vkb:write]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Session UUID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddExchangeRequest'
+            example:
+              role: user
+              content: "How do I configure the REST API?"
+              tokens_approx: 42
+      responses:
+        '201':
+          description: Exchange added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExchangeResponse'
+        '400':
+          description: Missing required fields (role, content)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    get:
+      tags:
+        - Exchanges
+      summary: List exchanges
+      description: List exchanges (conversation turns) for a session with pagination.
+      operationId: listExchanges
+      security:
+        - bearerAuth: []
+        - oauth2: [vkb:read]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Session UUID
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+          description: Maximum exchanges to return
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+          description: Number of exchanges to skip
+      responses:
+        '200':
+          description: List of exchanges
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExchangeListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/sessions/{id}/insights:
+    post:
+      tags:
+        - Insights
+      summary: Extract an insight
+      description: |
+        Extract an insight from a session and create a belief in the knowledge base.
+        Performs content-hash deduplication to avoid storing duplicate insights.
+      operationId: extractInsight
+      security:
+        - bearerAuth: []
+        - oauth2: [vkb:write]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Session UUID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExtractInsightRequest'
+            example:
+              content: "User prefers TDD workflow for Python projects"
+              domain_path: ["tech", "python", "testing"]
+              confidence:
+                overall: 0.85
+      responses:
+        '201':
+          description: Insight extracted and belief created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InsightResponse'
+        '400':
+          description: Missing content field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    get:
+      tags:
+        - Insights
+      summary: List insights
+      description: List all insights extracted from a session.
+      operationId: listInsights
+      security:
+        - bearerAuth: []
+        - oauth2: [vkb:read]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Session UUID
+      responses:
+        '200':
+          description: List of insights
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InsightListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/patterns:
+    post:
+      tags:
+        - Patterns
+      summary: Record a pattern
+      description: Record a new behavioral pattern with optional evidence sessions.
+      operationId: createPattern
+      security:
+        - bearerAuth: []
+        - oauth2: [vkb:write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePatternRequest'
+            example:
+              type: preference
+              description: "Prefers dark mode in all editors"
+              evidence: ["sess-1", "sess-2"]
+              confidence: 0.7
+      responses:
+        '201':
+          description: Pattern recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatternResponse'
+        '400':
+          description: Missing required fields (type, description)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    get:
+      tags:
+        - Patterns
+      summary: List patterns
+      description: List behavioral patterns with optional type, status, and confidence filters.
+      operationId: listPatterns
+      security:
+        - bearerAuth: []
+        - oauth2: [vkb:read]
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+          description: Filter by pattern type (e.g., preference, working_style, topic_recurrence)
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [emerging, established, fading, archived]
+          description: Filter by pattern status
+        - name: min_confidence
+          in: query
+          schema:
+            type: number
+            default: 0
+            minimum: 0
+            maximum: 1
+          description: Minimum confidence threshold
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: List of patterns
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatternListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/patterns/search:
+    get:
+      tags:
+        - Patterns
+      summary: Search patterns
+      description: Search patterns by description using text matching.
+      operationId: searchPatterns
+      security:
+        - bearerAuth: []
+        - oauth2: [vkb:read]
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Search query
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: Pattern search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatternListResponse'
+        '400':
+          description: Missing query parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/patterns/{id}/reinforce:
+    post:
+      tags:
+        - Patterns
+      summary: Reinforce a pattern
+      description: Strengthen an existing pattern with new evidence. Increases confidence and may update status.
+      operationId: reinforcePattern
+      security:
+        - bearerAuth: []
+        - oauth2: [vkb:write]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Pattern UUID
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReinforcePatternRequest'
+            example:
+              session_id: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '200':
+          description: Pattern reinforced
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '404':
+          description: Pattern not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
   # Compliance Endpoints
   /api/v1/users/{id}/data:
     delete:
@@ -1172,8 +2331,418 @@ components:
             mcp:tools: Access to MCP tools
             mcp:resources: Access to MCP resources
             mcp:prompts: Access to MCP prompts
+            mcp:access: Full access to all tools and REST endpoints
+            substrate:read: Read access to knowledge substrate (beliefs, entities, tensions, trust)
+            substrate:write: Write access to knowledge substrate (create/supersede beliefs, resolve tensions)
+            vkb:read: Read access to VKB (sessions, exchanges, patterns, insights)
+            vkb:write: Write access to VKB (create sessions, add exchanges, record patterns)
+
+  responses:
+    Unauthorized:
+      description: Authentication required or token invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/RestError'
+          example:
+            success: false
+            error:
+              code: AUTH_MISSING_TOKEN
+              message: "Missing or invalid authentication token"
+    Forbidden:
+      description: Insufficient scope for this operation
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/RestError'
+          example:
+            success: false
+            error:
+              code: FORBIDDEN_INSUFFICIENT_PERMISSION
+              message: "Insufficient scope. Required: substrate:read"
 
   schemas:
+    # Standardized REST error format
+    RestError:
+      type: object
+      required:
+        - success
+        - error
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code (e.g., VALIDATION_MISSING_FIELD)
+            message:
+              type: string
+              description: Human-readable error message
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+
+    # Substrate schemas
+    CreateBeliefRequest:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          type: string
+          description: The belief content
+        confidence:
+          type: object
+          description: 'Confidence dimensions (e.g., {"overall": 0.8})'
+          additionalProperties:
+            type: number
+        domain_path:
+          type: array
+          items:
+            type: string
+          description: Hierarchical domain classification
+        source_type:
+          type: string
+          enum: [document, conversation, inference, observation, user_input]
+        source_ref:
+          type: string
+          description: Reference to source (URL, session_id, etc.)
+        opt_out_federation:
+          type: boolean
+          default: false
+          description: If true, belief will not be shared via federation
+        entities:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              type:
+                type: string
+              role:
+                type: string
+                enum: [subject, object, context]
+          description: Entities to link (created if not exist)
+        visibility:
+          type: string
+          enum: [private, federated]
+          default: private
+        sharing_intent:
+          type: string
+
+    SupersedeBeliefRequest:
+      type: object
+      required:
+        - new_content
+        - reason
+      properties:
+        new_content:
+          type: string
+          description: Updated belief content
+        reason:
+          type: string
+          description: Why the belief is being superseded
+        confidence:
+          type: object
+          description: Confidence for the new belief
+          additionalProperties:
+            type: number
+
+    ResolveTensionRequest:
+      type: object
+      required:
+        - resolution
+        - action
+      properties:
+        resolution:
+          type: string
+          description: Explanation of how the tension was resolved
+        action:
+          type: string
+          enum: [supersede_a, supersede_b, keep_both, archive_both]
+          description: What to do with the conflicting beliefs
+
+    BeliefListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        beliefs:
+          type: array
+          items:
+            type: object
+
+    BeliefSearchResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        results:
+          type: array
+          items:
+            type: object
+
+    BeliefResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        belief:
+          type: object
+
+    ConfidenceExplainResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        overall:
+          type: number
+
+    EntityListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        entities:
+          type: array
+          items:
+            type: object
+
+    EntityResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        entity:
+          type: object
+
+    TensionListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        tensions:
+          type: array
+          items:
+            type: object
+
+    TrustCheckResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        trusted_entities:
+          type: array
+          items:
+            type: object
+
+    # VKB schemas
+    CreateSessionRequest:
+      type: object
+      required:
+        - platform
+      properties:
+        platform:
+          type: string
+          enum: [claude-code, api, slack, claude-web, claude-desktop, claude-mobile, openclaw]
+          description: Platform this session is on
+        project_context:
+          type: string
+          description: Project or topic context
+        external_room_id:
+          type: string
+          description: Room/channel ID for chat platforms
+        claude_session_id:
+          type: string
+          description: Claude Code session ID for resume
+        metadata:
+          type: object
+          description: Additional session metadata
+
+    EndSessionRequest:
+      type: object
+      properties:
+        summary:
+          type: string
+          description: Session summary
+        themes:
+          type: array
+          items:
+            type: string
+          description: Key themes from session
+        status:
+          type: string
+          enum: [completed, abandoned]
+          default: completed
+
+    AddExchangeRequest:
+      type: object
+      required:
+        - role
+        - content
+      properties:
+        role:
+          type: string
+          enum: [user, assistant, system]
+          description: Role of the speaker
+        content:
+          type: string
+          description: Message content
+        tokens_approx:
+          type: integer
+          description: Approximate token count
+        tool_uses:
+          type: array
+          items:
+            type: object
+          description: Tools used in this turn
+
+    ExtractInsightRequest:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          type: string
+          description: The insight content
+        domain_path:
+          type: array
+          items:
+            type: string
+          description: Domain classification
+        confidence:
+          type: object
+          description: Confidence dimensions
+          additionalProperties:
+            type: number
+        entities:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              type:
+                type: string
+              role:
+                type: string
+          description: Entities to link
+
+    CreatePatternRequest:
+      type: object
+      required:
+        - type
+        - description
+      properties:
+        type:
+          type: string
+          description: Pattern type (e.g., topic_recurrence, preference, working_style)
+        description:
+          type: string
+          description: What the pattern is
+        evidence:
+          type: array
+          items:
+            type: string
+          description: Session IDs as evidence
+        confidence:
+          type: number
+          default: 0.5
+          minimum: 0
+          maximum: 1
+          description: Initial confidence score
+
+    ReinforcePatternRequest:
+      type: object
+      properties:
+        session_id:
+          type: string
+          format: uuid
+          description: Session that supports this pattern
+
+    SessionResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        session:
+          type: object
+
+    SessionListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        sessions:
+          type: array
+          items:
+            type: object
+
+    ExchangeResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        exchange:
+          type: object
+
+    ExchangeListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        exchanges:
+          type: array
+          items:
+            type: object
+
+    InsightResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        belief_id:
+          type: string
+          format: uuid
+
+    InsightListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        insights:
+          type: array
+          items:
+            type: object
+
+    PatternResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        pattern:
+          type: object
+
+    PatternListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        patterns:
+          type: array
+          items:
+            type: object
+
     ServerInfo:
       type: object
       properties:
