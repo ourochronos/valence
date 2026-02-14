@@ -196,11 +196,12 @@ def belief_create(
             return _reinforce_belief(cur, exact_match["id"], existing_conf, source_ref)
 
         # --- Dedup check: fuzzy semantic match (cosine > 0.90) ---
+        embedding_str = None  # Reused for inline storage if no duplicate found
         try:
             from our_embeddings.service import generate_embedding, vector_to_pgvector
 
             query_vector = generate_embedding(content)
-            query_str = vector_to_pgvector(query_vector)
+            embedding_str = vector_to_pgvector(query_vector)
 
             cur.execute(
                 """SELECT id, confidence, 1 - (embedding <=> %s::vector) as similarity
@@ -209,7 +210,7 @@ def belief_create(
                 AND 1 - (embedding <=> %s::vector) > 0.90
                 ORDER BY embedding <=> %s::vector
                 LIMIT 1""",
-                (query_str, query_str, query_str),
+                (embedding_str, embedding_str, embedding_str),
             )
             fuzzy_match = cur.fetchone()
             if fuzzy_match:
@@ -240,8 +241,8 @@ def belief_create(
 
         cur.execute(
             """
-            INSERT INTO beliefs (content, confidence, domain_path, source_id, opt_out_federation, content_hash, visibility, share_policy)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO beliefs (content, confidence, domain_path, source_id, opt_out_federation, content_hash, visibility, share_policy, embedding)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::vector)
             RETURNING *
             """,
             (
@@ -253,6 +254,7 @@ def belief_create(
                 content_hash_val,
                 visibility,
                 share_policy_json,
+                embedding_str,
             ),
         )
         belief_row = cur.fetchone()
@@ -308,11 +310,20 @@ def belief_supersede(
         # Determine new confidence
         new_confidence = DimensionalConfidence.from_dict(confidence or old_belief.confidence.to_dict())
 
+        # Generate embedding for the new belief
+        new_embedding_str = None
+        try:
+            from our_embeddings.service import generate_embedding, vector_to_pgvector
+
+            new_embedding_str = vector_to_pgvector(generate_embedding(new_content))
+        except Exception:
+            pass  # Embedding unavailable — will be backfilled later
+
         # Create new belief
         cur.execute(
             """
-            INSERT INTO beliefs (content, confidence, domain_path, source_id, extraction_method, supersedes_id, valid_from)
-            VALUES (%s, %s, %s, %s, %s, %s, NOW())
+            INSERT INTO beliefs (content, confidence, domain_path, source_id, extraction_method, supersedes_id, valid_from, embedding)
+            VALUES (%s, %s, %s, %s, %s, %s, NOW(), %s::vector)
             RETURNING *
             """,
             (
@@ -322,6 +333,7 @@ def belief_supersede(
                 str(old_belief.source_id) if old_belief.source_id else None,
                 f"supersession: {reason}",
                 old_belief_id,
+                new_embedding_str,
             ),
         )
         new_row = cur.fetchone()

@@ -539,8 +539,8 @@ class TestBeliefCreateVisibility:
 
         # The share_policy param should be JSON with intent info
         params = insert_call[0][1]
-        # share_policy is the last param
-        share_policy_param = params[-1]
+        # share_policy is second-to-last param (embedding is last)
+        share_policy_param = params[-2]
         assert share_policy_param is not None
         policy_data = json.loads(share_policy_param)
         assert policy_data["intent"] == "use_this"
@@ -591,8 +591,8 @@ class TestBeliefCreateVisibility:
                 break
         assert insert_call is not None
         params = insert_call[0][1]
-        # share_policy param should be None
-        assert params[-1] is None
+        # share_policy param should be None (second-to-last, embedding is last)
+        assert params[-2] is None
 
 
 # =============================================================================
