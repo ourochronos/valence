@@ -15,7 +15,6 @@ import logging
 import time
 from collections import defaultdict
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +27,7 @@ from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.routing import Route
 
 from .auth import get_token_store, verify_token
+from .auth_helpers import AuthenticatedClient  # noqa: F401 — re-exported for backwards compat
 from .compliance_endpoints import (
     data_access_endpoint,
     data_export_endpoint,
@@ -69,21 +69,39 @@ from .sharing_endpoints import (
     revoke_share_endpoint,
     share_belief_endpoint,
 )
+from .substrate_endpoints import (
+    beliefs_confidence_endpoint,
+    beliefs_create_endpoint,
+    beliefs_get_endpoint,
+    beliefs_list_endpoint,
+    beliefs_search_endpoint,
+    beliefs_supersede_endpoint,
+    entities_get_endpoint,
+    entities_list_endpoint,
+    tensions_list_endpoint,
+    tensions_resolve_endpoint,
+    trust_check_endpoint,
+)
+from .vkb_endpoints import (
+    exchanges_add_endpoint,
+    exchanges_list_endpoint,
+    insights_extract_endpoint,
+    insights_list_endpoint,
+    patterns_create_endpoint,
+    patterns_list_endpoint,
+    patterns_reinforce_endpoint,
+    patterns_search_endpoint,
+    sessions_by_room_endpoint,
+    sessions_create_endpoint,
+    sessions_end_endpoint,
+    sessions_get_endpoint,
+    sessions_list_endpoint,
+)
 
 logger = logging.getLogger(__name__)
 
 # Rate limiting state (in-memory, per-instance)
 _rate_limits: dict[str, list[float]] = defaultdict(list)
-
-
-@dataclass
-class AuthenticatedClient:
-    """Represents an authenticated client from either auth method."""
-
-    client_id: str
-    user_id: str | None = None
-    scope: str | None = None
-    auth_method: str = "bearer"  # "bearer" or "oauth"
 
 
 def _check_rate_limit(client_id: str, rpm_limit: int) -> bool:
@@ -884,6 +902,32 @@ def create_app() -> Starlette:
             most_corroborated_beliefs_endpoint,
             methods=["GET"],
         ),
+        # Substrate REST endpoints (Issue #381)
+        Route(f"{API_V1}/beliefs", beliefs_list_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/beliefs", beliefs_create_endpoint, methods=["POST"]),
+        Route(f"{API_V1}/beliefs/search", beliefs_search_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/beliefs/{{belief_id}}", beliefs_get_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/beliefs/{{belief_id}}/supersede", beliefs_supersede_endpoint, methods=["POST"]),
+        Route(f"{API_V1}/beliefs/{{belief_id}}/confidence", beliefs_confidence_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/entities", entities_list_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/entities/{{id}}", entities_get_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/tensions", tensions_list_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/tensions/{{id}}/resolve", tensions_resolve_endpoint, methods=["POST"]),
+        Route(f"{API_V1}/trust", trust_check_endpoint, methods=["GET"]),
+        # VKB REST endpoints (Issue #380)
+        Route(f"{API_V1}/sessions", sessions_create_endpoint, methods=["POST"]),
+        Route(f"{API_V1}/sessions", sessions_list_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/sessions/by-room/{{room_id}}", sessions_by_room_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/sessions/{{id}}", sessions_get_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/sessions/{{id}}/end", sessions_end_endpoint, methods=["POST"]),
+        Route(f"{API_V1}/sessions/{{id}}/exchanges", exchanges_add_endpoint, methods=["POST"]),
+        Route(f"{API_V1}/sessions/{{id}}/exchanges", exchanges_list_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/sessions/{{id}}/insights", insights_extract_endpoint, methods=["POST"]),
+        Route(f"{API_V1}/sessions/{{id}}/insights", insights_list_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/patterns", patterns_create_endpoint, methods=["POST"]),
+        Route(f"{API_V1}/patterns", patterns_list_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/patterns/search", patterns_search_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/patterns/{{id}}/reinforce", patterns_reinforce_endpoint, methods=["POST"]),
         # Compliance endpoints (Issue #25: GDPR deletion)
         Route(f"{API_V1}/users/{{id}}/data", delete_user_data_endpoint, methods=["DELETE"]),
         Route(
