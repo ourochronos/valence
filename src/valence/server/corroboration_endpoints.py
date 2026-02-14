@@ -12,6 +12,7 @@ from uuid import UUID
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from .auth_helpers import authenticate, require_scope
 from .errors import (
     NOT_FOUND_BELIEF,
     internal_error,
@@ -47,6 +48,12 @@ async def belief_corroboration_endpoint(request: Request) -> JSONResponse:
         "confidence_label": "moderately corroborated"
     }
     """
+    client = authenticate(request)
+    if isinstance(client, JSONResponse):
+        return client
+    if err := require_scope(client, "substrate:read"):
+        return err
+
     belief_id_str = request.path_params.get("belief_id")
 
     if not belief_id_str:
@@ -119,6 +126,12 @@ async def most_corroborated_beliefs_endpoint(request: Request) -> JSONResponse:
         ]
     }
     """
+    client = authenticate(request)
+    if isinstance(client, JSONResponse):
+        return client
+    if err := require_scope(client, "substrate:read"):
+        return err
+
     try:
         limit = int(request.query_params.get("limit", 10))
         min_count = int(request.query_params.get("min_count", 1))

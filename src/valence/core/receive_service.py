@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -31,7 +31,7 @@ class IncomingShare:
     confidence: dict[str, float]
     intent: str
     consent_chain: dict[str, Any]
-    received_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    received_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     status: str = "pending"  # pending, accepted, rejected
 
     def to_dict(self) -> dict[str, Any]:
@@ -78,7 +78,7 @@ class ShareNotification:
     belief_id: str
     intent: str
     read: bool = False
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -258,7 +258,7 @@ def reshare_belief(
     new_chain["chain_hash"] = new_chain_hash
 
     new_share_id = str(uuid4())
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     cur.execute(
         """

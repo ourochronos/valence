@@ -11,17 +11,16 @@ from typing import Any
 from uuid import UUID
 
 from valence.core.exceptions import NotFoundError, ValidationException
-from valence.core.verification.constants import ReputationConstants
 from valence.core.incentives import (
     claim_all_rewards,
     claim_reward,
-    create_reward,
     get_calibration_history,
     get_pending_rewards,
     get_transfers,
     get_velocity_status,
     run_calibration_snapshot,
 )
+from valence.core.verification.constants import ReputationConstants
 
 logger = logging.getLogger(__name__)
 

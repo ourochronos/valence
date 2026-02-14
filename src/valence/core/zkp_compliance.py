@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 import random
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -38,7 +38,7 @@ class ConsentProof:
     proof_type: str  # HAS_CONSENT or WITHIN_POLICY
     proof_data: bytes
     public_inputs_hash: bytes
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     is_valid: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -61,7 +61,7 @@ class PolicyProof:
     policy_hash: str
     proof_data: bytes
     public_inputs_hash: bytes
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     is_valid: bool = False
 
     def to_dict(self) -> dict[str, Any]:

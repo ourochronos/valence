@@ -100,6 +100,43 @@ from .vkb_endpoints import (
 
 logger = logging.getLogger(__name__)
 
+
+class JSONLogFormatter(logging.Formatter):
+    """JSON structured log formatter for production use."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        import json as _json
+
+        log_entry = {
+            "timestamp": self.formatTime(record),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        if record.exc_info and record.exc_info[0] is not None:
+            log_entry["exception"] = self.formatException(record.exc_info)
+        return _json.dumps(log_entry)
+
+
+def configure_logging(log_format: str = "text") -> None:
+    """Configure logging format for the application.
+
+    Args:
+        log_format: 'text' for human-readable, 'json' for structured JSON
+    """
+    root = logging.getLogger()
+    handler = logging.StreamHandler()
+
+    if log_format == "json":
+        handler.setFormatter(JSONLogFormatter())
+    else:
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+
+    root.handlers.clear()
+    root.addHandler(handler)
+    root.setLevel(logging.INFO)
+
+
 # Rate limiting state (in-memory, per-instance)
 _rate_limits: dict[str, list[float]] = defaultdict(list)
 
@@ -147,8 +184,8 @@ async def health_endpoint(request: Request) -> JSONResponse:
         with get_cursor() as cur:
             cur.execute("SELECT 1")
         health_data["database"] = "connected"
-    except Exception as e:
-        health_data["database"] = f"error: {str(e)}"
+    except Exception:
+        health_data["database"] = "error: connection failed"
         health_data["status"] = "degraded"
 
     status_code = 200 if health_data["status"] == "healthy" else 503
@@ -988,6 +1025,7 @@ def run() -> None:
     import uvicorn
 
     settings = get_settings()
+    configure_logging(settings.log_format)
 
     logger.info(f"Starting Valence HTTP MCP server on {settings.host}:{settings.port}")
 

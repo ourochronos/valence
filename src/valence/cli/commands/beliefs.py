@@ -335,7 +335,6 @@ def cmd_add(args: argparse.Namespace) -> int:
 
     # Parse derivation info
     derivation_type = args.derivation_type or "observation"
-    derived_from = args.derived_from  # UUID of source belief
 
     conn = None
     cur = None

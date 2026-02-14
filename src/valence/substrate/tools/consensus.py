@@ -10,15 +10,27 @@ from typing import Any
 from uuid import UUID
 
 from valence.core.consensus import (
-    IndependenceScore,
-    TrustLayer,
     calculate_independence,
+)
+from valence.core.consensus import (
     get_challenge as db_get_challenge,
+)
+from valence.core.consensus import (
     get_challenges_for_belief as db_get_challenges,
+)
+from valence.core.consensus import (
     get_consensus_status as db_get_consensus_status,
+)
+from valence.core.consensus import (
     get_corroborations as db_get_corroborations,
+)
+from valence.core.consensus import (
     resolve_challenge as db_resolve_challenge,
+)
+from valence.core.consensus import (
     submit_challenge as db_submit_challenge,
+)
+from valence.core.consensus import (
     submit_corroboration as db_submit_corroboration,
 )
 from valence.core.exceptions import NotFoundError, ValidationException

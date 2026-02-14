@@ -15,8 +15,8 @@ from __future__ import annotations
 import hashlib
 import logging
 import secrets
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -116,7 +116,7 @@ def submit_commitment(
     Returns:
         Commitment record.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     reveal_opens = now + timedelta(seconds=delay_seconds)
     reveal_closes = reveal_opens + timedelta(minutes=reveal_window_minutes)
 
@@ -175,7 +175,7 @@ def submit_reveal(
     if not row:
         raise ValueError(f"Commitment not found: {commitment_id}")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expected_hash = compute_commitment_hash(vote_value, nonce)
     is_valid = expected_hash == row["commitment_hash"]
     is_late = now > row["reveal_window_closes"]
@@ -214,7 +214,7 @@ def expire_unrevealed(cur) -> int:
     Returns:
         Number of commitments expired.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     cur.execute(
         """
         UPDATE corroboration_commitments

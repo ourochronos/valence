@@ -19,7 +19,7 @@ from uuid import UUID, uuid4
 
 from our_db import get_cursor
 
-from .exceptions import NotFoundError, ValidationException
+from .exceptions import NotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -327,7 +327,7 @@ def _create_shards(payload: bytes, data_shards: int, parity_shards: int) -> list
 
     Uses simple splitting for now. In production, would use our_storage.ErasureCodec.
     """
-    total_shards = data_shards + parity_shards
+    data_shards + parity_shards
     shard_size = (len(payload) + data_shards - 1) // data_shards
     shards = []
 

@@ -13,6 +13,7 @@ from typing import Any
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from .auth_helpers import authenticate, require_scope
 from .errors import (
     NOT_FOUND_NOTIFICATION,
     forbidden_error,
@@ -38,6 +39,12 @@ async def list_notifications_endpoint(request: Request) -> JSONResponse:
         400: Missing recipient_did parameter
         503: Service not initialized
     """
+    client = authenticate(request)
+    if isinstance(client, JSONResponse):
+        return client
+    if err := require_scope(client, "vkb:read"):
+        return err
+
     service = get_sharing_service()
     if service is None:
         return service_unavailable_error("Sharing service")
@@ -81,6 +88,12 @@ async def acknowledge_notification_endpoint(request: Request) -> JSONResponse:
         404: Notification not found
         500: Server error
     """
+    client = authenticate(request)
+    if isinstance(client, JSONResponse):
+        return client
+    if err := require_scope(client, "vkb:write"):
+        return err
+
     service = get_sharing_service()
     if service is None:
         return service_unavailable_error("Sharing service")

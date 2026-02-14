@@ -13,33 +13,10 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from .auth_helpers import authenticate, require_scope
-from .errors import internal_error, invalid_json_error, missing_field_error
+from .endpoint_utils import _parse_bool, _parse_float, _parse_int
+from .errors import internal_error, invalid_json_error, missing_field_error, validation_error
 
 logger = logging.getLogger(__name__)
-
-
-def _parse_bool(value: str | None, default: bool = False) -> bool:
-    if value is None:
-        return default
-    return value.lower() in ("true", "1", "yes")
-
-
-def _parse_int(value: str | None, default: int, maximum: int = 1000) -> int:
-    if value is None:
-        return default
-    try:
-        return min(int(value), maximum)
-    except ValueError:
-        return default
-
-
-def _parse_float(value: str | None, default: float | None = None) -> float | None:
-    if value is None:
-        return default
-    try:
-        return float(value)
-    except ValueError:
-        return default
 
 
 # =============================================================================
@@ -70,7 +47,12 @@ async def beliefs_list_endpoint(request: Request) -> JSONResponse:
         ranking = None
         ranking_raw = request.query_params.get("ranking")
         if ranking_raw:
-            ranking = json.loads(ranking_raw)
+            try:
+                ranking = json.loads(ranking_raw)
+                if not isinstance(ranking, dict):
+                    return validation_error("ranking must be a JSON object")
+            except json.JSONDecodeError:
+                return validation_error("ranking must be valid JSON")
 
         result = belief_query(
             query=query,
@@ -149,7 +131,12 @@ async def beliefs_search_endpoint(request: Request) -> JSONResponse:
         ranking = None
         ranking_raw = request.query_params.get("ranking")
         if ranking_raw:
-            ranking = json.loads(ranking_raw)
+            try:
+                ranking = json.loads(ranking_raw)
+                if not isinstance(ranking, dict):
+                    return validation_error("ranking must be a JSON object")
+            except json.JSONDecodeError:
+                return validation_error("ranking must be valid JSON")
 
         result = belief_search(
             query=query,

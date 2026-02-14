@@ -9,19 +9,22 @@ Tests cover:
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
+from valence.server.auth_helpers import AuthenticatedClient
 from valence.server.notification_endpoints import (
     _notification_to_dict,
     acknowledge_notification_endpoint,
     list_notifications_endpoint,
 )
 from valence.server.sharing_endpoints import set_sharing_service
+
+MOCK_CLIENT = AuthenticatedClient(client_id="test", auth_method="bearer")
 
 # ============================================================================
 # Fixtures
@@ -55,6 +58,31 @@ def app(mock_sharing_service):
 def client(app):
     """Create a test client."""
     return TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def mock_auth():
+    with patch("valence.server.notification_endpoints.authenticate", return_value=MOCK_CLIENT):
+        yield
+
+
+# ============================================================================
+# Auth Tests
+# ============================================================================
+
+
+class TestNotificationAuth:
+    """Test authentication requirement on notification endpoints."""
+
+    def test_unauthenticated_returns_401(self, client):
+        from starlette.responses import JSONResponse
+
+        with patch(
+            "valence.server.notification_endpoints.authenticate",
+            return_value=JSONResponse({"error": "unauthorized"}, status_code=401),
+        ):
+            resp = client.get("/api/v1/notifications", params={"recipient_did": "did:test"})
+            assert resp.status_code == 401
 
 
 # ============================================================================

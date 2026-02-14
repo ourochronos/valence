@@ -14,18 +14,38 @@ from uuid import UUID
 from valence.core.exceptions import NotFoundError, ValidationException
 from valence.core.verification.db import (
     accept_verification as db_accept_verification,
+)
+from valence.core.verification.db import (
     get_bounty as db_get_bounty,
+)
+from valence.core.verification.db import (
     get_dispute as db_get_dispute,
-    get_disputes_for_verification as db_get_disputes_for_verification,
-    get_or_create_reputation,
+)
+from valence.core.verification.db import (
     get_reputation,
+)
+from valence.core.verification.db import (
     get_reputation_events as db_get_reputation_events,
+)
+from valence.core.verification.db import (
     get_verification as db_get_verification,
+)
+from valence.core.verification.db import (
     get_verification_summary as db_get_verification_summary,
+)
+from valence.core.verification.db import (
     get_verifications_for_belief as db_get_verifications_for_belief,
+)
+from valence.core.verification.db import (
     list_bounties as db_list_bounties,
+)
+from valence.core.verification.db import (
     resolve_dispute as db_resolve_dispute,
+)
+from valence.core.verification.db import (
     submit_dispute as db_submit_dispute,
+)
+from valence.core.verification.db import (
     submit_verification as db_submit_verification,
 )
 from valence.core.verification.enums import (

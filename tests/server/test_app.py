@@ -57,6 +57,7 @@ def app_env(monkeypatch, tmp_path):
     monkeypatch.setenv("VALENCE_EXTERNAL_URL", "http://localhost:8420")
     monkeypatch.setenv("VALENCE_FEDERATION_ENABLED", "false")
     monkeypatch.setenv("VALENCE_RATE_LIMIT_RPM", "60")
+    monkeypatch.setenv("VALENCE_ALLOWED_ORIGINS", '["http://example.com"]')
 
     return {
         "token_file": token_file,

@@ -11,7 +11,6 @@ Old shares with {"algorithm": "none"} are always readable (backward compat).
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 from typing import Any

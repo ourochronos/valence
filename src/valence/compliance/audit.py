@@ -11,7 +11,7 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
@@ -20,7 +20,7 @@ from our_db import get_cursor
 logger = logging.getLogger(__name__)
 
 
-class AuditAction(str, Enum):
+class AuditAction(StrEnum):
     """Actions that create audit records."""
 
     # Belief operations

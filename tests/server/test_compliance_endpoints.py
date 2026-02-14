@@ -22,6 +22,7 @@ from our_compliance.deletion import (
 )
 from starlette.requests import Request
 
+from valence.server.auth_helpers import AuthenticatedClient
 from valence.server.compliance_endpoints import (
     data_access_endpoint,
     data_export_endpoint,
@@ -30,9 +31,17 @@ from valence.server.compliance_endpoints import (
     get_deletion_verification_endpoint,
 )
 
+MOCK_CLIENT = AuthenticatedClient(client_id="test", auth_method="bearer")
+
 # ============================================================================
 # Test Fixtures
 # ============================================================================
+
+
+@pytest.fixture(autouse=True)
+def mock_auth():
+    with patch("valence.server.compliance_endpoints.authenticate", return_value=MOCK_CLIENT):
+        yield
 
 
 @pytest.fixture

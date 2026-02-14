@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -25,7 +25,7 @@ class MerkleCheckpoint:
     id: str
     root_hash: str
     belief_count: int
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     peer_roots: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -47,7 +47,7 @@ class PartitionEvent:
     local_root: str
     peer_root: str
     severity: str  # "info", "warning", "critical"
-    detected_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    detected_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     resolved_at: datetime | None = None
 
     def to_dict(self) -> dict[str, Any]:

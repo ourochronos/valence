@@ -23,6 +23,7 @@ from our_privacy.types import SharePolicy
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from .auth_helpers import authenticate, require_scope
 from .errors import (
     CONFLICT_ALREADY_REVOKED,
     FORBIDDEN_NOT_OWNER,
@@ -75,6 +76,12 @@ async def share_belief_endpoint(request: Request) -> JSONResponse:
         400: Invalid request (validation error)
         500: Server error
     """
+    client = authenticate(request)
+    if isinstance(client, JSONResponse):
+        return client
+    if err := require_scope(client, "substrate:write"):
+        return err
+
     service = get_sharing_service()
     if service is None:
         return service_unavailable_error("Sharing service")
@@ -146,6 +153,12 @@ async def list_shares_endpoint(request: Request) -> JSONResponse:
         200: List of shares
         500: Server error
     """
+    client = authenticate(request)
+    if isinstance(client, JSONResponse):
+        return client
+    if err := require_scope(client, "substrate:read"):
+        return err
+
     service = get_sharing_service()
     if service is None:
         return service_unavailable_error("Sharing service")
@@ -196,6 +209,12 @@ async def get_share_endpoint(request: Request) -> JSONResponse:
         404: Share not found
         500: Server error
     """
+    client = authenticate(request)
+    if isinstance(client, JSONResponse):
+        return client
+    if err := require_scope(client, "substrate:read"):
+        return err
+
     service = get_sharing_service()
     if service is None:
         return service_unavailable_error("Sharing service")
@@ -241,6 +260,12 @@ async def revoke_share_endpoint(request: Request) -> JSONResponse:
         404: Share not found
         500: Server error
     """
+    client = authenticate(request)
+    if isinstance(client, JSONResponse):
+        return client
+    if err := require_scope(client, "substrate:write"):
+        return err
+
     service = get_sharing_service()
     if service is None:
         return service_unavailable_error("Sharing service")

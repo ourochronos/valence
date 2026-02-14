@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
@@ -58,7 +58,7 @@ class SlashingEvent:
     slash_amount: float
     status: SlashingStatus = SlashingStatus.PENDING
     reported_by: str = ""
-    reported_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    reported_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     appeal_deadline: datetime | None = None
     executed_at: datetime | None = None
     appeal_reason: str | None = None
@@ -115,7 +115,7 @@ def create_slashing_event(
         slash_pct = 0.0
 
     slash_amount = stake_amount * slash_pct
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     appeal_deadline = now + timedelta(hours=APPEAL_WINDOW_HOURS)
 
     event = SlashingEvent(
@@ -188,7 +188,7 @@ def appeal_slashing_event(cur, event_id: str, appeal_reason: str) -> SlashingEve
         logger.warning("Cannot appeal event %s: status is %s", event_id, row["status"])
         return None
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     deadline = row["appeal_deadline"]
     if deadline and now > deadline:
         logger.warning("Appeal deadline expired for event %s", event_id)
@@ -238,7 +238,7 @@ def execute_slashing(cur, event_id: str) -> SlashingEvent | None:
         logger.warning("Cannot execute event %s: status is %s", event_id, row["status"])
         return None
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Forfeit stake
     cur.execute(

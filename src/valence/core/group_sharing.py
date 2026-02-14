@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -34,7 +34,7 @@ class SharingGroup:
     intent: str = "work_with_me"
     members: list[str] = field(default_factory=list)
     epoch: int = 0
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -56,7 +56,7 @@ class GroupMembership:
     group_id: str
     member_did: str
     role: str = "member"  # creator, admin, member
-    joined_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    joined_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -198,7 +198,7 @@ def add_group_member(
         (new_epoch, group_id),
     )
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     membership = GroupMembership(
         group_id=group_id,
         member_did=member_did,

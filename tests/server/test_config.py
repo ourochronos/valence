@@ -38,7 +38,7 @@ class TestServerSettings:
         assert settings.oauth_enabled is True
         assert settings.oauth_username == "admin"
         assert settings.oauth_password == ""  # Not set by default
-        assert settings.allowed_origins == ["*"]
+        assert settings.allowed_origins == []
 
     def test_env_override(self, monkeypatch, clean_env):
         """Test environment variable override."""

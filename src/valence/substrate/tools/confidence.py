@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from . import _common
-from ._common import Belief, ConfidenceDimension, DEFAULT_WEIGHTS, confidence_label, logger
+from ._common import DEFAULT_WEIGHTS, Belief, ConfidenceDimension, confidence_label, logger
 
 
 def belief_corroboration(belief_id: str) -> dict[str, Any]:

@@ -205,9 +205,9 @@ def compact_exchanges(
             continue
 
         # Split: first N, middle, last N
-        first_exchanges = exchanges[: config.keep_first]
+        exchanges[: config.keep_first]
         middle_exchanges = exchanges[config.keep_first : -config.keep_last]
-        last_exchanges = exchanges[-config.keep_last :]
+        exchanges[-config.keep_last :]
 
         # Build summary from middle exchanges
         summary = _build_compaction_summary(middle_exchanges)

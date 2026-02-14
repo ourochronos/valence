@@ -13,24 +13,10 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from .auth_helpers import authenticate, require_scope
+from .endpoint_utils import _parse_bool, _parse_float, _parse_int
 from .errors import internal_error, invalid_json_error, missing_field_error
 
 logger = logging.getLogger(__name__)
-
-
-def _parse_bool(value: str | None, default: bool = False) -> bool:
-    if value is None:
-        return default
-    return value.lower() in ("true", "1", "yes")
-
-
-def _parse_int(value: str | None, default: int, maximum: int = 1000) -> int:
-    if value is None:
-        return default
-    try:
-        return min(int(value), maximum)
-    except ValueError:
-        return default
 
 
 # =============================================================================
@@ -375,7 +361,7 @@ async def patterns_list_endpoint(request: Request) -> JSONResponse:
         result = pattern_list(
             type=request.query_params.get("type"),
             status=request.query_params.get("status"),
-            min_confidence=float(request.query_params.get("min_confidence", "0")),
+            min_confidence=_parse_float(request.query_params.get("min_confidence"), 0.0),
             limit=_parse_int(request.query_params.get("limit"), 20, 100),
         )
         return JSONResponse(result)

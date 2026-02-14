@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from . import _common
-from ._common import _validate_enum, datetime, json, os
+from ._common import _validate_enum, datetime, os
 
 
 def _get_local_did() -> str:

@@ -16,10 +16,13 @@ from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
+from valence.server.auth_helpers import AuthenticatedClient
 from valence.server.corroboration_endpoints import (
     belief_corroboration_endpoint,
     most_corroborated_beliefs_endpoint,
 )
+
+MOCK_CLIENT = AuthenticatedClient(client_id="test", auth_method="bearer")
 
 # =============================================================================
 # FIXTURES
@@ -68,6 +71,31 @@ def app():
 def client(app):
     """Create test client."""
     return TestClient(app, raise_server_exceptions=False)
+
+
+@pytest.fixture(autouse=True)
+def mock_auth():
+    with patch("valence.server.corroboration_endpoints.authenticate", return_value=MOCK_CLIENT):
+        yield
+
+
+# =============================================================================
+# AUTH TESTS
+# =============================================================================
+
+
+class TestCorroborationAuth:
+    """Test authentication requirement on corroboration endpoints."""
+
+    def test_unauthenticated_returns_401(self, client):
+        from starlette.responses import JSONResponse
+
+        with patch(
+            "valence.server.corroboration_endpoints.authenticate",
+            return_value=JSONResponse({"error": "unauthorized"}, status_code=401),
+        ):
+            resp = client.get(f"/beliefs/{uuid4()}/corroboration")
+            assert resp.status_code == 401
 
 
 # =============================================================================

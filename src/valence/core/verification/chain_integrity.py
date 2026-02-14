@@ -60,7 +60,7 @@ class ChainReport:
 
     def __str__(self) -> str:
         lines = [
-            f"Chain Verification Report",
+            "Chain Verification Report",
             f"  Total chains: {self.total_chains}",
             f"  Beliefs in chains: {self.total_beliefs_in_chains}",
             f"  Healthy: {self.healthy_chains}",
@@ -160,7 +160,7 @@ def verify_chains(cur, limit: int | None = None) -> ChainReport:
 
             # Check bidirectional consistency
             supersedes_id = str(row["supersedes_id"]) if row["supersedes_id"] else None
-            superseded_by_id = str(row["superseded_by_id"]) if row["superseded_by_id"] else None
+            str(row["superseded_by_id"]) if row["superseded_by_id"] else None
 
             if supersedes_id:
                 # The older belief should point back to us via superseded_by_id

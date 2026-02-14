@@ -10,12 +10,11 @@ non-portable across models, so we strip them on send and regenerate on receive.
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import math
 import re
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)

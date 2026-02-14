@@ -10,6 +10,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from .backup import (
+    backup_create,
+    backup_get,
+    backup_list,
+    backup_verify,
+)
 from .beliefs import (
     belief_create,
     belief_get,
@@ -18,10 +24,6 @@ from .beliefs import (
     belief_supersede,
 )
 from .confidence import belief_corroboration, confidence_explain
-from .entities import entity_get, entity_search
-from .sharing import belief_share, belief_share_revoke, belief_shares_list
-from .tensions import tension_list, tension_resolve
-from .trust import trust_check
 from .consensus import (
     challenge_get,
     challenge_resolve,
@@ -31,6 +33,7 @@ from .consensus import (
     corroboration_list,
     corroboration_submit,
 )
+from .entities import entity_get, entity_search
 from .incentives import (
     calibration_history,
     calibration_run,
@@ -40,6 +43,9 @@ from .incentives import (
     transfer_history,
     velocity_status,
 )
+from .sharing import belief_share, belief_share_revoke, belief_shares_list
+from .tensions import tension_list, tension_resolve
+from .trust import trust_check
 from .verification import (
     bounty_get,
     bounty_list,
@@ -53,12 +59,6 @@ from .verification import (
     verification_list,
     verification_submit,
     verification_summary,
-)
-from .backup import (
-    backup_create,
-    backup_get,
-    backup_list,
-    backup_verify,
 )
 
 # Tool name to handler mapping

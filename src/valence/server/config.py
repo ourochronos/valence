@@ -96,8 +96,14 @@ class ServerSettings(BaseSettings):
 
     # CORS settings
     allowed_origins: list[str] = Field(
-        default=["*"],
-        description="Allowed CORS origins",
+        default=[],
+        description="Allowed CORS origins. Empty = same-origin only. Set to ['*'] for development.",
+    )
+
+    # Logging
+    log_format: str = Field(
+        default="text",
+        description="Log format: 'text' for human-readable, 'json' for structured JSON logging",
     )
 
     # Rate limiting (requests per minute per client)

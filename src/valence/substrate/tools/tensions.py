@@ -10,7 +10,6 @@ from typing import Any
 
 from . import _common
 from ._common import Tension
-
 from .beliefs import belief_supersede
 
 

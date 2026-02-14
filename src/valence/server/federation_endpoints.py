@@ -389,8 +389,8 @@ def _get_trust_anchors() -> list[dict[str, Any]]:
                 LEFT JOIN node_trust nt ON fn.id = nt.node_id
                 LEFT JOIN user_node_trust unt ON fn.id = unt.node_id
                 WHERE fn.status = 'active'
-                  AND fn.trust_phase = 'anchor'
-                  OR unt.trust_preference = 'anchor'
+                  AND (fn.trust_phase = 'anchor'
+                   OR unt.trust_preference = 'anchor')
                 ORDER BY COALESCE((nt.trust->>'overall')::numeric, 0) DESC
                 LIMIT 100
             """
@@ -442,6 +442,7 @@ async def federation_status(request: Request) -> JSONResponse:
 
     return JSONResponse(
         {
+            "success": True,
             "node": {
                 "did": settings.federation_node_did or _derive_did(settings),
                 "name": settings.federation_node_name,
@@ -526,7 +527,7 @@ def _get_federation_stats() -> dict[str, Any]:
             "nodes": {"total": 0, "by_status": {}},
             "sync": {"active_peers": 0, "beliefs_sent": 0, "beliefs_received": 0},
             "beliefs": {"local": 0, "federated": 0},
-            "error": str(e),
+            "error": "Failed to fetch federation stats",
         }
 
 

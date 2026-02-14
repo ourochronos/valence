@@ -17,6 +17,7 @@ from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
+from valence.server.auth_helpers import AuthenticatedClient
 from valence.server.sharing_endpoints import (
     _share_to_dict,
     get_share_endpoint,
@@ -26,6 +27,8 @@ from valence.server.sharing_endpoints import (
     set_sharing_service,
     share_belief_endpoint,
 )
+
+MOCK_CLIENT = AuthenticatedClient(client_id="test", auth_method="bearer")
 
 # ============================================================================
 # Fixtures
@@ -59,6 +62,37 @@ def app(mock_sharing_service):
 def client(app):
     """Create a test client."""
     return TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def mock_auth():
+    with patch("valence.server.sharing_endpoints.authenticate", return_value=MOCK_CLIENT):
+        yield
+
+
+# ============================================================================
+# Auth Tests
+# ============================================================================
+
+
+class TestShareAuth:
+    """Test authentication requirement on sharing endpoints."""
+
+    def test_unauthenticated_returns_401(self, client):
+        from starlette.responses import JSONResponse
+
+        with patch(
+            "valence.server.sharing_endpoints.authenticate",
+            return_value=JSONResponse({"error": "unauthorized"}, status_code=401),
+        ):
+            resp = client.post("/api/v1/share", json={"belief_id": "x", "recipient_did": "y"})
+            assert resp.status_code == 401
+
+    def test_wrong_scope_returns_403(self, client):
+        oauth_client = AuthenticatedClient(client_id="test", auth_method="oauth", scope="vkb:read")
+        with patch("valence.server.sharing_endpoints.authenticate", return_value=oauth_client):
+            resp = client.post("/api/v1/share", json={"belief_id": "x", "recipient_did": "y"})
+            assert resp.status_code == 403
 
 
 # ============================================================================

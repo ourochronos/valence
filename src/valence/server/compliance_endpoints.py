@@ -23,6 +23,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from ..compliance.data_access import export_holder_data, get_holder_data, import_holder_data
+from .auth_helpers import authenticate, require_scope
 from .errors import (
     NOT_FOUND_TOMBSTONE,
     VALIDATION_INVALID_VALUE,
@@ -57,6 +58,12 @@ async def delete_user_data_endpoint(request: Request) -> JSONResponse:
         400: Invalid request
         500: Server error
     """
+    client = authenticate(request)
+    if isinstance(client, JSONResponse):
+        return client
+    if err := require_scope(client, "substrate:write"):
+        return err
+
     user_id = request.path_params.get("id")
 
     if not user_id:
@@ -105,6 +112,12 @@ async def data_access_endpoint(request: Request) -> JSONResponse:
         400: Missing holder_did parameter
         500: Server error
     """
+    client = authenticate(request)
+    if isinstance(client, JSONResponse):
+        return client
+    if err := require_scope(client, "substrate:read"):
+        return err
+
     holder_did = request.query_params.get("holder_did")
 
     if not holder_did:
@@ -131,6 +144,12 @@ async def data_export_endpoint(request: Request) -> JSONResponse:
         400: Missing holder_did parameter
         500: Server error
     """
+    client = authenticate(request)
+    if isinstance(client, JSONResponse):
+        return client
+    if err := require_scope(client, "substrate:read"):
+        return err
+
     holder_did = request.query_params.get("holder_did")
 
     if not holder_did:
@@ -157,6 +176,12 @@ async def data_import_endpoint(request: Request) -> JSONResponse:
         400: Invalid JSON or format
         500: Server error
     """
+    client = authenticate(request)
+    if isinstance(client, JSONResponse):
+        return client
+    if err := require_scope(client, "substrate:write"):
+        return err
+
     try:
         body = await request.body()
         data = json.loads(body)
@@ -184,6 +209,12 @@ async def get_deletion_verification_endpoint(request: Request) -> JSONResponse:
         200: Verification report
         404: Tombstone not found
     """
+    client = authenticate(request)
+    if isinstance(client, JSONResponse):
+        return client
+    if err := require_scope(client, "substrate:read"):
+        return err
+
     tombstone_id_str = request.path_params.get("id")
 
     try:

@@ -11,12 +11,12 @@ from __future__ import annotations
 
 # Re-export shared utilities (also ensures patch target backward compat)
 from ._common import _validate_enum, get_cursor  # noqa: F401
-
-# Re-export tool definitions
-from .definitions import SUBSTRATE_TOOLS  # noqa: F401
-
-# Re-export handler dispatch
-from .handlers import SUBSTRATE_HANDLERS, handle_substrate_tool  # noqa: F401
+from .backup import (  # noqa: F401
+    backup_create,
+    backup_get,
+    backup_list,
+    backup_verify,
+)
 
 # Re-export all tool implementations
 from .beliefs import (  # noqa: F401
@@ -34,15 +34,6 @@ from .confidence import (  # noqa: F401
     belief_corroboration,
     confidence_explain,
 )
-from .entities import entity_get, entity_search  # noqa: F401
-from .sharing import (  # noqa: F401
-    _get_local_did,
-    belief_share,
-    belief_share_revoke,
-    belief_shares_list,
-)
-from .tensions import tension_list, tension_resolve  # noqa: F401
-from .trust import trust_check  # noqa: F401
 from .consensus import (  # noqa: F401
     challenge_get,
     challenge_resolve,
@@ -52,6 +43,13 @@ from .consensus import (  # noqa: F401
     corroboration_list,
     corroboration_submit,
 )
+
+# Re-export tool definitions
+from .definitions import SUBSTRATE_TOOLS  # noqa: F401
+from .entities import entity_get, entity_search  # noqa: F401
+
+# Re-export handler dispatch
+from .handlers import SUBSTRATE_HANDLERS, handle_substrate_tool  # noqa: F401
 from .incentives import (  # noqa: F401
     calibration_history,
     calibration_run,
@@ -61,6 +59,14 @@ from .incentives import (  # noqa: F401
     transfer_history,
     velocity_status,
 )
+from .sharing import (  # noqa: F401
+    _get_local_did,
+    belief_share,
+    belief_share_revoke,
+    belief_shares_list,
+)
+from .tensions import tension_list, tension_resolve  # noqa: F401
+from .trust import trust_check  # noqa: F401
 from .verification import (  # noqa: F401
     bounty_get,
     bounty_list,
@@ -74,12 +80,6 @@ from .verification import (  # noqa: F401
     verification_list,
     verification_submit,
     verification_summary,
-)
-from .backup import (  # noqa: F401
-    backup_create,
-    backup_get,
-    backup_list,
-    backup_verify,
 )
 
 __all__ = [

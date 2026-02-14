@@ -291,6 +291,7 @@ class TestFederationStatus:
         assert response.status_code == 200
         data = response.json()
 
+        assert data["success"] is True
         assert "node" in data
         assert "federation" in data
 
@@ -476,6 +477,22 @@ class TestGetTrustAnchors:
         anchors = _get_trust_anchors()
 
         assert isinstance(anchors, list)
+
+    def test_sql_operator_precedence_uses_parentheses(self, mock_db):
+        """Regression: OR clause must be parenthesized with AND.
+
+        Without parens, `AND ... OR ...` matches inactive nodes with
+        trust_preference='anchor' due to operator precedence.
+        Fixes #389.
+        """
+        from valence.server.federation_endpoints import _get_trust_anchors
+
+        _get_trust_anchors()
+
+        executed_sql = mock_db.execute.call_args[0][0]
+        assert "(fn.trust_phase = 'anchor'" in executed_sql
+        assert "OR unt.trust_preference = 'anchor')" in executed_sql
+        assert "AND (fn.trust_phase" in executed_sql
 
     def test_handles_db_error(self):
         """Test handles database error gracefully."""

@@ -2314,6 +2314,169 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      description: Returns server metrics in Prometheus text format.
+      tags:
+        - Monitoring
+      responses:
+        '200':
+          description: Prometheus metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /api/v1/metrics:
+    get:
+      summary: Prometheus metrics (API prefix)
+      description: Returns server metrics in Prometheus text format (API-prefixed alias).
+      tags:
+        - Monitoring
+      responses:
+        '200':
+          description: Prometheus metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /api/v1/compliance/access:
+    get:
+      summary: GDPR Article 15 data access
+      description: Returns all data held about a data subject.
+      tags:
+        - Compliance
+      security:
+        - bearerAuth: []
+        - oauth2: [substrate:read]
+      parameters:
+        - name: holder_did
+          in: query
+          required: true
+          schema:
+            type: string
+          description: DID of the data subject
+      responses:
+        '200':
+          description: All holder data organized by category
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  beliefs:
+                    type: array
+                    items:
+                      type: object
+                  entities:
+                    type: array
+                    items:
+                      type: object
+                  sessions:
+                    type: array
+                    items:
+                      type: object
+        '400':
+          description: Missing holder_did parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/compliance/export:
+    get:
+      summary: GDPR Article 20 data portability export
+      description: Returns holder data in a portable, machine-readable format.
+      tags:
+        - Compliance
+      security:
+        - bearerAuth: []
+        - oauth2: [substrate:read]
+      parameters:
+        - name: holder_did
+          in: query
+          required: true
+          schema:
+            type: string
+          description: DID of the data subject
+      responses:
+        '200':
+          description: Portable export with format version and all data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  format_version:
+                    type: string
+                  holder_did:
+                    type: string
+        '400':
+          description: Missing holder_did parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/compliance/import:
+    post:
+      summary: GDPR Article 20 data portability import
+      description: Imports data from a portable export.
+      tags:
+        - Compliance
+      security:
+        - bearerAuth: []
+        - oauth2: [substrate:write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Export data from the data portability export endpoint
+      responses:
+        '200':
+          description: Import results with counts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  beliefs_imported:
+                    type: integer
+        '400':
+          description: Invalid JSON or format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
 components:
   securitySchemes:
     bearerAuth:
