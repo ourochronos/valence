@@ -196,28 +196,33 @@ def belief_create(
             return _reinforce_belief(cur, exact_match["id"], existing_conf, source_ref)
 
         # --- Dedup check: fuzzy semantic match (cosine > 0.90) ---
+        # In async mode (VALENCE_ASYNC_EMBEDDINGS), skip inline embedding generation
+        # for lower latency — the periodic backfill task (#399) handles it.
+        import os
+        async_embeddings = bool(os.environ.get("VALENCE_ASYNC_EMBEDDINGS"))
         embedding_str = None  # Reused for inline storage if no duplicate found
-        try:
-            from our_embeddings.service import generate_embedding, vector_to_pgvector
+        if not async_embeddings:
+            try:
+                from our_embeddings.service import generate_embedding, vector_to_pgvector
 
-            query_vector = generate_embedding(content)
-            embedding_str = vector_to_pgvector(query_vector)
+                query_vector = generate_embedding(content)
+                embedding_str = vector_to_pgvector(query_vector)
 
-            cur.execute(
-                """SELECT id, confidence, 1 - (embedding <=> %s::vector) as similarity
-                FROM beliefs
-                WHERE embedding IS NOT NULL AND status = 'active' AND superseded_by_id IS NULL
-                AND 1 - (embedding <=> %s::vector) > 0.90
-                ORDER BY embedding <=> %s::vector
-                LIMIT 1""",
-                (embedding_str, embedding_str, embedding_str),
-            )
-            fuzzy_match = cur.fetchone()
-            if fuzzy_match:
-                existing_conf = fuzzy_match["confidence"] if isinstance(fuzzy_match["confidence"], dict) else json.loads(fuzzy_match["confidence"])
-                return _reinforce_belief(cur, fuzzy_match["id"], existing_conf, source_ref)
-        except Exception:
-            pass  # Embedding unavailable — skip fuzzy check
+                cur.execute(
+                    """SELECT id, confidence, 1 - (embedding <=> %s::vector) as similarity
+                    FROM beliefs
+                    WHERE embedding IS NOT NULL AND status = 'active' AND superseded_by_id IS NULL
+                    AND 1 - (embedding <=> %s::vector) > 0.90
+                    ORDER BY embedding <=> %s::vector
+                    LIMIT 1""",
+                    (embedding_str, embedding_str, embedding_str),
+                )
+                fuzzy_match = cur.fetchone()
+                if fuzzy_match:
+                    existing_conf = fuzzy_match["confidence"] if isinstance(fuzzy_match["confidence"], dict) else json.loads(fuzzy_match["confidence"])
+                    return _reinforce_belief(cur, fuzzy_match["id"], existing_conf, source_ref)
+            except Exception:
+                pass  # Embedding unavailable — skip fuzzy check
 
         # --- No duplicate found: create new belief ---
         source_id = None
@@ -310,14 +315,16 @@ def belief_supersede(
         # Determine new confidence
         new_confidence = DimensionalConfidence.from_dict(confidence or old_belief.confidence.to_dict())
 
-        # Generate embedding for the new belief
+        # Generate embedding for the new belief (skip if async mode — backfill handles it)
         new_embedding_str = None
-        try:
-            from our_embeddings.service import generate_embedding, vector_to_pgvector
+        import os
+        if not os.environ.get("VALENCE_ASYNC_EMBEDDINGS"):
+            try:
+                from our_embeddings.service import generate_embedding, vector_to_pgvector
 
-            new_embedding_str = vector_to_pgvector(generate_embedding(new_content))
-        except Exception:
-            pass  # Embedding unavailable — will be backfilled later
+                new_embedding_str = vector_to_pgvector(generate_embedding(new_content))
+            except Exception:
+                pass  # Embedding unavailable — will be backfilled later
 
         # Create new belief
         cur.execute(

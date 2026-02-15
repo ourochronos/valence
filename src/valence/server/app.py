@@ -876,8 +876,64 @@ async def info_endpoint(request: Request) -> JSONResponse:
 
 
 @asynccontextmanager
+async def _embedding_backfill_loop(interval_seconds: int = 300) -> None:
+    """Periodically check for and backfill beliefs missing embeddings.
+
+    Runs as a background task during server lifetime. Default interval: 5 minutes.
+    Configurable via VALENCE_BACKFILL_INTERVAL env var (seconds, 0 to disable).
+    """
+    import asyncio
+    import os
+
+    interval = int(os.environ.get("VALENCE_BACKFILL_INTERVAL", str(interval_seconds)))
+    if interval <= 0:
+        logger.info("Embedding backfill loop disabled (interval=0)")
+        return
+
+    # Brief startup delay to let the server finish initializing
+    await asyncio.sleep(5)
+
+    while True:
+        try:
+            from our_db import get_cursor
+            from our_embeddings.service import generate_embedding, vector_to_pgvector
+
+            with get_cursor() as cur:
+                cur.execute(
+                    "SELECT id, content FROM beliefs WHERE embedding IS NULL AND status = 'active' LIMIT 50"
+                )
+                rows = cur.fetchall()
+
+            if rows:
+                logger.info(f"Embedding backfill: found {len(rows)} beliefs without embeddings")
+                backfilled = 0
+                for row in rows:
+                    try:
+                        embedding = generate_embedding(row["content"])
+                        embedding_str = vector_to_pgvector(embedding)
+                        with get_cursor() as cur:
+                            cur.execute(
+                                "UPDATE beliefs SET embedding = %s::vector WHERE id = %s",
+                                (embedding_str, row["id"]),
+                            )
+                        backfilled += 1
+                    except Exception:
+                        logger.warning(f"Embedding backfill failed for belief {row['id']}", exc_info=True)
+                logger.info(f"Embedding backfill: completed {backfilled}/{len(rows)}")
+            else:
+                logger.debug("Embedding backfill: all beliefs have embeddings")
+        except ImportError:
+            logger.debug("Embedding backfill: our_embeddings not available, skipping")
+        except Exception:
+            logger.warning("Embedding backfill loop error", exc_info=True)
+
+        await asyncio.sleep(interval)
+
+
 async def lifespan(app: Starlette):
     """Application lifespan handler."""
+    import asyncio
+
     settings = get_settings()
     logger.info(f"Starting Valence MCP server on {settings.host}:{settings.port}")
 
@@ -895,8 +951,13 @@ async def lifespan(app: Starlette):
         if not settings.oauth_password:
             logger.warning("OAuth password not configured! Set VALENCE_OAUTH_PASSWORD environment variable.")
 
+    # Start background embedding backfill task (#399)
+    backfill_task = asyncio.create_task(_embedding_backfill_loop())
+
     yield
 
+    # Cancel background tasks on shutdown
+    backfill_task.cancel()
     logger.info("Valence MCP server shutting down")
 
 
