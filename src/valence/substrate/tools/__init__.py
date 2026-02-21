@@ -28,7 +28,7 @@ from .entities import entity_get, entity_search  # noqa: F401
 
 # Re-export handler dispatch
 from .handlers import SUBSTRATE_HANDLERS, handle_substrate_tool  # noqa: F401
-from .tensions import tension_list, tension_resolve  # noqa: F401
+from .contention import contention_list as tension_list, contention_resolve as tension_resolve  # noqa: F401
 
 __all__ = [
     # Definitions
