@@ -1,19 +1,19 @@
-"""MCP Server for Valence Knowledge Substrate.
+"""MCP Server for Valence Knowledge Substrate — v2.
 
-Provides tools for:
-- Belief management (query, create, supersede, get)
-- Semantic search (belief_search with embeddings)
-- Entity operations (get, search, merge)
-- Tension handling (list, resolve)
-- Trust checking (who do I trust on topics)
-- Confidence explanation (why this confidence score)
+Provides 16 tools for the v2 knowledge system:
+  Sources:    source_ingest, source_get, source_search
+  Retrieval:  knowledge_search
+  Articles:   article_get, article_create, article_compile, article_update,
+              article_split, article_merge
+  Provenance: provenance_trace
+  Contention: contention_list, contention_resolve
+  Admin:      admin_forget, admin_stats, admin_maintenance
 
 Resources:
-- valence://beliefs/recent - Recent beliefs
-- valence://trust/graph - Trust relationships
-- valence://stats - Database statistics
+  valence://articles/recent — Recent articles
+  valence://stats           — Database statistics
 
-Tool implementations are in tools.py (shared with the HTTP server).
+Tool implementations are in substrate/tools/ (delegated from handlers.py).
 """
 
 from __future__ import annotations
@@ -32,7 +32,6 @@ from mcp.server.stdio import stdio_server
 from mcp.types import Resource, TextContent, TextResourceContents
 from our_db import get_cursor, init_schema
 from our_db.exceptions import DatabaseError as OurDatabaseError
-from our_models import Belief
 from pydantic import AnyUrl
 
 from ..core.exceptions import DatabaseException, ValidationException
@@ -46,7 +45,7 @@ server = Server("valence-substrate")
 
 
 # ============================================================================
-# Tool Definitions (delegated to tools.py)
+# Tool Definitions (delegated to tools/definitions.py via tools/__init__.py)
 # ============================================================================
 
 
@@ -66,15 +65,9 @@ async def list_resources() -> list[Resource]:
     """List available resources."""
     return [
         Resource(
-            uri=AnyUrl("valence://beliefs/recent"),
-            name="Recent Beliefs",
-            description="Most recently created or modified beliefs",
-            mimeType="application/json",
-        ),
-        Resource(
-            uri=AnyUrl("valence://trust/graph"),
-            name="Trust Graph",
-            description="Trust relationships between entities and federation nodes",
+            uri=AnyUrl("valence://articles/recent"),
+            name="Recent Articles",
+            description="Most recently created or modified knowledge articles",
             mimeType="application/json",
         ),
         Resource(
@@ -89,10 +82,8 @@ async def list_resources() -> list[Resource]:
 @server.read_resource()
 async def read_resource(uri: str) -> list[TextResourceContents]:
     """Read a resource by URI."""
-    if uri == "valence://beliefs/recent":
-        data = get_recent_beliefs()
-    elif uri == "valence://trust/graph":
-        data = get_trust_graph()
+    if uri == "valence://articles/recent":
+        data = get_recent_articles()
     elif uri == "valence://stats":
         data = get_stats()
     else:
@@ -107,103 +98,41 @@ async def read_resource(uri: str) -> list[TextResourceContents]:
     ]
 
 
-def get_recent_beliefs(limit: int = 20) -> dict[str, Any]:
-    """Get recent beliefs for the resource."""
+def get_recent_articles(limit: int = 20) -> dict[str, Any]:
+    """Get recent articles for the resource."""
     with get_cursor() as cur:
         cur.execute(
             """
-            SELECT b.*, array_agg(DISTINCT e.name) FILTER (WHERE e.name IS NOT NULL) as entity_names
-            FROM beliefs b
-            LEFT JOIN belief_entities be ON b.id = be.belief_id
-            LEFT JOIN entities e ON be.entity_id = e.id
-            WHERE b.status = 'active'
-            GROUP BY b.id
-            ORDER BY b.modified_at DESC
+            SELECT a.id, a.title, a.content, a.status, a.version,
+                   a.confidence, a.domain_path,
+                   a.modified_at, a.created_at,
+                   COUNT(DISTINCT asrc.source_id) AS source_count
+            FROM articles a
+            LEFT JOIN article_sources asrc ON a.id = asrc.article_id
+            WHERE a.status = 'active'
+            GROUP BY a.id
+            ORDER BY a.modified_at DESC
             LIMIT %s
             """,
             (limit,),
         )
         rows = cur.fetchall()
 
-        beliefs = []
+        articles = []
         for row in rows:
-            belief = Belief.from_row(dict(row))
-            belief_dict = belief.to_dict()
-            belief_dict["entity_names"] = row.get("entity_names") or []
-            beliefs.append(belief_dict)
+            d = dict(row)
+            d["id"] = str(d["id"])
+            if d.get("created_at"):
+                d["created_at"] = d["created_at"].isoformat()
+            if d.get("modified_at"):
+                d["modified_at"] = d["modified_at"].isoformat()
+            articles.append(d)
 
         return {
-            "beliefs": beliefs,
-            "count": len(beliefs),
+            "articles": articles,
+            "count": len(articles),
             "as_of": datetime.now().isoformat(),
         }
-
-
-def get_trust_graph() -> dict[str, Any]:
-    """Get trust relationships for the resource."""
-    result: dict[str, Any] = {
-        "entities": [],
-        "federation_nodes": [],
-        "as_of": datetime.now().isoformat(),
-    }
-
-    with get_cursor() as cur:
-        # Get entities with belief counts (as proxy for trust/authority)
-        cur.execute(
-            """
-            SELECT e.id, e.name, e.type, COUNT(be.belief_id) as belief_count,
-                   AVG((b.confidence->>'overall')::numeric) as avg_confidence
-            FROM entities e
-            LEFT JOIN belief_entities be ON e.id = be.entity_id
-            LEFT JOIN beliefs b ON be.belief_id = b.id AND b.status = 'active'
-            WHERE e.canonical_id IS NULL
-            GROUP BY e.id
-            HAVING COUNT(be.belief_id) > 0
-            ORDER BY belief_count DESC
-            LIMIT 50
-            """
-        )
-        for row in cur.fetchall():
-            result["entities"].append(
-                {
-                    "id": str(row["id"]),
-                    "name": row["name"],
-                    "type": row["type"],
-                    "belief_count": row["belief_count"],
-                    "avg_confidence": (float(row["avg_confidence"]) if row["avg_confidence"] else None),
-                }
-            )
-
-        # Get federation nodes with trust scores
-        try:
-            cur.execute(
-                """
-                SELECT fn.id, fn.name, fn.instance_url, fn.status,
-                       nt.trust, nt.beliefs_received, nt.beliefs_corroborated, nt.beliefs_disputed
-                FROM federation_nodes fn
-                LEFT JOIN node_trust nt ON fn.id = nt.node_id
-                WHERE fn.status != 'blocked'
-                ORDER BY (nt.trust->>'overall')::numeric DESC NULLS LAST
-                LIMIT 20
-                """
-            )
-            for row in cur.fetchall():
-                node_data = {
-                    "id": str(row["id"]),
-                    "name": row["name"],
-                    "instance_url": row["instance_url"],
-                    "status": row["status"],
-                }
-                if row["trust"]:
-                    node_data["trust"] = row["trust"]
-                    node_data["beliefs_received"] = row["beliefs_received"]
-                    node_data["beliefs_corroborated"] = row["beliefs_corroborated"]
-                    node_data["beliefs_disputed"] = row["beliefs_disputed"]
-                result["federation_nodes"].append(node_data)
-        except Exception as e:
-            logger.debug(f"Federation tables may not exist: {e}")
-
-    return result
 
 
 def get_stats() -> dict[str, Any]:
@@ -211,50 +140,59 @@ def get_stats() -> dict[str, Any]:
     stats = DatabaseStats.collect()
 
     with get_cursor() as cur:
-        # Get domain distribution
-        cur.execute(
-            """
-            SELECT domain_path[1] as domain, COUNT(*) as count
-            FROM beliefs
-            WHERE status = 'active' AND array_length(domain_path, 1) > 0
-            GROUP BY domain_path[1]
-            ORDER BY count DESC
-            LIMIT 10
-            """
-        )
-        domains = {row["domain"]: row["count"] for row in cur.fetchall()}
+        # Get domain distribution from articles
+        try:
+            cur.execute(
+                """
+                SELECT domain_path[1] as domain, COUNT(*) as count
+                FROM articles
+                WHERE status = 'active' AND array_length(domain_path, 1) > 0
+                GROUP BY domain_path[1]
+                ORDER BY count DESC
+                LIMIT 10
+                """
+            )
+            domains = {row["domain"]: row["count"] for row in cur.fetchall()}
+        except Exception:
+            domains = {}
 
-        # Get confidence distribution
-        cur.execute(
-            """
-            SELECT
-                CASE
-                    WHEN (confidence->>'overall')::numeric >= 0.9 THEN 'very_high'
-                    WHEN (confidence->>'overall')::numeric >= 0.75 THEN 'high'
-                    WHEN (confidence->>'overall')::numeric >= 0.5 THEN 'moderate'
-                    WHEN (confidence->>'overall')::numeric >= 0.25 THEN 'low'
-                    ELSE 'very_low'
-                END as confidence_level,
-                COUNT(*) as count
-            FROM beliefs
-            WHERE status = 'active'
-            GROUP BY confidence_level
-            ORDER BY count DESC
-            """
-        )
-        confidence_dist = {row["confidence_level"]: row["count"] for row in cur.fetchall()}
+        # Get confidence distribution from articles
+        try:
+            cur.execute(
+                """
+                SELECT
+                    CASE
+                        WHEN (confidence->>'overall')::numeric >= 0.9 THEN 'very_high'
+                        WHEN (confidence->>'overall')::numeric >= 0.75 THEN 'high'
+                        WHEN (confidence->>'overall')::numeric >= 0.5 THEN 'moderate'
+                        WHEN (confidence->>'overall')::numeric >= 0.25 THEN 'low'
+                        ELSE 'very_low'
+                    END as confidence_level,
+                    COUNT(*) as count
+                FROM articles
+                WHERE status = 'active'
+                GROUP BY confidence_level
+                ORDER BY count DESC
+                """
+            )
+            confidence_dist = {row["confidence_level"]: row["count"] for row in cur.fetchall()}
+        except Exception:
+            confidence_dist = {}
 
         # Get entity type distribution
-        cur.execute(
-            """
-            SELECT type, COUNT(*) as count
-            FROM entities
-            WHERE canonical_id IS NULL
-            GROUP BY type
-            ORDER BY count DESC
-            """
-        )
-        entity_types = {row["type"]: row["count"] for row in cur.fetchall()}
+        try:
+            cur.execute(
+                """
+                SELECT type, COUNT(*) as count
+                FROM entities
+                WHERE canonical_id IS NULL
+                GROUP BY type
+                ORDER BY count DESC
+                """
+            )
+            entity_types = {row["type"]: row["count"] for row in cur.fetchall()}
+        except Exception:
+            entity_types = {}
 
     return {
         "totals": stats.to_dict(),
@@ -266,7 +204,7 @@ def get_stats() -> dict[str, Any]:
 
 
 # ============================================================================
-# Tool Router (delegates to tools.py)
+# Tool Router (delegates to tools/handlers.py)
 # ============================================================================
 
 

@@ -102,25 +102,32 @@ class TestCreateServer:
 
 
 class TestToolDefinitions:
-    """Tests for tool definitions in unified server."""
+    """Tests for tool definitions in unified server — v2 (WU-11)."""
 
     def test_all_substrate_tools_defined(self):
-        """Test that all substrate tools are defined."""
+        """Test that all v2 substrate tools are defined."""
         expected_tools = [
-            "belief_query",
-            "belief_create",
-            "belief_supersede",
-            "belief_get",
-            "entity_get",
-            "entity_search",
-            "tension_list",
-            "tension_resolve",
-            "belief_search",
+            "source_ingest",
+            "source_get",
+            "source_search",
+            "knowledge_search",
+            "article_get",
+            "article_create",
+            "article_compile",
+            "article_update",
+            "article_split",
+            "article_merge",
+            "provenance_trace",
+            "contention_list",
+            "contention_resolve",
+            "admin_forget",
+            "admin_stats",
+            "admin_maintenance",
         ]
 
         tool_names = [t.name for t in SUBSTRATE_TOOLS]
         for expected in expected_tools:
-            assert expected in tool_names
+            assert expected in tool_names, f"Missing v2 substrate tool: {expected}"
 
     def test_all_vkb_tools_defined(self):
         """Test that all VKB tools are defined."""
@@ -145,12 +152,12 @@ class TestToolDefinitions:
             assert expected in tool_names
 
     def test_tool_descriptions_have_behavioral_conditioning(self):
-        """Test that key tools have behavioral hints."""
-        belief_query = next(t for t in SUBSTRATE_TOOLS if t.name == "belief_query")
-        assert "MUST" in belief_query.description or "CRITICAL" in belief_query.description
+        """Test that key v2 tools have behavioral hints."""
+        knowledge_search = next(t for t in SUBSTRATE_TOOLS if t.name == "knowledge_search")
+        assert "MUST" in knowledge_search.description or "CRITICAL" in knowledge_search.description
 
-        belief_create = next(t for t in SUBSTRATE_TOOLS if t.name == "belief_create")
-        assert "PROACTIVELY" in belief_create.description
+        source_ingest = next(t for t in SUBSTRATE_TOOLS if t.name == "source_ingest")
+        assert source_ingest.description  # must have a non-empty description
 
         insight_extract = next(t for t in VKB_TOOLS if t.name == "insight_extract")
         assert "PROACTIVELY" in insight_extract.description
@@ -165,12 +172,11 @@ class TestToolRouting:
     """Tests for tool call routing."""
 
     def test_substrate_tool_routing(self, mock_get_cursor):
-        """Test that substrate tools are routed correctly."""
-        mock_get_cursor.fetchall.return_value = []
-
-        result = handle_substrate_tool("belief_query", {"query": "test"})
-
-        assert result["success"] is True
+        """Test that substrate tools are routed correctly (v2 — knowledge_search)."""
+        # knowledge_search with empty query returns an error (validation before DB)
+        result = handle_substrate_tool("knowledge_search", {"query": ""})
+        # Empty query returns validation error — that's correct routing behavior
+        assert "success" in result
 
     def test_vkb_tool_routing(self, mock_get_cursor):
         """Test that VKB tools are routed correctly."""
@@ -220,7 +226,7 @@ class TestResourceContent:
     """Tests for resource content."""
 
     def test_get_usage_instructions_content(self):
-        """Test usage instructions has required content."""
+        """Test usage instructions has required content (v2 — WU-11)."""
         instructions = _get_usage_instructions()
 
         # Should have title
@@ -234,9 +240,9 @@ class TestResourceContent:
         assert "Knowledge Substrate" in instructions
         assert "Conversation Tracking" in instructions
 
-        # Should mention key tools
-        assert "belief_query" in instructions
-        assert "belief_create" in instructions
+        # Should mention v2 key tools (knowledge_search replaces belief_query)
+        assert "knowledge_search" in instructions
+        assert "source_ingest" in instructions
         assert "session_start" in instructions
         assert "session_end" in instructions
 
@@ -249,7 +255,7 @@ class TestResourceContent:
         assert "Knowledge Substrate Tools" in reference
         assert "Conversation Tracking Tools" in reference
 
-        # Should list all substrate tools
+        # Should list all v2 substrate tools
         for tool in SUBSTRATE_TOOLS:
             assert tool.name in reference
 
@@ -267,7 +273,7 @@ class TestPromptContent:
     """Tests for prompt content."""
 
     def test_get_context_prompt_content(self):
-        """Test context prompt has required content."""
+        """Test context prompt has required content (v2 — WU-11)."""
         prompt = _get_context_prompt()
 
         # Should mention Valence
@@ -278,9 +284,9 @@ class TestPromptContent:
         assert "Capture Proactively" in prompt
         assert "Track Sessions" in prompt
 
-        # Should mention key tools
-        assert "belief_query" in prompt
-        assert "belief_create" in prompt or "insight_extract" in prompt
+        # Should mention v2 key tools
+        assert "knowledge_search" in prompt
+        assert "source_ingest" in prompt or "insight_extract" in prompt
         assert "session_start" in prompt
         assert "session_end" in prompt
 

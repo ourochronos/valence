@@ -1,18 +1,24 @@
-"""Unified MCP Server for Valence.
+"""Unified MCP Server for Valence v2.
 
 Combines both knowledge substrate and conversation tracking (VKB) servers
 into a single MCP endpoint. Clients connect to one server instead of two.
 
-Tools:
-- All substrate tools (belief_query, belief_create, entity_get, etc.)
-- All VKB tools (session_start, exchange_add, pattern_record, etc.)
+Tools (v2 substrate — 16 tools):
+- Sources:     source_ingest, source_get, source_search
+- Retrieval:   knowledge_search
+- Articles:    article_get, article_create, article_compile, article_update,
+               article_split, article_merge
+- Provenance:  provenance_trace
+- Contention:  contention_list, contention_resolve
+- Admin:       admin_forget, admin_stats, admin_maintenance
+
+VKB Tools: session_start, exchange_add, pattern_record, etc.
 
 Resources:
-- valence://beliefs/recent - Recent beliefs
-- valence://trust/graph - Trust relationships
-- valence://stats - Database statistics
+- valence://articles/recent - Recent compiled articles
+- valence://stats           - Database statistics
 
-Tool implementations live in substrate/tools.py and vkb/tools.py.
+Tool implementations are in substrate/tools/ and vkb/tools/.
 """
 
 from __future__ import annotations
@@ -34,7 +40,7 @@ from pydantic import AnyUrl
 
 from .core.exceptions import DatabaseException, ValidationException
 from .core.health import cli_health_check, startup_checks
-from .substrate.mcp_server import get_recent_beliefs, get_stats, get_trust_graph
+from .substrate.mcp_server import get_recent_articles, get_stats
 from .substrate.tools import SUBSTRATE_HANDLERS, SUBSTRATE_TOOLS, handle_substrate_tool
 from .vkb.tools import VKB_HANDLERS, VKB_TOOLS, handle_vkb_tool
 
@@ -68,15 +74,9 @@ async def list_resources() -> list[Resource]:
     """List available resources."""
     return [
         Resource(
-            uri=AnyUrl("valence://beliefs/recent"),
-            name="Recent Beliefs",
-            description="Most recently created or modified beliefs",
-            mimeType="application/json",
-        ),
-        Resource(
-            uri=AnyUrl("valence://trust/graph"),
-            name="Trust Graph",
-            description="Trust relationships between entities and federation nodes",
+            uri=AnyUrl("valence://articles/recent"),
+            name="Recent Articles",
+            description="Most recently created or modified knowledge articles",
             mimeType="application/json",
         ),
         Resource(
@@ -91,10 +91,8 @@ async def list_resources() -> list[Resource]:
 @server.read_resource()
 async def read_resource(uri: str) -> list[TextResourceContents]:
     """Read a resource by URI."""
-    if uri == "valence://beliefs/recent":
-        data = get_recent_beliefs()
-    elif uri == "valence://trust/graph":
-        data = get_trust_graph()
+    if uri == "valence://articles/recent":
+        data = get_recent_articles()
     elif uri == "valence://stats":
         data = get_stats()
     else:

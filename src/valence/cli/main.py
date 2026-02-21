@@ -22,6 +22,9 @@ from pathlib import Path
 from .commands import (
     COMMAND_MODULES,
     cmd_add,
+    cmd_articles_create,
+    cmd_articles_get,
+    cmd_articles_search,
     cmd_conflicts,
     cmd_embeddings,
     cmd_export,
@@ -30,8 +33,14 @@ from .commands import (
     cmd_list,
     cmd_maintenance,
     cmd_migrate,
+    cmd_provenance_get,
+    cmd_provenance_link,
+    cmd_provenance_trace,
     cmd_qos,
     cmd_query,
+    cmd_sources_ingest,
+    cmd_sources_list,
+    cmd_sources_search,
     cmd_stats,
 )
 from .config import CLIConfig, set_cli_config
@@ -45,6 +54,17 @@ from .utils import (
 
 __all__ = [
     "app",
+    # v2 commands
+    "cmd_articles_create",
+    "cmd_articles_get",
+    "cmd_articles_search",
+    "cmd_provenance_get",
+    "cmd_provenance_link",
+    "cmd_provenance_trace",
+    "cmd_sources_ingest",
+    "cmd_sources_list",
+    "cmd_sources_search",
+    # Legacy commands
     "cmd_add",
     "cmd_conflicts",
     "cmd_embeddings",
@@ -89,25 +109,26 @@ def app() -> argparse.ArgumentParser:
         description="Personal knowledge substrate for AI agents",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Examples:
-  valence query "search terms"            Search beliefs
-  valence add "Fact here" -d tech         Add belief with domain
-  valence list -n 20                      List recent beliefs
+v2 Knowledge System:
+  valence sources list                    List knowledge sources
+  valence sources ingest "content" -t web Ingest a new source
+  valence sources search "python"         Search sources
+  valence articles search "query"         Search compiled articles
+  valence articles get <id> --provenance  Get article with provenance
+  valence articles create "content"       Create a new article
+  valence provenance trace <id> "claim"   Trace claim to sources
+  valence provenance get <id>             List all sources for article
+
+Legacy:
+  valence query "search terms"            Search beliefs (legacy)
+  valence add "Fact here" -d tech         Add belief (legacy)
+  valence list -n 20                      List recent beliefs (legacy)
   valence stats                           Show statistics
   valence conflicts                       Detect contradictions
 
+Global:
   valence --json stats                    Output as JSON
-  valence --server http://host:8420 query Search remote server
-
-Network:
-  valence discover                        Discover network routers
-  valence discover --seed <url>           Use custom seed
-
-Federation:
-  valence peer add <did> --trust 0.8      Add trusted peer
-  valence peer list                       Show trusted peers
-  valence export --to <did> -o file.json  Export beliefs for peer
-  valence import file.json --from <did>   Import from peer
+  valence --server http://host:8420 query Use remote server
         """,
     )
 

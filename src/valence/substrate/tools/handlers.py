@@ -12,9 +12,12 @@ from typing import Any
 
 from .admin import admin_forget, admin_maintenance, admin_stats
 from .articles import (
+    article_compile,
     article_create,
     article_get,
+    article_merge,
     article_search,
+    article_split,
     article_update,
     provenance_get,
     provenance_link,
@@ -32,11 +35,14 @@ SUBSTRATE_HANDLERS: dict[str, Callable[..., dict[str, Any]]] = {
     "source_get": source_get,
     "source_search": source_search,
     "source_list": source_list,
-    # Article tools (WU-04)
+    # Article tools (WU-04, WU-06, WU-07)
     "article_create": article_create,
     "article_get": article_get,
     "article_update": article_update,
     "article_search": article_search,
+    "article_compile": article_compile,
+    "article_split": article_split,
+    "article_merge": article_merge,
     # Provenance tools (WU-04)
     "provenance_link": provenance_link,
     "provenance_get": provenance_get,

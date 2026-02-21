@@ -1,4 +1,10 @@
-"""Tests for valence.substrate.mcp_server module."""
+"""Tests for valence.substrate.mcp_server module.
+
+NOTE (WU-11): Tests referencing the old belief system (belief_query, belief_create,
+belief_supersede, belief_get, tension_list, tension_resolve) are skipped because
+those tools have been replaced by the v2 article/source system.
+See tests/integration/test_v2_integration.py for v2 equivalents.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +13,9 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
+
+# Skip all tests in this module that reference deleted belief tools
+pytestmark = pytest.mark.skip(reason="Deprecated: belief tools replaced by v2 articles/sources (WU-11)")
 
 # ============================================================================
 # Test Fixtures

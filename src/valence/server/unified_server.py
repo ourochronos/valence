@@ -191,7 +191,7 @@ def create_server() -> Server:
                         role="user",
                         content=TextContent(
                             type="text",
-                            text=f"Before responding, use belief_query to search for relevant knowledge about: {topic}",
+                            text=f"Before responding, use knowledge_search to search for relevant knowledge about: {topic}",
                         ),
                     )
                 ],
@@ -218,34 +218,41 @@ When the user asks about:
 - Technical approaches previously explored
 - Any topic that may have been discussed before
 
-**FIRST** use `belief_query` to search for relevant knowledge, **THEN** respond with grounded information.
+**FIRST** use `knowledge_search` to search for relevant knowledge, **THEN** respond
+with grounded information.
 
-### 2. PROACTIVELY Capture Knowledge
-Use `belief_create` or `insight_extract` when:
+### 2. PROACTIVELY Ingest New Information
+Use `source_ingest` when new information arrives that should be preserved:
 - A decision is made with clear rationale
 - User expresses a preference or value
 - A problem is solved with a novel approach
 - Important factual information is shared
-- Architectural or design choices are finalized
+- Documents, observations, or tool output worth preserving
 
-### 3. Track Sessions
+### 3. Compile Articles from Sources
+Use `article_create` or `article_compile` when you want to produce a durable
+summary or synthesis from one or more sources.
+
+### 4. Track Sessions
 - Call `session_start` at the beginning of conversations
 - Call `session_end` with summary and themes when concluding
 - This enables session-based context for future conversations
 
-### 4. Record Patterns
+### 5. Record Patterns
 When you notice recurring themes, preferences, or behaviors across multiple conversations,
 use `pattern_record` to capture them.
 
 ## Tool Categories
 
-### Knowledge Substrate (Beliefs)
-- `belief_query` - Search for existing knowledge (USE FIRST)
-- `belief_create` - Store new knowledge
-- `belief_supersede` - Update existing knowledge with history
-- `belief_get` - Get detailed belief information
-- `entity_get`, `entity_search` - Work with entities (people, tools, concepts)
-- `tension_list`, `tension_resolve` - Handle contradictions
+### Knowledge Substrate (v2)
+- `knowledge_search` - Search for existing knowledge (USE FIRST)
+- `source_ingest` - Ingest raw information as a source
+- `source_get`, `source_search` - Access source documents
+- `article_get`, `article_create`, `article_compile` - Create knowledge articles
+- `article_update`, `article_split`, `article_merge` - Maintain articles
+- `provenance_trace` - Trace claims to contributing sources
+- `contention_list`, `contention_resolve` - Handle contradictions
+- `admin_stats`, `admin_maintenance`, `admin_forget` - System management
 
 ### Conversation Tracking (VKB)
 - `session_start`, `session_end`, `session_get`, `session_list` - Session management
@@ -256,10 +263,10 @@ use `pattern_record` to capture them.
 ## Best Practices
 
 1. **Be proactive** - Don't wait to be asked to query or capture knowledge
-2. **Be specific** - Use detailed queries and create focused beliefs
-3. **Link entities** - Connect beliefs to relevant people, tools, and concepts
+2. **Be specific** - Use detailed queries and create focused articles
+3. **Maintain provenance** - Link articles to their source documents
 4. **Maintain context** - Use sessions to group related conversations
-5. **Resolve tensions** - When you find conflicting information, work to resolve it
+5. **Resolve contentions** - When you find conflicting information, work to resolve it
 """
 
 
@@ -287,9 +294,9 @@ def _get_context_prompt() -> str:
 
 **Core Behaviors:**
 1. **Query First**: Before answering questions about past context, decisions, or preferences,
-   use `belief_query` to search the knowledge base.
+   use `knowledge_search` to search the knowledge base.
 2. **Capture Proactively**: When valuable information emerges (decisions, preferences, insights),
-   use `belief_create` or `insight_extract` to store it for future reference.
+   use `source_ingest` or `insight_extract` to store it for future reference.
 3. **Track Sessions**: Use `session_start` and `session_end` to maintain conversation context.
 
 This ensures your responses are grounded in accumulated knowledge and that new insights

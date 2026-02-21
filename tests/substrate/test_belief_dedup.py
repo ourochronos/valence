@@ -6,9 +6,19 @@ Covers:
 - Content hash determinism
 - Corroboration count incrementing
 - Confidence escalation ladder
+
+NOTE (WU-11): Belief system has been replaced by the v2 articles/sources system.
+These tests are deprecated and skipped. See tests/integration/test_v2_integration.py
+for v2 equivalents.
 """
 
 from __future__ import annotations
+
+import pytest
+pytest.skip(
+    "Deprecated: belief system replaced by v2 articles/sources (WU-11)",
+    allow_module_level=True,
+)
 
 import hashlib
 import json

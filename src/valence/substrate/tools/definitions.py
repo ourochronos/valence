@@ -1,6 +1,25 @@
-"""Substrate tool definitions with behavioral conditioning.
+"""Substrate tool definitions — Valence v2 knowledge system (WU-11).
 
-Contains SUBSTRATE_TOOLS -- the list of all Tool() definitions for the substrate.
+Contains SUBSTRATE_TOOLS — exactly the 16 MCP tool definitions for the v2
+knowledge surface as specified in IMPL-SPEC.md §3.WU-11.
+
+Final tool list:
+    source_ingest      C1 — Ingest a new source
+    source_get         C1 — Get source by ID
+    source_search      C1 — Full-text search over sources
+    knowledge_search   C9 — Unified ranked retrieval (articles + sources)
+    article_get        C2 — Get article with optional provenance
+    article_create     C2 — Manually create an article
+    article_compile    C2 — Compile sources into an article via LLM
+    article_update     C2 — Update article with new content / source
+    article_split      C3 — Split an oversized article
+    article_merge      C3 — Merge two related articles
+    provenance_trace   C5 — Trace a claim to its contributing sources
+    contention_list    C7 — List active contentions
+    contention_resolve C7 — Resolve a contention
+    admin_forget       C10 — Remove a source or article
+    admin_stats        —   Health and capacity statistics
+    admin_maintenance  —   Trigger maintenance operations
 """
 
 from __future__ import annotations
@@ -8,397 +27,170 @@ from __future__ import annotations
 from mcp.types import Tool
 
 SUBSTRATE_TOOLS = [
+    # =========================================================================
+    # Source tools (C1)
+    # =========================================================================
     Tool(
-        name="belief_query",
+        name="source_ingest",
         description=(
-            "Search beliefs by content, domain, or entity. Uses hybrid search (keyword + semantic).\n\n"
-            "CRITICAL: You MUST call this BEFORE answering questions about:\n"
-            "- Past decisions or discussions\n"
-            "- User preferences or values\n"
-            "- Technical approaches previously explored\n"
-            "- Any topic that may have been discussed before\n\n"
-            "Query first, then respond with grounded information. This ensures your "
-            "responses are consistent with what has been learned and decided previously.\n\n"
-            "Note: Beliefs with revoked consent chains are filtered out by default for privacy."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Natural language search query",
-                },
-                "domain_filter": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Filter by domain path (e.g., ['tech', 'architecture'])",
-                },
-                "entity_id": {
-                    "type": "string",
-                    "description": "Filter by related entity UUID",
-                },
-                "include_superseded": {
-                    "type": "boolean",
-                    "default": False,
-                    "description": "Include superseded beliefs",
-                },
-                "include_revoked": {
-                    "type": "boolean",
-                    "default": False,
-                    "description": "Include beliefs with revoked consent chains (requires audit logging)",
-                },
-                "include_archived": {
-                    "type": "boolean",
-                    "default": False,
-                    "description": "Include archived beliefs in results. Archived beliefs are kept for provenance and reference but excluded from active queries by default.",
-                },
-                "include_expired": {
-                    "type": "boolean",
-                    "default": False,
-                    "description": "Include beliefs outside their temporal validity window (valid_from/valid_until)",
-                },
-                "limit": {
-                    "type": "integer",
-                    "default": 20,
-                    "description": "Maximum results",
-                },
-                "ranking": {
-                    "type": "object",
-                    "description": "Configure result ranking weights",
-                    "properties": {
-                        "semantic_weight": {"type": "number", "default": 0.50, "description": "Weight for semantic relevance (0-1)"},
-                        "confidence_weight": {"type": "number", "default": 0.35, "description": "Weight for belief confidence (0-1)"},
-                        "recency_weight": {"type": "number", "default": 0.15, "description": "Weight for recency (0-1)"},
-                        "explain": {"type": "boolean", "default": False, "description": "Include score breakdown in results"},
-                    },
-                },
-            },
-            "required": ["query"],
-        },
-    ),
-    Tool(
-        name="belief_create",
-        description=(
-            "Create a new belief with optional entity links.\n\n"
-            "Use PROACTIVELY when:\n"
-            "- A decision is made with clear rationale\n"
-            "- User expresses a preference or value\n"
-            "- A problem is solved with a novel approach\n"
-            "- Important factual information is shared\n"
-            "- Architectural or design choices are finalized\n\n"
-            "Capturing beliefs ensures future conversations have access to this knowledge."
+            "Ingest a new source into the knowledge substrate.\n\n"
+            "Sources are the raw, immutable input material from which articles are compiled. "
+            "Call this whenever new information arrives — documents, conversation transcripts, "
+            "web pages, code snippets, observations, or tool outputs.\n\n"
+            "A SHA-256 fingerprint is generated for deduplication; ingesting the same content "
+            "twice returns the existing ID instead of creating a duplicate. "
+            "Embedding computation is deferred to first retrieval."
         ),
         inputSchema={
             "type": "object",
             "properties": {
                 "content": {
                     "type": "string",
-                    "description": "The belief content - should be a clear, factual statement",
-                },
-                "confidence": {
-                    "type": "object",
-                    "description": "Confidence dimensions (or single 'overall' value)",
-                    "default": {"overall": 0.7},
-                },
-                "domain_path": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Domain classification (e.g., ['tech', 'python', 'testing'])",
+                    "description": "Raw text content of the source (required)",
                 },
                 "source_type": {
                     "type": "string",
                     "enum": [
                         "document",
                         "conversation",
-                        "inference",
+                        "web",
+                        "code",
                         "observation",
+                        "tool_output",
                         "user_input",
                     ],
-                    "description": "Type of source",
+                    "description": (
+                        "Source type determines initial reliability score: "
+                        "document/code=0.8, web=0.6, conversation=0.5, "
+                        "observation=0.4, tool_output=0.7, user_input=0.75"
+                    ),
                 },
-                "source_ref": {
+                "title": {
                     "type": "string",
-                    "description": "Reference to source (URL, session_id, etc.)",
+                    "description": "Optional human-readable title",
                 },
-                "opt_out_federation": {
-                    "type": "boolean",
-                    "default": False,
-                    "description": "If true, belief will not be shared via federation (privacy opt-out)",
-                },
-                "entities": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "name": {"type": "string"},
-                            "type": {"type": "string"},
-                            "role": {
-                                "type": "string",
-                                "enum": ["subject", "object", "context"],
-                            },
-                        },
-                        "required": ["name"],
-                    },
-                    "description": "Entities to link (will be created if not exist)",
-                },
-                "visibility": {
+                "url": {
                     "type": "string",
-                    "enum": ["private", "federated", "public"],
-                    "default": "private",
-                    "description": "Visibility level for the belief",
+                    "description": "Optional canonical URL for web sources",
                 },
-                "sharing_intent": {
-                    "type": "string",
-                    "enum": ["know_me", "work_with_me", "learn_from_me", "use_this"],
-                    "description": "Optional sharing intent — generates a SharePolicy stored with the belief",
-                },
-            },
-            "required": ["content"],
-        },
-    ),
-    Tool(
-        name="belief_supersede",
-        description=(
-            "Replace an old belief with a new one, maintaining history.\n\n"
-            "Use when:\n"
-            "- Information needs to be updated or corrected\n"
-            "- A previous decision has been revised\n"
-            "- More accurate information is now available\n\n"
-            "This maintains the full history chain so we can understand how knowledge evolved."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "old_belief_id": {
-                    "type": "string",
-                    "description": "UUID of belief to supersede",
-                },
-                "new_content": {
-                    "type": "string",
-                    "description": "Updated belief content",
-                },
-                "reason": {
-                    "type": "string",
-                    "description": "Why this belief is being superseded",
-                },
-                "confidence": {
+                "metadata": {
                     "type": "object",
-                    "description": "Confidence for new belief",
+                    "description": "Optional arbitrary metadata (JSON object)",
                 },
             },
-            "required": ["old_belief_id", "new_content", "reason"],
+            "required": ["content", "source_type"],
         },
     ),
     Tool(
-        name="belief_get",
-        description=(
-            "Get a single belief by ID with full details.\n\n"
-            "Use to examine a specific belief's content, history, and related tensions "
-            "when you need more context than what belief_query provides."
-        ),
+        name="source_get",
+        description="Get a source by ID with full details including content and metadata.",
         inputSchema={
             "type": "object",
             "properties": {
-                "belief_id": {
+                "source_id": {
                     "type": "string",
-                    "description": "UUID of the belief",
-                },
-                "include_history": {
-                    "type": "boolean",
-                    "default": False,
-                    "description": "Include supersession chain",
-                },
-                "include_tensions": {
-                    "type": "boolean",
-                    "default": False,
-                    "description": "Include related tensions",
+                    "description": "UUID of the source",
                 },
             },
-            "required": ["belief_id"],
+            "required": ["source_id"],
         },
     ),
     Tool(
-        name="entity_get",
+        name="source_search",
         description=(
-            "Get entity details with optional beliefs.\n\n"
-            "Use when you need comprehensive information about a person, tool, "
-            "concept, or organization that has been discussed before."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "entity_id": {
-                    "type": "string",
-                    "description": "UUID of the entity",
-                },
-                "include_beliefs": {
-                    "type": "boolean",
-                    "default": False,
-                    "description": "Include related beliefs",
-                },
-                "belief_limit": {
-                    "type": "integer",
-                    "default": 10,
-                    "description": "Max beliefs to include",
-                },
-            },
-            "required": ["entity_id"],
-        },
-    ),
-    Tool(
-        name="entity_search",
-        description=(
-            "Find entities by name or type.\n\n"
-            "Use to discover what's known about specific people, tools, projects, "
-            "or concepts before making statements about them."
+            "Full-text search over source content.\n\n"
+            "Uses PostgreSQL ``websearch_to_tsquery`` over the GIN-indexed ``content_tsv`` column. "
+            "Results ordered by relevance descending."
         ),
         inputSchema={
             "type": "object",
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "Search query (matches name and aliases)",
-                },
-                "type": {
-                    "type": "string",
-                    "enum": [
-                        "person",
-                        "organization",
-                        "tool",
-                        "concept",
-                        "project",
-                        "location",
-                        "service",
-                    ],
-                    "description": "Filter by entity type",
+                    "description": "Search terms (natural language or keyword phrase)",
                 },
                 "limit": {
                     "type": "integer",
                     "default": 20,
+                    "description": "Maximum results (default 20, max 200)",
                 },
             },
             "required": ["query"],
         },
     ),
+    # =========================================================================
+    # Retrieval (C9)
+    # =========================================================================
     Tool(
-        name="tension_list",
+        name="knowledge_search",
         description=(
-            "List contradictions/tensions between beliefs.\n\n"
-            "Review tensions periodically to identify knowledge that needs "
-            "reconciliation or clarification."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "status": {
-                    "type": "string",
-                    "enum": ["detected", "investigating", "resolved", "accepted"],
-                    "description": "Filter by status",
-                },
-                "severity": {
-                    "type": "string",
-                    "enum": ["low", "medium", "high", "critical"],
-                    "description": "Minimum severity",
-                },
-                "entity_id": {
-                    "type": "string",
-                    "description": "Tensions involving this entity",
-                },
-                "limit": {
-                    "type": "integer",
-                    "default": 20,
-                },
-            },
-        },
-    ),
-    Tool(
-        name="tension_resolve",
-        description=("Mark a tension as resolved with explanation.\n\nUse when you've determined how to reconcile conflicting beliefs."),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "tension_id": {
-                    "type": "string",
-                    "description": "UUID of the tension",
-                },
-                "resolution": {
-                    "type": "string",
-                    "description": "How the tension was resolved",
-                },
-                "action": {
-                    "type": "string",
-                    "enum": ["supersede_a", "supersede_b", "keep_both", "archive_both"],
-                    "description": "What to do with the beliefs",
-                },
-            },
-            "required": ["tension_id", "resolution", "action"],
-        },
-    ),
-    Tool(
-        name="belief_search",
-        description=(
-            "Semantic search for beliefs using vector embeddings.\n\n"
-            "Best for finding conceptually related beliefs even with different wording. "
-            "Use this instead of belief_query when:\n"
-            "- The exact keywords may not match but the concept is the same\n"
-            "- You want to find beliefs that are semantically similar\n"
-            "- You need to discover related knowledge that uses different terminology\n\n"
-            "Requires embeddings to be enabled (OPENAI_API_KEY)."
+            "Unified knowledge retrieval — search articles and optionally raw sources.\n\n"
+            "CRITICAL: Call this BEFORE answering questions about any topic that may have "
+            "been discussed, documented, or learned previously. This ensures responses are "
+            "grounded in accumulated knowledge.\n\n"
+            "Results are ranked by: relevance × 0.5 + confidence × 0.35 + freshness × 0.15.\n\n"
+            "Ungrouped raw sources matching the query are surfaced and automatically queued "
+            "for compilation into articles. Usage is recorded for self-organisation."
         ),
         inputSchema={
             "type": "object",
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "Natural language query to find semantically similar beliefs",
-                },
-                "min_similarity": {
-                    "type": "number",
-                    "default": 0.5,
-                    "description": "Minimum similarity threshold (0-1)",
-                },
-                "min_confidence": {
-                    "type": "number",
-                    "description": "Filter by minimum overall confidence",
-                },
-                "domain_filter": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Filter by domain path",
-                },
-                "include_archived": {
-                    "type": "boolean",
-                    "default": False,
-                    "description": "Include archived beliefs in results. Archived beliefs are kept for provenance and reference but excluded from active queries by default.",
+                    "description": "Natural-language search query",
                 },
                 "limit": {
                     "type": "integer",
                     "default": 10,
-                    "description": "Maximum results",
+                    "description": "Maximum results to return (default 10, max 200)",
                 },
-                "ranking": {
-                    "type": "object",
-                    "description": "Configure result ranking weights",
-                    "properties": {
-                        "semantic_weight": {"type": "number", "default": 0.50, "description": "Weight for semantic similarity (0-1)"},
-                        "confidence_weight": {"type": "number", "default": 0.35, "description": "Weight for belief confidence (0-1)"},
-                        "recency_weight": {"type": "number", "default": 0.15, "description": "Weight for recency (0-1)"},
-                        "explain": {"type": "boolean", "default": False, "description": "Include score breakdown in results"},
-                    },
+                "include_sources": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Include ungrouped raw sources alongside compiled articles",
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Optional session ID for usage trace attribution",
                 },
             },
             "required": ["query"],
         },
     ),
-    # -------------------------------------------------------------------------
-    # Article tools (WU-04 — replaces belief tools)
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # Article tools (C2)
+    # =========================================================================
+    Tool(
+        name="article_get",
+        description=(
+            "Get an article by ID, optionally with its full provenance list.\n\n"
+            "Set ``include_provenance=true`` to see all linked sources and their "
+            "relationship types (originates, confirms, supersedes, contradicts, contends)."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "article_id": {
+                    "type": "string",
+                    "description": "UUID of the article",
+                },
+                "include_provenance": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Include linked source provenance in the response",
+                },
+            },
+            "required": ["article_id"],
+        },
+    ),
     Tool(
         name="article_create",
         description=(
-            "Create a new knowledge article compiled from one or more sources.\n\n"
-            "Use this to record synthesised, compiled knowledge that may draw on "
-            "multiple source documents or conversations."
+            "Manually create a new knowledge article.\n\n"
+            "Use this when you want to create an article directly without LLM compilation. "
+            "For compilation from sources, use ``article_compile`` instead.\n\n"
+            "Optionally link originating source UUIDs — they will be linked with "
+            "relationship='originates'."
         ),
         inputSchema={
             "type": "object",
@@ -432,30 +224,38 @@ SUBSTRATE_TOOLS = [
         },
     ),
     Tool(
-        name="article_get",
+        name="article_compile",
         description=(
-            "Get an article by ID, optionally with its full provenance list."
+            "Compile one or more sources into a new knowledge article using LLM summarization.\n\n"
+            "The LLM produces a coherent, right-sized article from the given source documents. "
+            "All sources are linked to the resulting article with appropriate provenance "
+            "relationship types (originates, confirms, supersedes, contradicts, contends).\n\n"
+            "The compiled article respects right-sizing bounds from system_config "
+            "(default: 200–4000 tokens, target 2000)."
         ),
         inputSchema={
             "type": "object",
             "properties": {
-                "article_id": {
-                    "type": "string",
-                    "description": "UUID of the article",
+                "source_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "UUIDs of source documents to compile (required, non-empty)",
                 },
-                "include_provenance": {
-                    "type": "boolean",
-                    "default": False,
-                    "description": "Include linked source provenance in the response",
+                "title_hint": {
+                    "type": "string",
+                    "description": "Optional hint for the article title",
                 },
             },
-            "required": ["article_id"],
+            "required": ["source_ids"],
         },
     ),
     Tool(
         name="article_update",
         description=(
-            "Update an article's content. Increments version and records an 'updated' mutation."
+            "Update an article's content with new material.\n\n"
+            "Increments the article version, records an 'updated' mutation, and "
+            "optionally links the triggering source. The source is linked with a "
+            "relationship type inferred from content (typically 'confirms' or 'supersedes')."
         ),
         inputSchema={
             "type": "object",
@@ -476,79 +276,209 @@ SUBSTRATE_TOOLS = [
             "required": ["article_id", "content"],
         },
     ),
+    # =========================================================================
+    # Right-sizing tools (C3)
+    # =========================================================================
     Tool(
-        name="article_search",
+        name="article_split",
         description=(
-            "Search articles via full-text and semantic search.\n\n"
-            "Returns articles ordered by relevance. Uses both keyword matching and "
-            "vector similarity when embeddings are available."
+            "Split an oversized article into two smaller articles.\n\n"
+            "The original article retains its ID and the first half of the content. "
+            "A new article is created for the remainder. Both inherit all provenance "
+            "sources, and mutation records of type 'split' are written for both."
         ),
         inputSchema={
             "type": "object",
             "properties": {
-                "query": {
+                "article_id": {
                     "type": "string",
-                    "description": "Search query string",
+                    "description": "UUID of the article to split",
                 },
-                "limit": {
-                    "type": "integer",
-                    "default": 10,
-                    "description": "Maximum number of results (max 50)",
-                },
-                "domain_filter": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Optional domain path segments to restrict results",
-                },
-            },
-            "required": ["query"],
-        },
-    ),
-    Tool(
-        name="provenance_link",
-        description=(
-            "Link a source to an article with a provenance relationship.\n\n"
-            "Relationship types: originates, confirms, supersedes, contradicts, contends"
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "article_id": {"type": "string", "description": "UUID of the article"},
-                "source_id": {"type": "string", "description": "UUID of the source"},
-                "relationship": {
-                    "type": "string",
-                    "enum": ["originates", "confirms", "supersedes", "contradicts", "contends"],
-                    "description": "Relationship type",
-                },
-                "notes": {"type": "string", "description": "Optional notes about the relationship"},
-            },
-            "required": ["article_id", "source_id", "relationship"],
-        },
-    ),
-    Tool(
-        name="provenance_get",
-        description="Get the full provenance list for an article.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "article_id": {"type": "string", "description": "UUID of the article"},
             },
             "required": ["article_id"],
         },
     ),
     Tool(
-        name="provenance_trace",
+        name="article_merge",
         description=(
-            "Trace which sources likely contributed a specific claim in an article.\n\n"
-            "Uses text similarity to rank sources by relevance to the claim."
+            "Merge two related articles into one.\n\n"
+            "A new article is created with combined content. Both originals are archived. "
+            "The merged article inherits the union of provenance sources from both. "
+            "Mutation records of type 'merged' are written."
         ),
         inputSchema={
             "type": "object",
             "properties": {
-                "article_id": {"type": "string", "description": "UUID of the article"},
-                "claim_text": {"type": "string", "description": "The specific claim to trace"},
+                "article_id_a": {
+                    "type": "string",
+                    "description": "UUID of the first article",
+                },
+                "article_id_b": {
+                    "type": "string",
+                    "description": "UUID of the second article",
+                },
+            },
+            "required": ["article_id_a", "article_id_b"],
+        },
+    ),
+    # =========================================================================
+    # Provenance (C5)
+    # =========================================================================
+    Tool(
+        name="provenance_trace",
+        description=(
+            "Trace which sources likely contributed a specific claim in an article.\n\n"
+            "Uses text-similarity (TF-IDF) to rank the article's linked sources by "
+            "how much their content overlaps with the given claim text. "
+            "Useful for attribution and fact-checking."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "article_id": {
+                    "type": "string",
+                    "description": "UUID of the article",
+                },
+                "claim_text": {
+                    "type": "string",
+                    "description": "The specific claim or sentence to trace back to sources",
+                },
             },
             "required": ["article_id", "claim_text"],
+        },
+    ),
+    # =========================================================================
+    # Contention tools (C7)
+    # =========================================================================
+    Tool(
+        name="contention_list",
+        description=(
+            "List active contentions (contradictions or disagreements) in the knowledge base.\n\n"
+            "Contentions arise when a source contradicts or contends with an existing article. "
+            "Review contentions to identify knowledge that needs reconciliation."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "article_id": {
+                    "type": "string",
+                    "description": "Optional UUID — return only contentions for this article",
+                },
+                "status": {
+                    "type": "string",
+                    "enum": ["detected", "resolved", "dismissed"],
+                    "description": "Filter by status (omit to return all)",
+                },
+            },
+        },
+    ),
+    Tool(
+        name="contention_resolve",
+        description=(
+            "Resolve a contention between an article and a source.\n\n"
+            "Resolution types:\n"
+            "- ``supersede_a``: Article wins; source is noted but article unchanged.\n"
+            "- ``supersede_b``: Source wins; article content is replaced.\n"
+            "- ``accept_both``: Both perspectives are valid; article is annotated.\n"
+            "- ``dismiss``: Not material; dismissed without change."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "contention_id": {
+                    "type": "string",
+                    "description": "UUID of the contention to resolve",
+                },
+                "resolution": {
+                    "type": "string",
+                    "enum": ["supersede_a", "supersede_b", "accept_both", "dismiss"],
+                    "description": "Resolution type",
+                },
+                "rationale": {
+                    "type": "string",
+                    "description": "Free-text rationale recorded on the contention",
+                },
+            },
+            "required": ["contention_id", "resolution", "rationale"],
+        },
+    ),
+    # =========================================================================
+    # Admin tools (C10, health)
+    # =========================================================================
+    Tool(
+        name="admin_forget",
+        description=(
+            "Permanently remove a source or article from the knowledge system (C10).\n\n"
+            "For sources: deletes the source, cascades to article_sources, queues "
+            "affected articles for recompilation, creates a tombstone.\n\n"
+            "For articles: deletes the article and provenance links; sources are unaffected; "
+            "a tombstone is created.\n\n"
+            "This operation is IRREVERSIBLE."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "target_type": {
+                    "type": "string",
+                    "enum": ["source", "article"],
+                    "description": "Whether to delete a source or an article",
+                },
+                "target_id": {
+                    "type": "string",
+                    "description": "UUID of the record to delete",
+                },
+            },
+            "required": ["target_type", "target_id"],
+        },
+    ),
+    Tool(
+        name="admin_stats",
+        description=(
+            "Return health and capacity statistics for the knowledge system.\n\n"
+            "Includes: article counts (total/active/pinned), source count, "
+            "pending mutation queue depth, tombstones (last 30 days), "
+            "and bounded-memory capacity utilization."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {},
+        },
+    ),
+    Tool(
+        name="admin_maintenance",
+        description=(
+            "Trigger maintenance operations for the knowledge system.\n\n"
+            "Available operations (pass true to enable):\n"
+            "- ``recompute_scores``: Batch-recompute usage_score for all articles.\n"
+            "- ``process_queue``: Process pending entries in mutation_queue "
+            "(recompile, split, merge_candidate, decay_check).\n"
+            "- ``evict_if_over_capacity``: Run organic forgetting if article count "
+            "exceeds the configured maximum (from system_config.bounded_memory)."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "recompute_scores": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Batch-recompute usage scores for all articles",
+                },
+                "process_queue": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Process pending entries in the mutation queue",
+                },
+                "evict_if_over_capacity": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Run organic eviction if over capacity",
+                },
+                "evict_count": {
+                    "type": "integer",
+                    "default": 10,
+                    "description": "Maximum articles to evict per run (default 10)",
+                },
+            },
         },
     ),
 ]

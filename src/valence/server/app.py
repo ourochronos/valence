@@ -39,6 +39,21 @@ from .admin_endpoints import (
 from .auth import get_token_store, verify_token
 from .auth_helpers import AuthenticatedClient  # noqa: F401 — re-exported for backwards compat
 from .config import get_settings
+from .endpoints.articles import (
+    create_article_endpoint,
+    get_article_endpoint,
+    get_provenance_endpoint,
+    link_provenance_endpoint,
+    search_articles_endpoint,
+    trace_claim_endpoint,
+    update_article_endpoint,
+)
+from .endpoints.sources import (
+    sources_create_endpoint,
+    sources_get_endpoint,
+    sources_list_endpoint,
+    sources_search_endpoint,
+)
 from .metrics import MetricsMiddleware, metrics_endpoint
 from .substrate_endpoints import (
     beliefs_create_endpoint,
@@ -527,35 +542,37 @@ def _get_server_instructions() -> str:
     These instructions are returned in the initialize response and guide
     Claude's behavior when using Valence tools.
     """
-    return """You have access to Valence, a personal knowledge substrate that stores beliefs, tracks conversations, and learns patterns over time.
+    return """You have access to Valence v2, a personal knowledge substrate that stores sources,
+compiles knowledge articles, tracks provenance, and surfaces contentions.
 
 ## Required Behaviors
 
 ### 1. Query Before Answering
-BEFORE responding to questions about past context, decisions, preferences, or any topic that may have been discussed previously, you MUST call `belief_query` to search for relevant knowledge. This ensures your responses are grounded in accumulated knowledge rather than assumptions.
+BEFORE responding to questions about any topic that may have been discussed, documented, or
+learned previously, you MUST call `knowledge_search` to search for relevant knowledge.
+This ensures your responses are grounded in accumulated knowledge rather than assumptions.
 
-### 2. Capture Knowledge Proactively
-When valuable information emerges during conversation, you SHOULD capture it without being asked:
-- Use `belief_create` for decisions, preferences, facts, or insights
-- Use `insight_extract` when in an active session to link the belief to conversation context
-- Include relevant entities (people, tools, concepts) when creating beliefs
+### 2. Ingest Information Proactively
+When new information arrives (documents, conversations, observations, tool outputs),
+call `source_ingest` to store it. This is cheap and fast — do it before compilation.
 
-### 3. Track Sessions
-- Call `session_start` at the beginning of substantive conversations
-- Call `session_end` with a summary and themes when concluding
-- This enables context continuity across conversations
+### 3. Create Articles for Synthesised Knowledge
+When you identify knowledge worth preserving as a durable article:
+- Use `article_create` for direct article authorship
+- Use `article_compile` to let the LLM synthesise from multiple sources
 
-### 4. Record Patterns
-When you observe recurring themes, preferences, or behaviors across conversations, use `pattern_record` to capture them for future reference.
+### 4. Surface and Resolve Contentions
+Periodically call `contention_list` to identify contradictions in the knowledge base.
+Resolve them with `contention_resolve` when you have enough context.
 
 ## Tool Usage Priority
-1. `belief_query` - Always check first for relevant context
-2. `belief_create` / `insight_extract` - Capture new knowledge as it emerges
-3. `session_start` / `session_end` - Maintain conversation continuity
-4. `pattern_record` - Track recurring behaviors and preferences
+1. `knowledge_search` — Always check first for relevant context
+2. `source_ingest` — Capture raw information as it arrives
+3. `article_create` / `article_compile` — Synthesise durable knowledge
+4. `contention_list` / `contention_resolve` — Maintain knowledge consistency
 
 ## Key Principle
-Query first, respond with grounded information, capture insights for the future."""
+Search first, ingest early, compile deliberately, resolve contentions promptly."""
 
 
 def _get_usage_instructions() -> str:
@@ -785,8 +802,8 @@ async def info_endpoint(request: Request) -> JSONResponse:
             "mcp": "/api/v1/mcp",
             "health": "/api/v1/health",
             "info": "/",
-            "federation": "/api/v1/federation/status",
-            "beliefs": "/api/v1/beliefs",
+            "sources": "/api/v1/sources",
+            "articles": "/api/v1/articles",
             "openapi": "/api/v1/openapi.json",
             "docs": "/api/v1/docs",
             "metrics": "/metrics",
@@ -903,7 +920,39 @@ def create_app() -> Starlette:
         # OpenAPI documentation
         Route(f"{API_V1}/openapi.json", openapi_spec_endpoint, methods=["GET"]),
         Route(f"{API_V1}/docs", swagger_ui_endpoint, methods=["GET"]),
-        # Substrate REST endpoints (Issue #381)
+        # -----------------------------------------------------------------------
+        # v2 Sources endpoints (C1)
+        # -----------------------------------------------------------------------
+        Route(f"{API_V1}/sources", sources_list_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/sources", sources_create_endpoint, methods=["POST"]),
+        Route(f"{API_V1}/sources/search", sources_search_endpoint, methods=["POST"]),
+        Route(f"{API_V1}/sources/{{source_id}}", sources_get_endpoint, methods=["GET"]),
+        # -----------------------------------------------------------------------
+        # v2 Articles endpoints (C2, C3, C5)
+        # -----------------------------------------------------------------------
+        Route(f"{API_V1}/articles", search_articles_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/articles", create_article_endpoint, methods=["POST"]),
+        Route(f"{API_V1}/articles/search", search_articles_endpoint, methods=["POST"]),
+        Route(f"{API_V1}/articles/{{article_id}}", get_article_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/articles/{{article_id}}", update_article_endpoint, methods=["PUT"]),
+        Route(
+            f"{API_V1}/articles/{{article_id}}/provenance",
+            get_provenance_endpoint,
+            methods=["GET"],
+        ),
+        Route(
+            f"{API_V1}/articles/{{article_id}}/provenance/link",
+            link_provenance_endpoint,
+            methods=["POST"],
+        ),
+        Route(
+            f"{API_V1}/articles/{{article_id}}/provenance/trace",
+            trace_claim_endpoint,
+            methods=["POST"],
+        ),
+        # -----------------------------------------------------------------------
+        # Legacy Substrate REST endpoints (kept for backward compatibility)
+        # -----------------------------------------------------------------------
         Route(f"{API_V1}/beliefs", beliefs_list_endpoint, methods=["GET"]),
         Route(f"{API_V1}/beliefs", beliefs_create_endpoint, methods=["POST"]),
         Route(f"{API_V1}/beliefs/search", beliefs_search_endpoint, methods=["GET"]),
