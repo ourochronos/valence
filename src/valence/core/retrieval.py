@@ -95,7 +95,7 @@ def _has_active_contentions(article_id: str, cur: Any) -> bool:
         """
         SELECT 1
         FROM contentions
-        WHERE (article_id_a = %s OR article_id_b = %s)
+        WHERE (belief_a_id = %s OR belief_b_id = %s)
           AND status != 'resolved'
         LIMIT 1
         """,

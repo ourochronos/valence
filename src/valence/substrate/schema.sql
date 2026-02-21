@@ -296,7 +296,7 @@ CREATE INDEX IF NOT EXISTS idx_contentions_belief_b ON contentions(belief_b_id);
 CREATE TABLE IF NOT EXISTS mutation_queue (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     operation TEXT NOT NULL
-        CHECK (operation IN ('split', 'merge_candidate', 'recompile', 'decay_check')),
+        CHECK (operation IN ('split', 'merge_candidate', 'recompile', 'decay_check', 'recompile_degraded')),
     article_id UUID NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
     priority INTEGER NOT NULL DEFAULT 5,
     payload JSONB DEFAULT '{}',

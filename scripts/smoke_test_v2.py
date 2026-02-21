@@ -16,32 +16,37 @@ os.environ["VKB_DB_USER"] = "valence"
 os.environ["VKB_DB_PASSWORD"] = "valence"
 
 from valence.core import sources, articles, provenance, retrieval, compilation, contention, usage, forgetting
+from valence.core.inference import provider as inference_provider
 
 # Simple LLM backend for testing — just concatenates and formats
 def simple_llm(prompt: str) -> str:
     """Minimal compilation that extracts key info without a real LLM."""
-    # For compile prompts, return structured JSON
+    import re
+    # Extract source content from prompt for inclusion in output
+    source_snippets = re.findall(r'Content:\s*(.+?)(?:\n|$)', prompt)
+    combined = ' '.join(source_snippets) if source_snippets else 'Compiled from provided sources.'
+    
     if "compile" in prompt.lower() or "summarize" in prompt.lower() or "sources to compile" in prompt.lower():
         return json.dumps({
-            "title": "Compiled Article",
-            "content": "This is a compiled article from the provided sources. The sources discuss various topics and have been synthesized into a coherent summary.",
+            "title": "Python Programming Language",
+            "content": f"Python is a high-level programming language. {combined[:500]}",
             "relationships": [{"source_index": 0, "relationship": "originates"}]
         })
     if "update" in prompt.lower() or "incorporate" in prompt.lower():
         return json.dumps({
-            "title": "Updated Article",
-            "content": "This article has been updated with new information from the latest source.",
-            "relationship": "confirms"
+            "title": "Python Programming Language (Updated)",
+            "content": f"Python is a programming language with diverse opinions. {combined[:500]}",
+            "relationship": "contends"
         })
-    if "contention" in prompt.lower() or "contradict" in prompt.lower():
+    if "contention" in prompt.lower() or "contradict" in prompt.lower() or "contends" in prompt.lower():
         return json.dumps({
-            "is_contention": False,
-            "materiality": 0.1,
-            "explanation": "No significant contention detected."
+            "contends": True,
+            "materiality": 0.7,
+            "explanation": "Source disputes Python's suitability for production systems."
         })
-    return json.dumps({"content": "Processed.", "title": "Result"})
+    return json.dumps({"content": combined[:500], "title": "Result"})
 
-compilation.set_llm_backend(simple_llm)
+inference_provider.configure(simple_llm)
 
 async def smoke_test():
     print("=" * 60)
