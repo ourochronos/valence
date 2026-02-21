@@ -2,21 +2,34 @@
 """Valence v2 smoke test — full ingest → query → compile → retrieve loop.
 
 Updated for WU-14: all core functions now return ValenceResponse.
+Updated for WU-18: --live flag enables real Gemini inference backend.
+
+Usage:
+    # Default: mock LLM (for CI / offline testing)
+    .venv/bin/python scripts/smoke_test_v2.py
+
+    # Live: real Gemini 2.0 Flash inference
+    .venv/bin/python scripts/smoke_test_v2.py --live
 """
+import argparse
 import asyncio
 import json
 import os
 import sys
 
-# Point at v2 database
-os.environ["VKB_DB_HOST"] = "localhost"
-os.environ["VKB_DB_PORT"] = "5434"
-os.environ["VKB_DB_NAME"] = "valence_v2"
-os.environ["VKB_DB_USER"] = "valence"
-os.environ["VKB_DB_PASSWORD"] = "valence"
+# Point at v2 database (can be overridden by environment variables)
+os.environ.setdefault("VKB_DB_HOST", "localhost")
+os.environ.setdefault("VKB_DB_PORT", "5434")
+os.environ.setdefault("VKB_DB_NAME", "valence_v2")
+os.environ.setdefault("VKB_DB_USER", "valence")
+os.environ.setdefault("VKB_DB_PASSWORD", "valence")
 
 from valence.core import sources, articles, provenance, retrieval, compilation, contention, usage, forgetting
 from valence.core.inference import provider as inference_provider
+
+# ---------------------------------------------------------------------------
+# Mock backend (default, no LLM required)
+# ---------------------------------------------------------------------------
 
 # Simple LLM backend for testing — returns responses matching task schemas (DR-11 / WU-16)
 def simple_llm(prompt: str) -> str:
@@ -59,7 +72,46 @@ def simple_llm(prompt: str) -> str:
 
     return json.dumps({"content": "Generic result.", "title": "Result"})
 
-inference_provider.configure(simple_llm)
+
+# ---------------------------------------------------------------------------
+# Argument parsing
+# ---------------------------------------------------------------------------
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Valence v2 smoke test — full ingest → compile → retrieve loop",
+    )
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        default=False,
+        help=(
+            "Use the real Gemini 2.0 Flash backend instead of the mock LLM. "
+            "Requires the 'gemini' CLI to be installed and authenticated."
+        ),
+    )
+    parser.add_argument(
+        "--model",
+        default="gemini-2.0-flash",
+        help="Gemini model to use with --live (default: gemini-2.0-flash)",
+    )
+    return parser.parse_args()
+
+
+# ---------------------------------------------------------------------------
+# Backend setup
+# ---------------------------------------------------------------------------
+
+def _configure_backend(args: argparse.Namespace) -> None:
+    """Configure the inference provider based on CLI flags."""
+    if args.live:
+        from valence.core.backends.gemini_cli import create_gemini_backend
+        backend = create_gemini_backend(model=args.model)
+        inference_provider.configure(backend)
+        print(f"[smoke_test] Using LIVE Gemini backend: {args.model}")
+    else:
+        inference_provider.configure(simple_llm)
+        print("[smoke_test] Using mock LLM backend (pass --live for real inference)")
 
 async def smoke_test():
     print("=" * 60)
@@ -210,5 +262,7 @@ async def smoke_test():
     return True
 
 if __name__ == "__main__":
+    _args = _parse_args()
+    _configure_backend(_args)
     success = asyncio.run(smoke_test())
     sys.exit(0 if success else 1)

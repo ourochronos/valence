@@ -7,6 +7,7 @@ its argparse sub-commands and sets ``parser.set_defaults(func=handler)``.
 from . import (
     articles,
     beliefs,
+    config_cmd,
     conflicts,
     embeddings,
     io,
@@ -36,6 +37,7 @@ COMMAND_MODULES = [
     sources,
     articles,
     provenance,
+    config_cmd,
     beliefs,
     conflicts,
     stats,
