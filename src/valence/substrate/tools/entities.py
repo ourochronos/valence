@@ -34,8 +34,8 @@ def entity_get(
             cur.execute(
                 """
                 SELECT b.*, be.role
-                FROM beliefs b
-                JOIN belief_entities be ON b.id = be.belief_id
+                FROM articles b
+                JOIN article_entities be ON b.id = be.article_id
                 WHERE be.entity_id = %s
                 AND b.status = 'active'
                 AND b.superseded_by_id IS NULL

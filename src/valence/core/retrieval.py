@@ -95,7 +95,7 @@ def _has_active_contentions(article_id: str, cur: Any) -> bool:
         """
         SELECT 1
         FROM contentions
-        WHERE (belief_a_id = %s OR belief_b_id = %s)
+        WHERE (article_id = %s OR related_article_id = %s)
           AND status != 'resolved'
         LIMIT 1
         """,
@@ -116,7 +116,7 @@ def _record_usage_trace(
     try:
         cur.execute(
             """
-            INSERT INTO usage_traces (belief_id, query_text, tool_name, final_score, session_id)
+            INSERT INTO usage_traces (article_id, query_text, tool_name, final_score, session_id)
             VALUES (%s, %s, %s, %s, %s)
             """,
             (article_id, query, tool_name, final_score, session_id),

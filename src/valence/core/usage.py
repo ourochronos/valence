@@ -91,9 +91,8 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
 async def record_usage(article_id: str, query: str, tool: str) -> ValenceResponse:
     """Record article access in usage_traces and update usage_score.
 
-    Inserts one row into usage_traces (using ``belief_id`` column for
-    backward compatibility) and immediately recomputes the usage_score for
-    the affected article.
+    Inserts one row into usage_traces and immediately recomputes the
+    usage_score for the affected article.
 
     Args:
         article_id: UUID string of the article that was accessed.
@@ -101,10 +100,9 @@ async def record_usage(article_id: str, query: str, tool: str) -> ValenceRespons
         tool: The tool name that performed the retrieval.
     """
     with get_cursor() as cur:
-        # Insert usage trace (belief_id is the article_id alias kept for compat)
         cur.execute(
             """
-            INSERT INTO usage_traces (belief_id, query_text, tool_name)
+            INSERT INTO usage_traces (article_id, query_text, tool_name)
             VALUES (%s, %s, %s)
             """,
             (article_id, query, tool),
@@ -115,7 +113,7 @@ async def record_usage(article_id: str, query: str, tool: str) -> ValenceRespons
             """
             SELECT retrieved_at
             FROM usage_traces
-            WHERE belief_id = %s
+            WHERE article_id = %s
               AND retrieved_at IS NOT NULL
             """,
             (article_id,),
@@ -177,16 +175,16 @@ async def compute_usage_scores() -> ValenceResponse:
             """
             WITH retrieval_scores AS (
                 SELECT
-                    belief_id AS article_id,
+                    article_id,
                     SUM(
                         EXP(
                             -%s * EXTRACT(epoch FROM (NOW() - retrieved_at)) / 86400.0
                         )
                     ) AS recency_sum
                 FROM usage_traces
-                WHERE belief_id IS NOT NULL
+                WHERE article_id IS NOT NULL
                   AND retrieved_at IS NOT NULL
-                GROUP BY belief_id
+                GROUP BY article_id
             ),
             source_counts AS (
                 SELECT

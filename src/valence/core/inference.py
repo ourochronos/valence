@@ -5,11 +5,13 @@ Supports task-type routing, per-task backend overrides, explicit degraded
 mode, and both sync and async backends.
 
 Implements WU-13 (C11 Inference Abstraction).
+Updated WU-16: strict JSON schemas for all task types with validation (DR-11).
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -28,6 +30,216 @@ TASK_SPLIT = "split"              # Intelligent split point (low)
 
 _ALL_TASKS = {TASK_COMPILE, TASK_UPDATE, TASK_CLASSIFY, TASK_CONTENTION, TASK_SPLIT}
 
+# ---------------------------------------------------------------------------
+# Shared enum — DR-11
+# ---------------------------------------------------------------------------
+
+RELATIONSHIP_ENUM = ["originates", "confirms", "supersedes", "contradicts", "contends"]
+
+# ---------------------------------------------------------------------------
+# Task output schemas — required fields per task type (DR-11)
+# ---------------------------------------------------------------------------
+
+# Maps task_type → list of required output keys
+_TASK_REQUIRED_OUTPUT_FIELDS: dict[str, list[str]] = {
+    TASK_COMPILE:    ["title", "content", "source_relationships"],
+    TASK_UPDATE:     ["content", "relationship", "changes_summary"],
+    TASK_CLASSIFY:   ["relationship", "confidence", "reasoning"],
+    TASK_CONTENTION: ["is_contention", "materiality", "explanation"],
+    TASK_SPLIT:      ["split_index", "part_a_title", "part_b_title", "reasoning"],
+}
+
+# Fields that contain relationship_enum values and must be validated
+_TASK_RELATIONSHIP_FIELDS: dict[str, list[str]] = {
+    TASK_COMPILE:  [],   # relationships are in a list; validated separately
+    TASK_UPDATE:   ["relationship"],
+    TASK_CLASSIFY: ["relationship"],
+    TASK_CONTENTION: [],
+    TASK_SPLIT:    [],
+}
+
+# Output schema descriptions — used in prompt builders
+TASK_OUTPUT_SCHEMAS: dict[str, str] = {
+    TASK_COMPILE: """{
+  "title": "<article title>",
+  "content": "<article content>",
+  "source_relationships": [
+    {"source_id": "<source_id>", "relationship": "originates|confirms|supersedes|contradicts|contends"}
+  ]
+}""",
+    TASK_UPDATE: """{
+  "content": "<updated article content>",
+  "relationship": "confirms|supersedes|contradicts|contends",
+  "changes_summary": "<one sentence describing what changed>"
+}""",
+    TASK_CLASSIFY: """{
+  "relationship": "originates|confirms|supersedes|contradicts|contends",
+  "confidence": 0.0,
+  "reasoning": "<one sentence explaining the classification>"
+}""",
+    TASK_CONTENTION: """{
+  "is_contention": true|false,
+  "materiality": 0.0,
+  "explanation": "<one sentence describing the disagreement, or null if none>"
+}""",
+    TASK_SPLIT: """{
+  "split_index": 0,
+  "part_a_title": "<title for first part>",
+  "part_b_title": "<title for second part>",
+  "reasoning": "<why split at this point>"
+}""",
+}
+
+
+# ---------------------------------------------------------------------------
+# InferenceSchemaError
+# ---------------------------------------------------------------------------
+
+
+class InferenceSchemaError(ValueError):
+    """Raised when an LLM response does not conform to the expected task schema."""
+
+
+# ---------------------------------------------------------------------------
+# Schema validation
+# ---------------------------------------------------------------------------
+
+
+def _strip_markdown_fences(text: str) -> str:
+    """Strip leading/trailing markdown code fences (```json ... ```)."""
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        inner = lines[1:]
+        if inner and inner[-1].strip() == "```":
+            inner = inner[:-1]
+        text = "\n".join(inner).strip()
+    return text
+
+
+def validate_output(task_type: str, raw_json: str) -> dict:
+    """Parse and validate a raw LLM response against the task output schema.
+
+    Handles:
+    - Markdown fence stripping (```json ... ```)
+    - Required field validation
+    - Relationship enum validation
+    - Extra fields are silently ignored (not an error)
+    - Optional fields get defaults when missing
+
+    Args:
+        task_type: One of the TASK_* constants.
+        raw_json: Raw string from the LLM (may include markdown fences).
+
+    Returns:
+        Validated dict matching the task output schema.
+
+    Raises:
+        InferenceSchemaError: If the JSON cannot be parsed, required fields
+            are missing, or enum values are invalid.
+    """
+    if task_type not in _TASK_REQUIRED_OUTPUT_FIELDS:
+        raise InferenceSchemaError(
+            f"Unknown task type {task_type!r}; expected one of {list(_ALL_TASKS)}"
+        )
+
+    text = _strip_markdown_fences(raw_json)
+
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise InferenceSchemaError(
+            f"[{task_type}] Response is not valid JSON: {exc}. "
+            f"Got: {raw_json[:200]!r}"
+        ) from exc
+
+    if not isinstance(parsed, dict):
+        raise InferenceSchemaError(
+            f"[{task_type}] Response must be a JSON object, got {type(parsed).__name__}. "
+            f"Value: {raw_json[:200]!r}"
+        )
+
+    required = _TASK_REQUIRED_OUTPUT_FIELDS[task_type]
+    missing = [k for k in required if k not in parsed]
+    if missing:
+        raise InferenceSchemaError(
+            f"[{task_type}] Response missing required fields: {missing!r}. "
+            f"Got keys: {list(parsed.keys())!r}"
+        )
+
+    # Validate relationship enum fields
+    for field_name in _TASK_RELATIONSHIP_FIELDS.get(task_type, []):
+        val = parsed.get(field_name)
+        if val is not None and val not in RELATIONSHIP_ENUM:
+            raise InferenceSchemaError(
+                f"[{task_type}] Field {field_name!r} has invalid value {val!r}; "
+                f"must be one of {RELATIONSHIP_ENUM}"
+            )
+
+    # Task-specific extra validation
+    if task_type == TASK_COMPILE:
+        source_rels = parsed.get("source_relationships", [])
+        if not isinstance(source_rels, list):
+            raise InferenceSchemaError(
+                f"[{task_type}] 'source_relationships' must be a list, "
+                f"got {type(source_rels).__name__}"
+            )
+        for i, item in enumerate(source_rels):
+            if not isinstance(item, dict):
+                raise InferenceSchemaError(
+                    f"[{task_type}] source_relationships[{i}] must be an object"
+                )
+            rel = item.get("relationship")
+            if rel is not None and rel not in RELATIONSHIP_ENUM:
+                raise InferenceSchemaError(
+                    f"[{task_type}] source_relationships[{i}].relationship "
+                    f"has invalid value {rel!r}; must be one of {RELATIONSHIP_ENUM}"
+                )
+
+    if task_type == TASK_SPLIT:
+        si = parsed.get("split_index")
+        if not isinstance(si, int):
+            raise InferenceSchemaError(
+                f"[{task_type}] 'split_index' must be an integer, got {type(si).__name__}"
+            )
+
+    if task_type == TASK_CONTENTION:
+        # Coerce is_contention to bool if needed (some LLMs return strings)
+        raw_val = parsed.get("is_contention")
+        if isinstance(raw_val, str):
+            parsed["is_contention"] = raw_val.lower() in ("true", "1", "yes")
+        elif not isinstance(raw_val, bool):
+            raise InferenceSchemaError(
+                f"[{task_type}] 'is_contention' must be a boolean, "
+                f"got {type(raw_val).__name__}: {raw_val!r}"
+            )
+
+    # Apply defaults for optional fields
+    _apply_defaults(task_type, parsed)
+
+    return parsed
+
+
+def _apply_defaults(task_type: str, parsed: dict) -> None:
+    """Apply default values for optional/missing fields in-place."""
+    if task_type == TASK_COMPILE:
+        parsed.setdefault("source_relationships", [])
+
+    elif task_type == TASK_UPDATE:
+        parsed.setdefault("relationship", "confirms")
+        parsed.setdefault("changes_summary", "")
+
+    elif task_type == TASK_CLASSIFY:
+        parsed.setdefault("confidence", 0.5)
+        parsed.setdefault("reasoning", "")
+
+    elif task_type == TASK_CONTENTION:
+        parsed.setdefault("materiality", 0.0)
+        parsed.setdefault("explanation", None)
+
+    elif task_type == TASK_SPLIT:
+        parsed.setdefault("reasoning", "")
+
 
 # ---------------------------------------------------------------------------
 # InferenceResult
@@ -44,20 +256,22 @@ class InferenceResult:
                   Per DR-9: explicit degraded mode, not silent.
         task_type: Which task type was requested.
         error: Error message when degraded; None on success.
+        parsed: Validated parsed dict if schema validation succeeded; None otherwise.
     """
 
     content: str
     degraded: bool = False
     task_type: str = ""
     error: str | None = None
+    parsed: dict | None = None
 
     @classmethod
-    def success(cls, content: str, task_type: str) -> "InferenceResult":
-        return cls(content=content, degraded=False, task_type=task_type, error=None)
+    def success(cls, content: str, task_type: str, parsed: dict | None = None) -> "InferenceResult":
+        return cls(content=content, degraded=False, task_type=task_type, error=None, parsed=parsed)
 
     @classmethod
     def degraded_result(cls, task_type: str, error: str) -> "InferenceResult":
-        return cls(content="", degraded=True, task_type=task_type, error=error)
+        return cls(content="", degraded=True, task_type=task_type, error=error, parsed=None)
 
 
 # ---------------------------------------------------------------------------
@@ -73,6 +287,7 @@ class InferenceProvider:
     - Per-task overrides to route specific task types to different models.
     - Explicit degraded mode when no backend is configured (DR-9).
     - Both sync and async callables (sync wrapped in asyncio.to_thread).
+    - Schema validation of task outputs (DR-11 / WU-16).
 
     Usage::
 
@@ -93,6 +308,7 @@ class InferenceProvider:
             # fallback behaviour
         else:
             content = result.content
+            parsed = result.parsed  # validated dict (WU-16)
     """
 
     def __init__(self) -> None:
@@ -154,6 +370,11 @@ class InferenceProvider:
         Returns an :class:`InferenceResult` with ``degraded=True`` and an
         error message if no backend is configured or the backend raises.
 
+        After a successful backend call, validates the response against the
+        task output schema (DR-11). Schema validation failures are logged but
+        do NOT set degraded — the raw content is still returned so callers
+        can handle fallbacks themselves.
+
         Args:
             task_type: One of the TASK_* constants.
             prompt: The prompt string to send to the LLM.
@@ -189,8 +410,6 @@ class InferenceProvider:
             else:
                 content = result
 
-            return InferenceResult.success(content=content, task_type=task_type)
-
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "Inference backend failed for task %r: %s", task_type, exc
@@ -199,6 +418,19 @@ class InferenceProvider:
                 task_type=task_type,
                 error=f"Backend error: {exc}",
             )
+
+        # DR-11: validate output schema (WU-16)
+        parsed: dict | None = None
+        if task_type in _TASK_REQUIRED_OUTPUT_FIELDS:
+            try:
+                parsed = validate_output(task_type, content)
+            except InferenceSchemaError as exc:
+                logger.warning(
+                    "Schema validation failed for task %r: %s", task_type, exc
+                )
+                # Do not set degraded — return raw content; caller decides
+
+        return InferenceResult.success(content=content, task_type=task_type, parsed=parsed)
 
     # ------------------------------------------------------------------
     # Properties

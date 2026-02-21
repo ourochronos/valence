@@ -423,15 +423,15 @@ def tension_row_factory():
 
     def factory(
         id: UUID | None = None,
-        belief_a_id: UUID | None = None,
-        belief_b_id: UUID | None = None,
+        article_id: UUID | None = None,
+        related_article_id: UUID | None = None,
         **kwargs,
     ) -> dict[str, Any]:
         now = datetime.now()
         return {
             "id": id or uuid4(),
-            "belief_a_id": belief_a_id or uuid4(),
-            "belief_b_id": belief_b_id or uuid4(),
+            "article_id": article_id or uuid4(),
+            "related_article_id": related_article_id or uuid4(),
             "type": kwargs.get("type", "contradiction"),
             "description": kwargs.get("description"),
             "severity": kwargs.get("severity", "medium"),

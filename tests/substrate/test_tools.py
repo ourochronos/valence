@@ -126,15 +126,15 @@ def sample_tension_row():
 
     def _factory(
         id: UUID | None = None,
-        belief_a_id: UUID | None = None,
-        belief_b_id: UUID | None = None,
+        article_id: UUID | None = None,
+        related_article_id: UUID | None = None,
         **kwargs,
     ):
         now = datetime.now()
         return {
             "id": id or uuid4(),
-            "belief_a_id": belief_a_id or uuid4(),
-            "belief_b_id": belief_b_id or uuid4(),
+            "article_id": article_id or uuid4(),
+            "related_article_id": related_article_id or uuid4(),
             "type": kwargs.get("type", "contradiction"),
             "description": kwargs.get("description"),
             "severity": kwargs.get("severity", "medium"),
@@ -544,7 +544,7 @@ class TestBeliefGet:
         mock_get_cursor.fetchone.return_value = sample_belief_row(id=belief_id)
         mock_get_cursor.fetchall.side_effect = [
             [],  # entities
-            [sample_tension_row(belief_a_id=belief_id)],  # tensions
+            [sample_tension_row(article_id=belief_id)],  # tensions
         ]
 
         result = belief_get(belief_id=str(belief_id), include_tensions=True)

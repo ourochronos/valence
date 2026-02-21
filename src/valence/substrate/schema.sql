@@ -201,8 +201,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_entities_unique_canonical
 
 -- Article-Entity junction (renamed from belief_entities)
 CREATE TABLE IF NOT EXISTS article_entities (
-    belief_id UUID NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
-    -- NOTE: column kept as belief_id for backward compat; semantically it is article_id
+    article_id UUID NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
     entity_id UUID NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
 
     role TEXT NOT NULL DEFAULT 'subject',
@@ -210,7 +209,7 @@ CREATE TABLE IF NOT EXISTS article_entities (
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-    PRIMARY KEY (belief_id, entity_id, role),
+    PRIMARY KEY (article_id, entity_id, role),
     CONSTRAINT article_entities_valid_role CHECK (role IN ('subject', 'object', 'context', 'source'))
 );
 
@@ -253,8 +252,8 @@ CREATE INDEX IF NOT EXISTS idx_article_mutations_type ON article_mutations(mutat
 CREATE TABLE IF NOT EXISTS contentions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-    belief_a_id UUID NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
-    belief_b_id UUID NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+    article_id UUID NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+    related_article_id UUID REFERENCES articles(id) ON DELETE CASCADE,
 
     type TEXT NOT NULL DEFAULT 'contradiction',
     -- Types: contradiction, temporal_conflict, scope_conflict, partial_overlap
@@ -279,7 +278,7 @@ CREATE TABLE IF NOT EXISTS contentions (
     share_policy JSONB,
     extraction_metadata JSONB,
 
-    CONSTRAINT contentions_different_articles CHECK (belief_a_id != belief_b_id),
+    CONSTRAINT contentions_different_articles CHECK (article_id != related_article_id),
     CONSTRAINT contentions_valid_type CHECK (type IN (
         'contradiction', 'temporal_conflict', 'scope_conflict', 'partial_overlap'
     )),
@@ -289,8 +288,8 @@ CREATE TABLE IF NOT EXISTS contentions (
 
 CREATE INDEX IF NOT EXISTS idx_contentions_status ON contentions(status);
 CREATE INDEX IF NOT EXISTS idx_contentions_severity ON contentions(severity);
-CREATE INDEX IF NOT EXISTS idx_contentions_belief_a ON contentions(belief_a_id);
-CREATE INDEX IF NOT EXISTS idx_contentions_belief_b ON contentions(belief_b_id);
+CREATE INDEX IF NOT EXISTS idx_contentions_article ON contentions(article_id);
+CREATE INDEX IF NOT EXISTS idx_contentions_related_article ON contentions(related_article_id);
 
 -- Mutation Queue: Deferred operations (DR-6)
 CREATE TABLE IF NOT EXISTS mutation_queue (
@@ -439,26 +438,24 @@ CREATE INDEX IF NOT EXISTS idx_vkb_patterns_embedding ON vkb_patterns USING hnsw
 CREATE TABLE IF NOT EXISTS vkb_session_insights (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     session_id UUID NOT NULL REFERENCES vkb_sessions(id) ON DELETE CASCADE,
-    belief_id UUID NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
-    -- NOTE: column kept as belief_id for backward compat; semantically it is article_id
+    article_id UUID NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
 
     extraction_method TEXT NOT NULL DEFAULT 'manual',
     -- Methods: manual, auto, hybrid
 
     extracted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-    UNIQUE (session_id, belief_id),
+    UNIQUE (session_id, article_id),
     CONSTRAINT vkb_session_insights_valid_method CHECK (extraction_method IN ('manual', 'auto', 'hybrid'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_vkb_session_insights_session ON vkb_session_insights(session_id);
-CREATE INDEX IF NOT EXISTS idx_vkb_session_insights_belief ON vkb_session_insights(belief_id);
+CREATE INDEX IF NOT EXISTS idx_vkb_session_insights_article ON vkb_session_insights(article_id);
 
 -- Article Corroborations: Deduplication and reinforcement events
 CREATE TABLE IF NOT EXISTS belief_corroborations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    belief_id UUID NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
-    -- NOTE: column kept as belief_id for backward compat; semantically it is article_id
+    article_id UUID NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
     source_session_id UUID REFERENCES vkb_sessions(id) ON DELETE SET NULL,
     source_type TEXT NOT NULL DEFAULT 'session',
     corroborated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -467,13 +464,12 @@ CREATE TABLE IF NOT EXISTS belief_corroborations (
         CHECK (source_type IN ('session', 'user_confirm', 'federation'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_belief_corroborations_belief ON belief_corroborations(belief_id);
+CREATE INDEX IF NOT EXISTS idx_belief_corroborations_article ON belief_corroborations(article_id);
 
 -- Usage Traces: Article access log for feedback loop (renamed from belief_retrievals)
 CREATE TABLE IF NOT EXISTS usage_traces (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    belief_id UUID NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
-    -- NOTE: column kept as belief_id for backward compat; semantically it is article_id
+    article_id UUID NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
     query_text TEXT,
     tool_name TEXT NOT NULL,
     retrieved_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -483,7 +479,7 @@ CREATE TABLE IF NOT EXISTS usage_traces (
     source_id UUID REFERENCES sources(id) ON DELETE SET NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_usage_traces_belief ON usage_traces(belief_id);
+CREATE INDEX IF NOT EXISTS idx_usage_traces_article ON usage_traces(article_id);
 CREATE INDEX IF NOT EXISTS idx_usage_traces_time ON usage_traces(retrieved_at DESC);
 
 -- ============================================================================
@@ -606,17 +602,17 @@ LEFT JOIN article_sources asrc ON a.id = asrc.article_id
 WHERE a.status = 'active'
 GROUP BY a.id;
 
--- Article usage alias (belief_id column named article_id for clarity)
+-- Article usage view
 CREATE OR REPLACE VIEW article_usage AS
 SELECT
-    belief_id AS article_id,
+    article_id,
     query_text,
     tool_name,
     retrieved_at,
     final_score,
     session_id
 FROM usage_traces
-WHERE belief_id IS NOT NULL;
+WHERE article_id IS NOT NULL;
 
 -- Sessions with exchange and insight counts
 CREATE OR REPLACE VIEW vkb_sessions_overview AS

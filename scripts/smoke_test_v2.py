@@ -18,33 +18,46 @@ os.environ["VKB_DB_PASSWORD"] = "valence"
 from valence.core import sources, articles, provenance, retrieval, compilation, contention, usage, forgetting
 from valence.core.inference import provider as inference_provider
 
-# Simple LLM backend for testing — just concatenates and formats
+# Simple LLM backend for testing — returns responses matching task schemas (DR-11 / WU-16)
 def simple_llm(prompt: str) -> str:
-    """Minimal compilation that extracts key info without a real LLM."""
+    """Minimal mock that returns valid task-schema JSON without a real LLM."""
     import re
-    # Extract source content from prompt for inclusion in output
-    source_snippets = re.findall(r'Content:\s*(.+?)(?:\n|$)', prompt)
-    combined = ' '.join(source_snippets) if source_snippets else 'Compiled from provided sources.'
-    
-    if "compile" in prompt.lower() or "summarize" in prompt.lower() or "sources to compile" in prompt.lower():
+    # Extract source ids from prompt (format: "Source id=<uuid>: Title")
+    source_ids = re.findall(r'Source id=([^\s:]+):', prompt)
+
+    # TASK_COMPILE: "compiling a knowledge article"
+    if "compiling a knowledge article" in prompt:
+        source_relationships = [
+            {"source_id": sid, "relationship": "originates"}
+            for sid in source_ids
+        ] if source_ids else []
         return json.dumps({
             "title": "Python Programming Language",
-            "content": f"Python is a high-level programming language. {combined[:500]}",
-            "relationships": [{"source_index": 0, "relationship": "originates"}]
+            "content": "Python is a high-level programming language created by Guido van Rossum.",
+            "source_relationships": source_relationships,
         })
-    if "update" in prompt.lower() or "incorporate" in prompt.lower():
+
+    # TASK_UPDATE: "updating a knowledge article with new source"
+    if "updating a knowledge article" in prompt:
         return json.dumps({
-            "title": "Python Programming Language (Updated)",
-            "content": f"Python is a programming language with diverse opinions. {combined[:500]}",
-            "relationship": "contends"
+            "content": "Python is a programming language with diverse opinions on its suitability.",
+            "relationship": "contends",
+            "changes_summary": "Added alternative perspective from new source.",
         })
-    if "contention" in prompt.lower() or "contradict" in prompt.lower() or "contends" in prompt.lower():
+
+    # TASK_CONTENTION: "is_contention" schema
+    if "is_contention" in prompt or "contradict" in prompt.lower() or "contends with" in prompt.lower():
         return json.dumps({
-            "contends": True,
+            "is_contention": True,
             "materiality": 0.7,
-            "explanation": "Source disputes Python's suitability for production systems."
+            "explanation": "Source disputes Python's suitability for production systems.",
         })
-    return json.dumps({"content": combined[:500], "title": "Result"})
+
+    # Supersede merge (free-form, expects {"content": ...})
+    if "superseding content" in prompt.lower() or "rewrite the following article" in prompt.lower():
+        return json.dumps({"content": "Merged article content."})
+
+    return json.dumps({"content": "Generic result.", "title": "Result"})
 
 inference_provider.configure(simple_llm)
 

@@ -992,7 +992,7 @@ class TestInsightExtract:
         result = insight_extract(str(session_id), "User prefers Python")
 
         assert result["success"] is True
-        assert result["belief_id"] == str(belief_id)
+        assert result["article_id"] == str(belief_id)
         assert result["session_id"] == str(session_id)
 
     def test_with_domain_path(self, mock_get_cursor):
@@ -1085,13 +1085,13 @@ class TestInsightList:
             {
                 "id": insight_id,
                 "session_id": session_id,
-                "belief_id": belief_id,
+                "article_id": belief_id,
                 "extraction_method": "manual",
                 "extracted_at": now,
                 "content": "Test belief",
                 "confidence": {"overall": 0.8},
                 "domain_path": [],
-                "belief_created_at": now,
+                "article_created_at": now,
             }
         ]
 
@@ -1099,7 +1099,7 @@ class TestInsightList:
 
         assert result["success"] is True
         assert len(result["insights"]) == 1
-        assert result["insights"][0]["belief"]["content"] == "Test belief"
+        assert result["insights"][0]["article"]["content"] == "Test belief"
 
     def test_empty_list(self, mock_get_cursor):
         """Should handle sessions with no insights."""

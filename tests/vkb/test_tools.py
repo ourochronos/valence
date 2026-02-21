@@ -701,7 +701,7 @@ class TestInsightExtract:
         result = insight_extract(session_id=str(session_id), content="Python is great for data science")
 
         assert result["success"] is True
-        assert "belief_id" in result
+        assert "article_id" in result
 
     def test_insight_extract_with_domain(self, mock_get_cursor):
         """Test insight extraction with domain path."""
@@ -789,13 +789,13 @@ class TestInsightList:
             {
                 "id": uuid4(),
                 "session_id": session_id,
-                "belief_id": uuid4(),
+                "article_id": uuid4(),
                 "extraction_method": "manual",
                 "extracted_at": datetime.now(),
                 "content": "Test insight",
                 "confidence": {"overall": 0.8},
                 "domain_path": ["test"],
-                "belief_created_at": datetime.now(),
+                "article_created_at": datetime.now(),
             }
         ]
 

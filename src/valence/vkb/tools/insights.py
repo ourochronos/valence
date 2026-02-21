@@ -34,7 +34,7 @@ def insight_extract(
     with get_cursor() as cur:
         # --- Dedup check: exact content hash ---
         cur.execute(
-            "SELECT id, confidence FROM beliefs WHERE content_hash = %s AND status = 'active' AND superseded_by_id IS NULL",
+            "SELECT id, confidence FROM articles WHERE content_hash = %s AND status = 'active' AND superseded_by_id IS NULL",
             (content_hash,),
         )
         existing = cur.fetchone()
@@ -45,10 +45,10 @@ def insight_extract(
             existing_conf = existing["confidence"] if isinstance(existing["confidence"], dict) else json.loads(existing["confidence"])
 
             # Record corroboration
-            cur.execute("SELECT COUNT(*) as cnt FROM belief_corroborations WHERE belief_id = %s", (existing_id,))
+            cur.execute("SELECT COUNT(*) as cnt FROM belief_corroborations WHERE article_id = %s", (existing_id,))
             count = cur.fetchone()["cnt"]
             cur.execute(
-                "INSERT INTO belief_corroborations (belief_id, source_session_id, source_type) VALUES (%s, %s, 'session')",
+                "INSERT INTO belief_corroborations (article_id, source_session_id, source_type) VALUES (%s, %s, 'session')",
                 (existing_id, session_id),
             )
 
@@ -57,11 +57,11 @@ def insight_extract(
             new_overall = corroboration_confidence(new_count)
             existing_conf["overall"] = max(existing_conf.get("overall", 0.5), new_overall)
             existing_conf["corroboration"] = new_overall
-            cur.execute("UPDATE beliefs SET confidence = %s, modified_at = NOW() WHERE id = %s", (json.dumps(existing_conf), existing_id))
+            cur.execute("UPDATE articles SET confidence = %s, modified_at = NOW() WHERE id = %s", (json.dumps(existing_conf), existing_id))
 
             # Link to session
             cur.execute(
-                "INSERT INTO vkb_session_insights (session_id, belief_id, extraction_method) VALUES (%s, %s, 'manual') ON CONFLICT DO NOTHING RETURNING id",
+                "INSERT INTO vkb_session_insights (session_id, article_id, extraction_method) VALUES (%s, %s, 'manual') ON CONFLICT DO NOTHING RETURNING id",
                 (session_id, existing_id),
             )
             insight_row = cur.fetchone()
@@ -72,18 +72,18 @@ def insight_extract(
                 "action": "reinforced",
                 "corroboration_count": new_count,
                 "insight_id": str(insight_row["id"]) if insight_row else None,
-                "belief_id": str(existing_id),
+                "article_id": str(existing_id),
                 "session_id": session_id,
             }
 
-        # --- No duplicate: create new belief ---
+        # --- No duplicate: create new article ---
         cur.execute("SELECT id FROM sources WHERE session_id = %s LIMIT 1", (session_id,))
         source_row = cur.fetchone()
         source_id = source_row["id"] if source_row else None
 
         cur.execute(
             """
-            INSERT INTO beliefs (content, confidence, domain_path, source_id, extraction_method, content_hash)
+            INSERT INTO articles (content, confidence, domain_path, source_id, extraction_method, content_hash)
             VALUES (%s, %s, %s, %s, 'conversation_extraction', %s)
             RETURNING *
             """,
@@ -95,8 +95,8 @@ def insight_extract(
                 content_hash,
             ),
         )
-        belief_row = cur.fetchone()
-        belief_id = belief_row["id"]
+        article_row = cur.fetchone()
+        article_id = article_row["id"]
 
         # Link entities
         if entities:
@@ -115,29 +115,29 @@ def insight_extract(
 
                 cur.execute(
                     """
-                    INSERT INTO belief_entities (belief_id, entity_id, role)
+                    INSERT INTO article_entities (article_id, entity_id, role)
                     VALUES (%s, %s, %s)
                     ON CONFLICT DO NOTHING
                     """,
-                    (belief_id, entity_id, entity.get("role", "subject")),
+                    (article_id, entity_id, entity.get("role", "subject")),
                 )
 
         # Link to session
         cur.execute(
             """
-            INSERT INTO vkb_session_insights (session_id, belief_id, extraction_method)
+            INSERT INTO vkb_session_insights (session_id, article_id, extraction_method)
             VALUES (%s, %s, 'manual')
             ON CONFLICT DO NOTHING
             RETURNING id
             """,
-            (session_id, belief_id),
+            (session_id, article_id),
         )
         insight_row = cur.fetchone()
 
         return {
             "success": True,
             "insight_id": str(insight_row["id"]) if insight_row else None,
-            "belief_id": str(belief_id),
+            "article_id": str(article_id),
             "session_id": session_id,
         }
 
@@ -147,9 +147,9 @@ def insight_list(session_id: str) -> dict[str, Any]:
     with get_cursor() as cur:
         cur.execute(
             """
-            SELECT si.*, b.content, b.confidence, b.domain_path, b.created_at as belief_created_at
+            SELECT si.*, b.content, b.confidence, b.domain_path, b.created_at as article_created_at
             FROM vkb_session_insights si
-            JOIN beliefs b ON si.belief_id = b.id
+            JOIN articles b ON si.article_id = b.id
             WHERE si.session_id = %s
             ORDER BY si.extracted_at
             """,
@@ -163,14 +163,14 @@ def insight_list(session_id: str) -> dict[str, Any]:
                 {
                     "id": str(row["id"]),
                     "session_id": str(row["session_id"]),
-                    "belief_id": str(row["belief_id"]),
+                    "article_id": str(row["article_id"]),
                     "extraction_method": row["extraction_method"],
                     "extracted_at": row["extracted_at"].isoformat(),
-                    "belief": {
+                    "article": {
                         "content": row["content"],
                         "confidence": row["confidence"],
                         "domain_path": row["domain_path"],
-                        "created_at": row["belief_created_at"].isoformat(),
+                        "created_at": row["article_created_at"].isoformat(),
                     },
                 }
             )

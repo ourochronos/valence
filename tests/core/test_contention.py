@@ -83,8 +83,8 @@ def _contention_row(
 ) -> dict:
     return {
         "id": contention_id or CONTENTION_ID,
-        "belief_a_id": article_id or ARTICLE_ID,
-        "belief_b_id": None,
+        "article_id": article_id or ARTICLE_ID,
+        "related_article_id": None,
         "source_id": source_id or SOURCE_ID,
         "type": "contradiction",
         "description": "Source disagrees on sky color",
@@ -411,7 +411,7 @@ class TestListContentions:
             result = await list_contentions(article_id=ARTICLE_ID, status="detected")
 
         execute_calls = str(cur.execute.call_args_list)
-        assert "belief_a_id" in execute_calls or ARTICLE_ID in execute_calls
+        assert "article_id" in execute_calls or ARTICLE_ID in execute_calls
 
     async def test_returns_empty_list_when_none(self):
         """list_contentions returns [] when no rows match."""

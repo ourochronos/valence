@@ -449,9 +449,9 @@ async def conflicts_endpoint(request: Request) -> JSONResponse:
                 )
                 SELECT * FROM belief_pairs
                 WHERE NOT EXISTS (
-                    SELECT 1 FROM tensions t
-                    WHERE (t.belief_a_id = belief_pairs.id_a AND t.belief_b_id = belief_pairs.id_b)
-                       OR (t.belief_a_id = belief_pairs.id_b AND t.belief_b_id = belief_pairs.id_a)
+                    SELECT 1 FROM contentions t
+                    WHERE (t.article_id = belief_pairs.id_a AND t.related_article_id = belief_pairs.id_b)
+                       OR (t.article_id = belief_pairs.id_b AND t.related_article_id = belief_pairs.id_a)
                 )
                 """,
                 (threshold,),
@@ -510,7 +510,7 @@ async def conflicts_endpoint(request: Request) -> JSONResponse:
                 for c in conflicts:
                     cur.execute(
                         """
-                        INSERT INTO tensions (belief_a_id, belief_b_id, type, description, severity)
+                        INSERT INTO contentions (article_id, related_article_id, type, description, severity)
                         VALUES (%s, %s, 'contradiction', %s, %s)
                         ON CONFLICT DO NOTHING
                         RETURNING id

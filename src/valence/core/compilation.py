@@ -21,9 +21,14 @@ from our_db import get_cursor
 from valence.core.response import ValenceResponse, ok, err
 
 from valence.core.inference import (
+    TASK_CLASSIFY,
     TASK_COMPILE,
+    TASK_OUTPUT_SCHEMAS,
     TASK_UPDATE,
+    InferenceSchemaError,
+    RELATIONSHIP_ENUM,
     provider as _inference_provider,
+    validate_output,
 )
 
 logger = logging.getLogger(__name__)
@@ -56,11 +61,12 @@ def set_llm_backend(fn: Callable[[str], Any] | None) -> None:
     _inference_provider.configure(fn)
 
 
-async def _call_llm(prompt: str) -> str:
+async def _call_llm(prompt: str, task_type: str = TASK_COMPILE) -> str:
     """Invoke the configured LLM backend via the unified inference provider.
 
     Args:
         prompt: Prompt string.
+        task_type: Which task type to route through (defaults to TASK_COMPILE).
 
     Returns:
         LLM response string.
@@ -68,7 +74,7 @@ async def _call_llm(prompt: str) -> str:
     Raises:
         NotImplementedError: If no backend is configured.
     """
-    result = await _inference_provider.infer(TASK_COMPILE, prompt)
+    result = await _inference_provider.infer(task_type, prompt)
     if result.degraded:
         raise NotImplementedError(
             result.error
@@ -151,13 +157,16 @@ def _build_compilation_prompt(
 ) -> str:
     """Build the LLM prompt for compiling multiple sources into a single article."""
     source_blocks = []
-    for i, src in enumerate(sources, 1):
-        title = src.get("title") or f"Source {i}"
+    for src in sources:
+        sid = src.get("id") or "?"
+        title = src.get("title") or "Untitled"
         content = (src.get("content") or "").strip()
-        source_blocks.append(f"## Source {i}: {title}\n{content}")
+        source_blocks.append(f"## Source id={sid}: {title}\n{content}")
     sources_text = "\n\n".join(source_blocks)
 
     title_line = f'\nThe article title should be: "{title_hint}"' if title_hint else ""
+
+    schema = TASK_OUTPUT_SCHEMAS[TASK_COMPILE]
 
     return f"""You are compiling a knowledge article from the following sources.{title_line}
 
@@ -174,15 +183,10 @@ For each source, identify its relationship to the compiled article content:
 SOURCES:
 {sources_text}
 
-Respond ONLY with valid JSON in this exact format (no markdown fences):
-{{
-  "title": "<article title>",
-  "content": "<article content>",
-  "relationships": [
-    {{"source_index": 1, "relationship": "originates"}},
-    {{"source_index": 2, "relationship": "confirms"}}
-  ]
-}}"""
+Respond ONLY with valid JSON matching this exact schema (no markdown fences):
+{schema}
+
+Use the actual source id values (shown above) in source_relationships."""
 
 
 def _build_update_prompt(
@@ -193,6 +197,8 @@ def _build_update_prompt(
     article_content = (article.get("content") or "").strip()
     source_title = source.get("title") or "New Source"
     source_content = (source.get("content") or "").strip()
+
+    schema = TASK_OUTPUT_SCHEMAS[TASK_UPDATE]
 
     return f"""You are updating a knowledge article with new source material.
 
@@ -211,12 +217,8 @@ Identify the relationship of the new source to the article:
 - "contradicts": source directly disagrees with article content
 - "contends": source offers a valid alternative viewpoint
 
-Respond ONLY with valid JSON (no markdown fences):
-{{
-  "content": "<updated article content>",
-  "relationship": "confirms|supersedes|contradicts|contends",
-  "summary": "<one sentence describing what changed>"
-}}"""
+Respond ONLY with valid JSON matching this exact schema (no markdown fences):
+{schema}"""
 
 
 # ---------------------------------------------------------------------------
@@ -326,9 +328,9 @@ async def compile_article(
     prompt = _build_compilation_prompt(sources, title_hint, target_tokens)
     is_degraded = False
     try:
-        llm_response = await _call_llm(prompt)
-        parsed = _parse_llm_json(llm_response, ["content"])
-    except (NotImplementedError, ValueError, json.JSONDecodeError) as exc:
+        llm_response = await _call_llm(prompt, task_type=TASK_COMPILE)
+        parsed = validate_output(TASK_COMPILE, llm_response)
+    except (NotImplementedError, InferenceSchemaError, ValueError, json.JSONDecodeError) as exc:
         logger.warning("LLM compilation unavailable (%s), using fallback concatenation", exc)
         is_degraded = True
         content_parts = [
@@ -338,22 +340,24 @@ async def compile_article(
         parsed = {
             "title": title_hint or (sources[0].get("title") if sources else "Compiled Article"),
             "content": "\n\n".join(content_parts),
-            "relationships": [
-                {"source_index": i + 1, "relationship": "originates"}
-                for i in range(len(sources))
+            "source_relationships": [
+                {"source_id": s["id"], "relationship": "originates"}
+                for s in sources
             ],
         }
 
     article_content: str = parsed.get("content") or ""
     article_title: str | None = parsed.get("title") or title_hint
 
-    # Map source_index → source_id → relationship
+    # Map source_id → relationship from source_relationships list
     relationships_by_source_id: dict[str, str] = {}
-    for rel_item in parsed.get("relationships", []):
-        idx = int(rel_item.get("source_index", 0))
-        if 1 <= idx <= len(sources):
-            rel = rel_item.get("relationship", "originates")
-            relationships_by_source_id[sources[idx - 1]["id"]] = rel
+    for rel_item in parsed.get("source_relationships", []):
+        sid = rel_item.get("source_id")
+        rel = rel_item.get("relationship", "originates")
+        if rel not in RELATIONSHIP_ENUM:
+            rel = "originates"
+        if sid:
+            relationships_by_source_id[str(sid)] = rel
 
     token_count = _count_tokens(article_content)
 
@@ -490,15 +494,10 @@ async def update_article_from_source(
     prompt = _build_update_prompt(article, source, target_tokens)
     is_degraded = False
     try:
-        llm_response = await _call_llm(prompt)
-        parsed = _parse_llm_json(llm_response, ["content", "relationship"])
+        llm_response = await _call_llm(prompt, task_type=TASK_UPDATE)
+        parsed = validate_output(TASK_UPDATE, llm_response)
         relationship: str = parsed.get("relationship", "confirms")
-        # Validate relationship value
-        valid_update_rels = {"confirms", "supersedes", "contradicts", "contends"}
-        if relationship not in valid_update_rels:
-            logger.warning("LLM returned invalid relationship %r, defaulting to 'confirms'", relationship)
-            relationship = "confirms"
-    except (NotImplementedError, ValueError, json.JSONDecodeError) as exc:
+    except (NotImplementedError, InferenceSchemaError, ValueError, json.JSONDecodeError) as exc:
         logger.warning("LLM update unavailable (%s), using fallback append", exc)
         is_degraded = True
         existing_content = article.get("content") or ""
@@ -507,12 +506,12 @@ async def update_article_from_source(
         parsed = {
             "content": f"{existing_content}\n\n## {src_title}\n{src_content}",
             "relationship": "confirms",
-            "summary": "Source appended (LLM unavailable)",
+            "changes_summary": "Source appended (LLM unavailable)",
         }
         relationship = "confirms"
 
     new_content: str = parsed.get("content") or ""
-    summary: str = parsed.get("summary") or "Article updated with new source"
+    summary: str = parsed.get("changes_summary") or "Article updated with new source"
     token_count = _count_tokens(new_content)
 
     # ---- Update article, link source, record mutation ----

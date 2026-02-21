@@ -107,12 +107,12 @@ def _make_cursor(fetchone_seq=None, fetchall_seq=None):
 
 def _llm_ok(title="Compiled Title", content="Compiled content.", rels=None) -> str:
     if rels is None:
-        rels = [{"source_index": 1, "relationship": "originates"}]
-    return json.dumps({"title": title, "content": content, "relationships": rels})
+        rels = [{"source_id": SOURCE_ID_1, "relationship": "originates"}]
+    return json.dumps({"title": title, "content": content, "source_relationships": rels})
 
 
 def _llm_update_ok(content="Updated content.", relationship="confirms", summary="Updated.") -> str:
-    return json.dumps({"content": content, "relationship": relationship, "summary": summary})
+    return json.dumps({"content": content, "relationship": relationship, "changes_summary": summary})
 
 
 def _patch_rs(rs=None):
@@ -213,8 +213,9 @@ class TestBuildCompilationPrompt:
             {"id": SOURCE_ID_2, "title": "B", "content": "cb"},
         ]
         prompt = _build_compilation_prompt(sources, None, 2000)
-        assert "Source 1" in prompt
-        assert "Source 2" in prompt
+        # Prompt lists sources by id (format: "Source id=<uuid>: Title")
+        assert SOURCE_ID_1 in prompt
+        assert SOURCE_ID_2 in prompt
 
 
 # ---------------------------------------------------------------------------
@@ -343,11 +344,11 @@ class TestCompileArticle:
         art = _article_row(ARTICLE_ID, "Compiled content.")
         llm_resp = _llm_ok(
             content="Compiled content.",
-            rels=[{"source_index": 1, "relationship": "originates"}],
+            rels=[{"source_id": SOURCE_ID_1, "relationship": "originates"}],
         )
         cur = _make_cursor(fetchone_seq=[src, art])
 
-        async def mock_llm(prompt):
+        async def mock_llm(prompt, **_kw):
             return llm_resp
 
         with patch("valence.core.compilation.get_cursor", return_value=cur), \
@@ -368,13 +369,13 @@ class TestCompileArticle:
         llm_resp = _llm_ok(
             content="Python 3.12 synthesized article.",
             rels=[
-                {"source_index": 1, "relationship": "originates"},
-                {"source_index": 2, "relationship": "confirms"},
+                {"source_id": SOURCE_ID_1, "relationship": "originates"},
+                {"source_id": SOURCE_ID_2, "relationship": "confirms"},
             ],
         )
         cur = _make_cursor(fetchone_seq=[src1, src2, art])
 
-        async def mock_llm(prompt):
+        async def mock_llm(prompt, **_kw):
             return llm_resp
 
         with patch("valence.core.compilation.get_cursor", return_value=cur), \
@@ -393,7 +394,7 @@ class TestCompileArticle:
         art = _article_row()
         cur = _make_cursor(fetchone_seq=[src, art])
 
-        async def mock_llm(prompt):
+        async def mock_llm(prompt, **_kw):
             return _llm_ok()
 
         with patch("valence.core.compilation.get_cursor", return_value=cur), \
@@ -411,7 +412,7 @@ class TestCompileArticle:
         art = _article_row(ARTICLE_ID, "## Source A\nShort content.")
         cur = _make_cursor(fetchone_seq=[src, art])
 
-        async def fail_llm(prompt):
+        async def fail_llm(prompt, **_kw):
             raise NotImplementedError("no backend")
 
         with patch("valence.core.compilation.get_cursor", return_value=cur), \
@@ -427,7 +428,7 @@ class TestCompileArticle:
         art = _article_row()
         cur = _make_cursor(fetchone_seq=[src, art])
 
-        async def bad_llm(prompt):
+        async def bad_llm(prompt, **_kw):
             return "this is not json"
 
         with patch("valence.core.compilation.get_cursor", return_value=cur), \
@@ -444,7 +445,7 @@ class TestCompileArticle:
         cur = _make_cursor(fetchone_seq=[src, art])
         prompts_seen: list[str] = []
 
-        async def capturing_llm(prompt):
+        async def capturing_llm(prompt, **_kw):
             prompts_seen.append(prompt)
             return _llm_ok()
 
@@ -471,7 +472,7 @@ class TestCompileArticleRightSizing:
         llm_resp = json.dumps({
             "title": "Big Article",
             "content": big_content,
-            "relationships": [{"source_index": 1, "relationship": "originates"}],
+            "source_relationships": [{"source_id": SOURCE_ID_1, "relationship": "originates"}],
         })
 
         cur = _make_cursor(fetchone_seq=[src, art])
@@ -484,7 +485,7 @@ class TestCompileArticleRightSizing:
 
         cur.execute.side_effect = track_execute
 
-        async def mock_llm(prompt):
+        async def mock_llm(prompt, **_kw):
             return llm_resp
 
         tiny_rs = {"max_tokens": 10, "min_tokens": 1, "target_tokens": 5}
@@ -506,7 +507,7 @@ class TestCompileArticleRightSizing:
         llm_resp = json.dumps({
             "title": "Short",
             "content": short_content,
-            "relationships": [{"source_index": 1, "relationship": "originates"}],
+            "source_relationships": [{"source_id": SOURCE_ID_1, "relationship": "originates"}],
         })
 
         cur = _make_cursor(fetchone_seq=[src, art])
@@ -518,7 +519,7 @@ class TestCompileArticleRightSizing:
 
         cur.execute.side_effect = track_execute
 
-        async def mock_llm(prompt):
+        async def mock_llm(prompt, **_kw):
             return llm_resp
 
         with patch("valence.core.compilation.get_cursor", return_value=cur), \
@@ -559,7 +560,7 @@ class TestUpdateArticleFromSource:
         updated = _article_row(ARTICLE_ID, "Updated content.", version=2)
         cur = _make_cursor(fetchone_seq=[art, src, updated])
 
-        async def mock_llm(prompt):
+        async def mock_llm(prompt, **_kw):
             return _llm_update_ok("Updated content.", "confirms", "Added confirmation.")
 
         with patch("valence.core.compilation.get_cursor", return_value=cur), \
@@ -576,7 +577,7 @@ class TestUpdateArticleFromSource:
         updated = _article_row(ARTICLE_ID, "Python 3.12 updated.", version=2)
         cur = _make_cursor(fetchone_seq=[art, src, updated])
 
-        async def mock_llm(prompt):
+        async def mock_llm(prompt, **_kw):
             return _llm_update_ok("Python 3.12 updated.", "supersedes", "3.12 supersedes 3.11.")
 
         with patch("valence.core.compilation.get_cursor", return_value=cur), \
@@ -592,7 +593,7 @@ class TestUpdateArticleFromSource:
         updated = _article_row(ARTICLE_ID, "Python speed is contested.", version=2)
         cur = _make_cursor(fetchone_seq=[art, src, updated])
 
-        async def mock_llm(prompt):
+        async def mock_llm(prompt, **_kw):
             return _llm_update_ok("Python speed is contested.", "contradicts", "Speed contradicted.")
 
         with patch("valence.core.compilation.get_cursor", return_value=cur), \
@@ -608,7 +609,7 @@ class TestUpdateArticleFromSource:
         updated = _article_row(ARTICLE_ID, "Both asyncio and threads work.", version=2)
         cur = _make_cursor(fetchone_seq=[art, src, updated])
 
-        async def mock_llm(prompt):
+        async def mock_llm(prompt, **_kw):
             return _llm_update_ok(updated["content"], "contends", "Alternative added.")
 
         with patch("valence.core.compilation.get_cursor", return_value=cur), \
@@ -625,7 +626,7 @@ class TestUpdateArticleFromSource:
         updated = _article_row(version=2)
         cur = _make_cursor(fetchone_seq=[art, src, updated])
 
-        async def mock_llm(prompt):
+        async def mock_llm(prompt, **_kw):
             return json.dumps({"content": "Updated.", "relationship": "invented_type", "summary": "x"})
 
         with patch("valence.core.compilation.get_cursor", return_value=cur), \
@@ -643,7 +644,7 @@ class TestUpdateArticleFromSource:
         updated = _article_row(ARTICLE_ID, "Existing article.\n\n## Extra Source\nExtra information here.")
         cur = _make_cursor(fetchone_seq=[art, src, updated])
 
-        async def fail_llm(prompt):
+        async def fail_llm(prompt, **_kw):
             raise NotImplementedError("no backend")
 
         with patch("valence.core.compilation.get_cursor", return_value=cur), \
@@ -661,7 +662,7 @@ class TestUpdateArticleFromSource:
         updated = _article_row(version=2)
         cur = _make_cursor(fetchone_seq=[art, src, updated])
 
-        async def mock_llm(prompt):
+        async def mock_llm(prompt, **_kw):
             return _llm_update_ok()
 
         with patch("valence.core.compilation.get_cursor", return_value=cur), \
@@ -689,7 +690,7 @@ class TestUpdateArticleFromSource:
 
         cur.execute.side_effect = track_execute
 
-        async def mock_llm(prompt):
+        async def mock_llm(prompt, **_kw):
             return json.dumps({"content": big_content, "relationship": "confirms", "summary": "Big."})
 
         tiny_rs = {"max_tokens": 10, "min_tokens": 1, "target_tokens": 5}
@@ -734,7 +735,7 @@ class TestProcessMutationQueue:
             fetchall_seq=[[item], [source_link]],
         )
 
-        async def mock_llm(prompt):
+        async def mock_llm(prompt, **_kw):
             return _llm_ok()
 
         with patch("valence.core.compilation.get_cursor", return_value=cur), \
@@ -861,7 +862,7 @@ class TestProcessMutationQueue:
             fetchall_seq=[[item], [source_link]],
         )
 
-        async def mock_llm(prompt):
+        async def mock_llm(prompt, **_kw):
             return _llm_ok()
 
         with patch("valence.core.compilation.get_cursor", return_value=cur), \

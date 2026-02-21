@@ -24,7 +24,10 @@ from valence.core.response import ValenceResponse, ok, err
 
 from valence.core.inference import (
     TASK_CONTENTION,
+    TASK_OUTPUT_SCHEMAS,
+    InferenceSchemaError,
     provider as _inference_provider,
+    validate_output,
 )
 
 logger = logging.getLogger(__name__)
@@ -81,7 +84,7 @@ _SCHEMA_ENSURED = False
 
 
 def _ensure_contention_schema() -> None:
-    """Make belief_b_id nullable, add source_id and degraded to contentions.
+    """Make related_article_id nullable, add source_id and degraded to contentions.
 
     The original tensions table required two article FKs; for source-triggered
     contentions we need only one article + a source reference.  This runs once
@@ -95,7 +98,7 @@ def _ensure_contention_schema() -> None:
             cur.execute(
                 """
                 ALTER TABLE contentions
-                    ALTER COLUMN belief_b_id DROP NOT NULL
+                    ALTER COLUMN related_article_id DROP NOT NULL
                 """
             )
     except Exception:
@@ -177,6 +180,7 @@ def _serialize_row(row: dict[str, Any]) -> dict[str, Any]:
 
 def _build_detection_prompt(article_content: str, source_content: str) -> str:
     """Build LLM prompt asking whether the source contends with the article."""
+    schema = TASK_OUTPUT_SCHEMAS[TASK_CONTENTION]
     return f"""You are a knowledge analyst. Assess whether a new source contradicts or contends with an existing knowledge article.
 
 EXISTING ARTICLE:
@@ -190,15 +194,10 @@ Assess:
 2. Does the source CONTEND with the article (alternative viewpoint, partial disagreement)?
 3. How MATERIAL is the disagreement? (0.0 = trivial/irrelevant, 1.0 = fundamentally incompatible)
 
-Respond ONLY with valid JSON (no markdown fences):
-{{
-  "contends": true|false,
-  "contention_type": "contradiction|scope_conflict|temporal_conflict|partial_overlap",
-  "materiality": 0.0-1.0,
-  "description": "<one sentence describing the disagreement, or null if no disagreement>"
-}}
+Respond ONLY with valid JSON matching this exact schema (no markdown fences):
+{schema}
 
-If there is no disagreement, set "contends": false and "materiality": 0.0."""
+If there is no disagreement, set "is_contention": false and "materiality": 0.0."""
 
 
 # ---------------------------------------------------------------------------
@@ -298,12 +297,12 @@ async def detect_contention(article_id: str, source_id: str) -> ValenceResponse:
     is_degraded = False
     try:
         llm_response = await _call_llm(prompt)
-        parsed = _parse_llm_json(llm_response, ["contends", "materiality"])
-        contends: bool = bool(parsed.get("contends", False))
+        parsed = validate_output(TASK_CONTENTION, llm_response)
+        contends: bool = bool(parsed.get("is_contention", False))
         materiality: float = float(parsed.get("materiality", 0.0))
         contention_type: str = parsed.get("contention_type", "contradiction")
-        description: str | None = parsed.get("description")
-    except (NotImplementedError, ValueError, json.JSONDecodeError) as exc:
+        description: str | None = parsed.get("explanation")
+    except (NotImplementedError, InferenceSchemaError, ValueError, json.JSONDecodeError) as exc:
         logger.info(
             "LLM contention detection unavailable (%s); using heuristic for article=%s source=%s",
             exc, article_id, source_id,
@@ -332,7 +331,7 @@ async def detect_contention(article_id: str, source_id: str) -> ValenceResponse:
         cur.execute(
             """
             INSERT INTO contentions
-                (belief_a_id, source_id, type, description, severity, status, materiality,
+                (article_id, source_id, type, description, severity, status, materiality,
                  degraded)
             VALUES (%s, %s, %s, %s,
                     CASE WHEN %s::numeric >= 0.7 THEN 'high'
@@ -388,7 +387,7 @@ async def list_contentions(
             params.append(status)
 
         if article_id is not None:
-            sql += " AND (belief_a_id = %s OR belief_b_id = %s)"
+            sql += " AND (article_id = %s OR related_article_id = %s)"
             params.extend([article_id, article_id])
 
         sql += " ORDER BY detected_at DESC"
@@ -437,9 +436,9 @@ async def resolve_contention(
         return err(f"Contention not found: {contention_id}")
 
     contention = dict(row)
-    article_id = str(contention["belief_a_id"])
+    article_id = str(contention["article_id"])
     source_id = str(contention.get("source_id") or "")
-    article_b_id = str(contention["belief_b_id"]) if contention.get("belief_b_id") else None
+    article_b_id = str(contention["related_article_id"]) if contention.get("related_article_id") else None
 
     updated_article: dict[str, Any] | None = None
 
