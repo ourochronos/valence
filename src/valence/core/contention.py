@@ -6,6 +6,7 @@ text-overlap heuristics. Only contentions above the ``materiality_threshold``
 (from ``system_config``) are persisted.
 
 Implements WU-08 (C7 — contention detection + surfacing).
+Updated WU-13: routes through unified InferenceProvider (C11, DR-8, DR-9).
 """
 
 from __future__ import annotations
@@ -19,10 +20,18 @@ from uuid import UUID
 
 from our_db import get_cursor
 
+from valence.core.inference import (
+    TASK_CONTENTION,
+    provider as _inference_provider,
+)
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# LLM Backend — same injectable pattern as compilation.py
+# LLM Backend — thin wrappers around unified inference provider (WU-13).
+#
+# set_llm_backend / _LLM_BACKEND / _call_llm are preserved for backward
+# compatibility.  Internally they delegate to InferenceProvider.
 # ---------------------------------------------------------------------------
 
 _LLM_BACKEND: Callable[[str], Any] | None = None
@@ -30,6 +39,8 @@ _LLM_BACKEND: Callable[[str], Any] | None = None
 
 def set_llm_backend(fn: Callable[[str], Any] | None) -> None:
     """Configure the LLM callable used for contention detection.
+
+    Delegates to the unified inference provider (WU-13).
 
     Args:
         fn: A sync or async callable ``(prompt: str) -> str``, or ``None`` to reset.
@@ -41,24 +52,23 @@ def set_llm_backend(fn: Callable[[str], Any] | None) -> None:
     """
     global _LLM_BACKEND
     _LLM_BACKEND = fn
+    _inference_provider.configure(fn)
 
 
 async def _call_llm(prompt: str) -> str:
-    """Invoke the configured LLM backend.
+    """Invoke the configured LLM backend via the unified inference provider.
 
     Raises:
         NotImplementedError: If no backend is configured.
     """
-    if _LLM_BACKEND is None:
+    result = await _inference_provider.infer(TASK_CONTENTION, prompt)
+    if result.degraded:
         raise NotImplementedError(
-            "No LLM backend configured for contention detection. "
-            "Call valence.core.contention.set_llm_backend(fn) with a "
-            "sync or async callable (str) -> str."
+            result.error
+            or "No LLM backend configured for contention detection. "
+            "Call valence.core.contention.set_llm_backend(fn)."
         )
-    result = _LLM_BACKEND(prompt)
-    if asyncio.iscoroutine(result):
-        return await result
-    return result
+    return result.content
 
 
 # ---------------------------------------------------------------------------
@@ -69,7 +79,7 @@ _SCHEMA_ENSURED = False
 
 
 def _ensure_contention_schema() -> None:
-    """Make belief_b_id nullable and add source_id to contentions table.
+    """Make belief_b_id nullable, add source_id and degraded to contentions.
 
     The original tensions table required two article FKs; for source-triggered
     contentions we need only one article + a source reference.  This runs once
@@ -97,6 +107,16 @@ def _ensure_contention_schema() -> None:
                     ADD COLUMN IF NOT EXISTS source_id UUID
                         REFERENCES sources(id) ON DELETE SET NULL
                 """
+            )
+    except Exception:
+        pass  # Column already exists; ignore.
+
+    # WU-13 / DR-9: degraded flag for heuristic-detected contentions
+    try:
+        with get_cursor() as cur:
+            cur.execute(
+                "ALTER TABLE contentions "
+                "ADD COLUMN IF NOT EXISTS degraded BOOLEAN DEFAULT FALSE"
             )
     except Exception:
         pass  # Column already exists; ignore.
@@ -273,6 +293,7 @@ async def detect_contention(article_id: str, source_id: str) -> dict[str, Any] |
 
     # ---- LLM detection ----
     prompt = _build_detection_prompt(article_content, source_content)
+    is_degraded = False
     try:
         llm_response = await _call_llm(prompt)
         parsed = _parse_llm_json(llm_response, ["contends", "materiality"])
@@ -285,6 +306,7 @@ async def detect_contention(article_id: str, source_id: str) -> dict[str, Any] |
             "LLM contention detection unavailable (%s); using heuristic for article=%s source=%s",
             exc, article_id, source_id,
         )
+        is_degraded = True
         materiality = _heuristic_materiality(article_content, source_content)
         contends = materiality > 0
         contention_type = "contradiction"
@@ -308,12 +330,13 @@ async def detect_contention(article_id: str, source_id: str) -> dict[str, Any] |
         cur.execute(
             """
             INSERT INTO contentions
-                (belief_a_id, source_id, type, description, severity, status, materiality)
+                (belief_a_id, source_id, type, description, severity, status, materiality,
+                 degraded)
             VALUES (%s, %s, %s, %s,
                     CASE WHEN %s::numeric >= 0.7 THEN 'high'
                          WHEN %s::numeric >= 0.4 THEN 'medium'
                          ELSE 'low' END,
-                    'detected', %s)
+                    'detected', %s, %s)
             RETURNING *
             """,
             (
@@ -322,6 +345,7 @@ async def detect_contention(article_id: str, source_id: str) -> dict[str, Any] |
                 description,
                 materiality, materiality,  # two references for the CASE
                 materiality,
+                is_degraded,              # DR-9: mark heuristic-detected contentions
             ),
         )
         row = cur.fetchone()

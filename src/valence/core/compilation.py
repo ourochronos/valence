@@ -4,6 +4,7 @@ Provides LLM-based article compilation from sources, incremental updates,
 and a mutation queue processor (DR-6 deferred follow-ups).
 
 Implements WU-06 (C2 compilation pipeline, C4 self-organization).
+Updated WU-13: routes through unified InferenceProvider (C11, DR-8, DR-9).
 """
 
 from __future__ import annotations
@@ -17,19 +18,28 @@ from uuid import UUID
 
 from our_db import get_cursor
 
+from valence.core.inference import (
+    TASK_COMPILE,
+    TASK_UPDATE,
+    provider as _inference_provider,
+)
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# LLM Backend — injectable for testing and production config
+# LLM Backend — thin wrappers around unified inference provider (WU-13).
+#
+# set_llm_backend / _LLM_BACKEND / _call_llm are preserved for backward
+# compatibility.  Internally they delegate to InferenceProvider.
 # ---------------------------------------------------------------------------
 
-# Set this to a sync or async callable (str) -> str.
-# Call set_llm_backend() to configure.
 _LLM_BACKEND: Callable[[str], Any] | None = None
 
 
 def set_llm_backend(fn: Callable[[str], Any] | None) -> None:
     """Configure the LLM callable used for compilation.
+
+    Delegates to the unified inference provider (WU-13).
 
     Args:
         fn: A sync or async callable ``(prompt: str) -> str``, or ``None`` to reset.
@@ -38,23 +48,14 @@ def set_llm_backend(fn: Callable[[str], Any] | None) -> None:
 
         # In tests:
         set_llm_backend(lambda p: json.dumps({"title": "T", "content": "C", "relationships": []}))
-
-        # In production (subprocess):
-        import subprocess
-        def call_ollama(prompt):
-            result = subprocess.run(
-                ["ollama", "run", "llama3.2", "--nowordwrap"],
-                input=prompt, capture_output=True, text=True, timeout=120
-            )
-            return result.stdout.strip()
-        set_llm_backend(call_ollama)
     """
     global _LLM_BACKEND
     _LLM_BACKEND = fn
+    _inference_provider.configure(fn)
 
 
 async def _call_llm(prompt: str) -> str:
-    """Invoke the configured LLM backend.
+    """Invoke the configured LLM backend via the unified inference provider.
 
     Args:
         prompt: Prompt string.
@@ -63,19 +64,39 @@ async def _call_llm(prompt: str) -> str:
         LLM response string.
 
     Raises:
-        NotImplementedError: If no backend is configured via set_llm_backend().
+        NotImplementedError: If no backend is configured.
     """
-    if _LLM_BACKEND is None:
+    result = await _inference_provider.infer(TASK_COMPILE, prompt)
+    if result.degraded:
         raise NotImplementedError(
-            "No LLM backend configured for compilation. "
-            "Call valence.core.compilation.set_llm_backend(fn) with a "
-            "sync or async callable (str) -> str, or configure "
-            "VALENCE_LLM_CMD in the environment."
+            result.error
+            or "No LLM backend configured for compilation. "
+            "Call valence.core.compilation.set_llm_backend(fn)."
         )
-    result = _LLM_BACKEND(prompt)
-    if asyncio.iscoroutine(result):
-        return await result
-    return result
+    return result.content
+
+
+# ---------------------------------------------------------------------------
+# Schema helpers — degraded column (WU-13 / DR-9)
+# ---------------------------------------------------------------------------
+
+_DEGRADED_SCHEMA_ENSURED = False
+
+
+def _ensure_degraded_column() -> None:
+    """Add ``degraded`` column to articles if not present. Runs once per process."""
+    global _DEGRADED_SCHEMA_ENSURED
+    if _DEGRADED_SCHEMA_ENSURED:
+        return
+    try:
+        with get_cursor() as cur:
+            cur.execute(
+                "ALTER TABLE articles "
+                "ADD COLUMN IF NOT EXISTS degraded BOOLEAN DEFAULT FALSE"
+            )
+    except Exception:
+        pass
+    _DEGRADED_SCHEMA_ENSURED = True
 
 
 # ---------------------------------------------------------------------------
@@ -301,11 +322,13 @@ async def compile_article(
 
     # ---- LLM compilation ----
     prompt = _build_compilation_prompt(sources, title_hint, target_tokens)
+    is_degraded = False
     try:
         llm_response = await _call_llm(prompt)
         parsed = _parse_llm_json(llm_response, ["content"])
     except (NotImplementedError, ValueError, json.JSONDecodeError) as exc:
         logger.warning("LLM compilation unavailable (%s), using fallback concatenation", exc)
+        is_degraded = True
         content_parts = [
             f"## {s.get('title') or 'Source'}\n{s.get('content', '')}"
             for s in sources
@@ -394,7 +417,34 @@ async def compile_article(
                 "Article %s queued for split (tokens=%d > max=%d)", article_id, token_count, max_tokens
             )
 
-    return {"success": True, "article": article}
+        # DR-9: Mark degraded articles and queue for reprocessing (WU-13).
+        if is_degraded:
+            try:
+                cur.execute(
+                    "UPDATE articles SET degraded = TRUE WHERE id = %s",
+                    (article_id,),
+                )
+                cur.execute(
+                    """
+                    INSERT INTO mutation_queue (operation, article_id, priority, payload)
+                    VALUES ('recompile_degraded', %s, 5, %s::jsonb)
+                    """,
+                    (
+                        article_id,
+                        json.dumps({"reason": "inference_unavailable_at_compile_time"}),
+                    ),
+                )
+                logger.info(
+                    "Article %s marked degraded; queued for recompile when inference available",
+                    article_id,
+                )
+            except Exception as exc:  # pragma: no cover
+                logger.warning("Failed to mark article %s as degraded: %s", article_id, exc)
+
+    result_dict: dict[str, Any] = {"success": True, "article": article}
+    if is_degraded:
+        result_dict["degraded"] = True
+    return result_dict
 
 
 async def update_article_from_source(
@@ -439,6 +489,7 @@ async def update_article_from_source(
 
     # ---- LLM update ----
     prompt = _build_update_prompt(article, source, target_tokens)
+    is_degraded = False
     try:
         llm_response = await _call_llm(prompt)
         parsed = _parse_llm_json(llm_response, ["content", "relationship"])
@@ -450,6 +501,7 @@ async def update_article_from_source(
             relationship = "confirms"
     except (NotImplementedError, ValueError, json.JSONDecodeError) as exc:
         logger.warning("LLM update unavailable (%s), using fallback append", exc)
+        is_degraded = True
         existing_content = article.get("content") or ""
         src_title = source.get("title") or "New Source"
         src_content = (source.get("content") or "").strip()
@@ -524,7 +576,37 @@ async def update_article_from_source(
                 article_id, token_count, max_tokens,
             )
 
-    return {"success": True, "article": updated_article, "relationship": relationship}
+        # DR-9: Mark degraded articles and queue for reprocessing (WU-13).
+        if is_degraded:
+            try:
+                cur.execute(
+                    "UPDATE articles SET degraded = TRUE WHERE id = %s",
+                    (article_id,),
+                )
+                cur.execute(
+                    """
+                    INSERT INTO mutation_queue (operation, article_id, priority, payload)
+                    VALUES ('recompile_degraded', %s, 5, %s::jsonb)
+                    """,
+                    (
+                        article_id,
+                        json.dumps({"reason": "inference_unavailable_at_update_time"}),
+                    ),
+                )
+                logger.info(
+                    "Article %s update marked degraded; queued for recompile", article_id
+                )
+            except Exception as exc:  # pragma: no cover
+                logger.warning("Failed to mark article %s degraded after update: %s", article_id, exc)
+
+    update_result: dict[str, Any] = {
+        "success": True,
+        "article": updated_article,
+        "relationship": relationship,
+    }
+    if is_degraded:
+        update_result["degraded"] = True
+    return update_result
 
 
 async def process_mutation_queue(batch_size: int = 10) -> int:
@@ -596,8 +678,15 @@ async def process_mutation_queue(batch_size: int = 10) -> int:
 async def _process_mutation_item(operation: str, article_id: str, payload: dict) -> None:
     """Execute a single mutation queue item. Raises on failure."""
 
-    if operation == "recompile":
-        # Fetch current sources and recompile
+    if operation in ("recompile", "recompile_degraded"):
+        # For recompile_degraded: skip if inference still not available (DR-9).
+        if operation == "recompile_degraded" and not _inference_provider.available:
+            logger.info(
+                "recompile_degraded: inference still unavailable for article %s; skipping",
+                article_id,
+            )
+            return  # Leave pending; retried on next queue run
+
         with get_cursor() as cur:
             cur.execute(
                 "SELECT source_id FROM article_sources WHERE article_id = %s ORDER BY added_at",
@@ -609,6 +698,13 @@ async def _process_mutation_item(operation: str, article_id: str, payload: dict)
             result = await compile_article(source_ids)
             if not result.get("success"):
                 raise RuntimeError(f"recompile failed: {result.get('error')}")
+            # Clear degraded flag if this recompile succeeded without degradation
+            if not result.get("degraded"):
+                with get_cursor() as cur:
+                    cur.execute(
+                        "UPDATE articles SET degraded = FALSE WHERE id = %s",
+                        (article_id,),
+                    )
             logger.info(
                 "Recompile queued for article %s → new article %s",
                 article_id, result["article"]["id"],
