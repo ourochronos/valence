@@ -1,10 +1,9 @@
 """Substrate tool definitions and implementations.
 
-Tool implementations extracted from mcp_server.py for use in the unified HTTP server.
-Descriptions include behavioral conditioning for proactive Claude usage.
+Tool implementations for the Valence v2 knowledge system (WU-04).
 
-This package re-exports all public names so that existing imports like
-``from valence.substrate.tools import belief_query`` continue to work.
+This package re-exports all public tool functions so that existing imports
+continue to work after the beliefs→articles migration.
 """
 
 from __future__ import annotations
@@ -12,16 +11,15 @@ from __future__ import annotations
 # Re-export shared utilities (also ensures patch target backward compat)
 from ._common import _validate_enum, get_cursor  # noqa: F401
 
-# Re-export all tool implementations
-from .beliefs import (  # noqa: F401
-    _content_hash,
-    _log_retrievals,
-    _reinforce_belief,
-    belief_create,
-    belief_get,
-    belief_query,
-    belief_search,
-    belief_supersede,
+# Re-export article tool implementations (WU-04, replaces beliefs.py)
+from .articles import (  # noqa: F401
+    article_create,
+    article_get,
+    article_search,
+    article_update,
+    provenance_get,
+    provenance_link,
+    provenance_trace,
 )
 
 # Re-export tool definitions
@@ -38,15 +36,15 @@ __all__ = [
     # Handlers
     "SUBSTRATE_HANDLERS",
     "handle_substrate_tool",
-    # Beliefs
-    "belief_query",
-    "belief_create",
-    "belief_supersede",
-    "belief_get",
-    "belief_search",
-    "_content_hash",
-    "_reinforce_belief",
-    "_log_retrievals",
+    # Article tools
+    "article_create",
+    "article_get",
+    "article_update",
+    "article_search",
+    # Provenance tools
+    "provenance_link",
+    "provenance_get",
+    "provenance_trace",
     # Entities
     "entity_get",
     "entity_search",

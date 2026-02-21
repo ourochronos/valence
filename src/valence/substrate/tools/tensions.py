@@ -10,7 +10,35 @@ from typing import Any
 
 from . import _common
 from ._common import Tension
-from .beliefs import belief_supersede
+
+
+def _supersede_article(article_id: str, new_content: str, reason: str) -> dict:
+    """Supersede an article with new content (inline, no beliefs dependency)."""
+    import json
+    from ...core.articles import _compute_embedding, _count_tokens
+    content_hash = __import__("hashlib").sha256(new_content.strip().lower().encode()).hexdigest()
+    embedding_str = _compute_embedding(new_content)
+    with _common.get_cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO articles (content, confidence, domain_path, size_tokens, content_hash, embedding,
+                                  supersedes_id, compiled_at, extraction_method)
+            SELECT %s, confidence, domain_path, %s, %s, %s::vector, id, NOW(), %s
+            FROM articles WHERE id = %s
+            RETURNING id
+            """,
+            (new_content, _count_tokens(new_content), content_hash, embedding_str,
+             f"supersession: {reason}", article_id),
+        )
+        new_row = cur.fetchone()
+        if not new_row:
+            return {"success": False, "error": f"Article {article_id} not found"}
+        new_id = str(new_row["id"])
+        cur.execute(
+            "UPDATE articles SET status='superseded', superseded_by_id=%s, modified_at=NOW() WHERE id=%s",
+            (new_id, article_id),
+        )
+        return {"success": True, "new_id": new_id}
 
 
 def tension_list(
@@ -94,13 +122,13 @@ def tension_resolve(
             # Get belief B content and supersede A with it
             cur.execute("SELECT content FROM beliefs WHERE id = %s", (belief_b_id,))
             b_content = cur.fetchone()["content"]
-            belief_supersede(str(belief_a_id), b_content, f"Tension resolution: {resolution}")
+            _supersede_article(str(belief_a_id), b_content, f"Tension resolution: {resolution}")
 
         elif action == "supersede_b":
             # Get belief A content and supersede B with it
             cur.execute("SELECT content FROM beliefs WHERE id = %s", (belief_a_id,))
             a_content = cur.fetchone()["content"]
-            belief_supersede(str(belief_b_id), a_content, f"Tension resolution: {resolution}")
+            _supersede_article(str(belief_b_id), a_content, f"Tension resolution: {resolution}")
 
         elif action == "archive_both":
             cur.execute(

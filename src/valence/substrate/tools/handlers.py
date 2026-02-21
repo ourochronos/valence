@@ -10,27 +10,35 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from .beliefs import (
-    belief_create,
-    belief_get,
-    belief_query,
-    belief_search,
-    belief_supersede,
+from .articles import (
+    article_create,
+    article_get,
+    article_search,
+    article_update,
+    provenance_get,
+    provenance_link,
+    provenance_trace,
 )
 from .entities import entity_get, entity_search
 from .tensions import tension_list, tension_resolve
 
 # Tool name to handler mapping
 SUBSTRATE_HANDLERS: dict[str, Callable[..., dict[str, Any]]] = {
-    "belief_query": belief_query,
-    "belief_create": belief_create,
-    "belief_supersede": belief_supersede,
-    "belief_get": belief_get,
+    # Article tools (WU-04)
+    "article_create": article_create,
+    "article_get": article_get,
+    "article_update": article_update,
+    "article_search": article_search,
+    # Provenance tools (WU-04)
+    "provenance_link": provenance_link,
+    "provenance_get": provenance_get,
+    "provenance_trace": provenance_trace,
+    # Entity tools
     "entity_get": entity_get,
     "entity_search": entity_search,
+    # Contention tools (legacy name kept for compat)
     "tension_list": tension_list,
     "tension_resolve": tension_resolve,
-    "belief_search": belief_search,
 }
 
 

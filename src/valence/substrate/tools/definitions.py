@@ -390,4 +390,165 @@ SUBSTRATE_TOOLS = [
             "required": ["query"],
         },
     ),
+    # -------------------------------------------------------------------------
+    # Article tools (WU-04 — replaces belief tools)
+    # -------------------------------------------------------------------------
+    Tool(
+        name="article_create",
+        description=(
+            "Create a new knowledge article compiled from one or more sources.\n\n"
+            "Use this to record synthesised, compiled knowledge that may draw on "
+            "multiple source documents or conversations."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "description": "Article body text (required)",
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Optional human-readable title",
+                },
+                "source_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "UUIDs of source documents this article originates from",
+                },
+                "author_type": {
+                    "type": "string",
+                    "enum": ["system", "operator", "agent"],
+                    "default": "system",
+                    "description": "Who authored this article",
+                },
+                "domain_path": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Hierarchical domain tags (e.g. ['python', 'stdlib'])",
+                },
+            },
+            "required": ["content"],
+        },
+    ),
+    Tool(
+        name="article_get",
+        description=(
+            "Get an article by ID, optionally with its full provenance list."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "article_id": {
+                    "type": "string",
+                    "description": "UUID of the article",
+                },
+                "include_provenance": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Include linked source provenance in the response",
+                },
+            },
+            "required": ["article_id"],
+        },
+    ),
+    Tool(
+        name="article_update",
+        description=(
+            "Update an article's content. Increments version and records an 'updated' mutation."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "article_id": {
+                    "type": "string",
+                    "description": "UUID of the article to update",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "New article body text",
+                },
+                "source_id": {
+                    "type": "string",
+                    "description": "Optional UUID of the source that triggered this update",
+                },
+            },
+            "required": ["article_id", "content"],
+        },
+    ),
+    Tool(
+        name="article_search",
+        description=(
+            "Search articles via full-text and semantic search.\n\n"
+            "Returns articles ordered by relevance. Uses both keyword matching and "
+            "vector similarity when embeddings are available."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query string",
+                },
+                "limit": {
+                    "type": "integer",
+                    "default": 10,
+                    "description": "Maximum number of results (max 50)",
+                },
+                "domain_filter": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional domain path segments to restrict results",
+                },
+            },
+            "required": ["query"],
+        },
+    ),
+    Tool(
+        name="provenance_link",
+        description=(
+            "Link a source to an article with a provenance relationship.\n\n"
+            "Relationship types: originates, confirms, supersedes, contradicts, contends"
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "article_id": {"type": "string", "description": "UUID of the article"},
+                "source_id": {"type": "string", "description": "UUID of the source"},
+                "relationship": {
+                    "type": "string",
+                    "enum": ["originates", "confirms", "supersedes", "contradicts", "contends"],
+                    "description": "Relationship type",
+                },
+                "notes": {"type": "string", "description": "Optional notes about the relationship"},
+            },
+            "required": ["article_id", "source_id", "relationship"],
+        },
+    ),
+    Tool(
+        name="provenance_get",
+        description="Get the full provenance list for an article.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "article_id": {"type": "string", "description": "UUID of the article"},
+            },
+            "required": ["article_id"],
+        },
+    ),
+    Tool(
+        name="provenance_trace",
+        description=(
+            "Trace which sources likely contributed a specific claim in an article.\n\n"
+            "Uses text similarity to rank sources by relevance to the claim."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "article_id": {"type": "string", "description": "UUID of the article"},
+                "claim_text": {"type": "string", "description": "The specific claim to trace"},
+            },
+            "required": ["article_id", "claim_text"],
+        },
+    ),
 ]
