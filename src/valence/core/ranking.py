@@ -1,9 +1,11 @@
-"""Multi-signal ranking for belief retrieval.
+"""Multi-signal ranking for article retrieval.
 
-Combines semantic similarity, confidence, and recency into a single
-final score. Used by MCP tools and CLI for result ordering.
+Combines semantic similarity, confidence, and freshness into a single
+final score. Used by MCP tools, CLI, and the retrieval layer.
 
-Extracted from cli/utils.py for reuse across the codebase.
+Originally extracted from cli/utils.py for reuse across the codebase;
+adapted in WU-05 to support articles (renamed from beliefs) and an
+explicit freshness factor derived from source ages / article update times.
 """
 
 from __future__ import annotations
@@ -38,12 +40,17 @@ class RankingConfig:
 DEFAULT_RANKING = RankingConfig()
 
 
-def compute_confidence_score(belief: dict) -> float:
+def compute_confidence_score(article: dict) -> float:
     """Compute aggregated confidence score from 6D confidence vector.
 
-    Uses geometric mean to penalize beliefs with any weak dimension.
+    Works with both article dicts (v2) and legacy belief dicts (v1).
+    Uses geometric mean to penalize articles with any weak dimension.
     Falls back to JSONB 'overall' field for backward compatibility.
+
+    Args:
+        article: Article (or legacy belief) dict from the database.
     """
+    belief = article  # alias — same structure, renamed concept
     # Try 6D confidence columns first
     src = belief.get("confidence_source", 0.5)
     meth = belief.get("confidence_method", 0.5)
@@ -104,6 +111,31 @@ def compute_recency_score(created_at: datetime | str | None, decay_rate: float =
     return min(1.0, max(0.0, recency))
 
 
+def compute_freshness_score(
+    article: dict,
+    decay_rate: float = 0.01,
+) -> float:
+    """Compute freshness score for an article based on its last update time.
+
+    Freshness is derived from ``compiled_at`` (preferred), ``modified_at``,
+    or ``created_at``, in that priority order.  Uses the same exponential
+    decay as ``compute_recency_score`` so weights are directly comparable.
+
+    Args:
+        article:    Article (or source) dict from the database.
+        decay_rate: Exponential decay rate (default 0.01 ≈ 69-day half-life).
+
+    Returns:
+        Float in [0, 1]; 1.0 = just updated, approaches 0 for old articles.
+    """
+    for col in ("compiled_at", "modified_at", "created_at"):
+        val = article.get(col)
+        if val is None:
+            continue
+        return compute_recency_score(val, decay_rate)
+    return 0.5  # Unknown age
+
+
 def multi_signal_rank(
     results: list[dict],
     semantic_weight: float = 0.50,
@@ -117,17 +149,21 @@ def multi_signal_rank(
 
     Formula: final_score = w_semantic * semantic + w_confidence * confidence + w_recency * recency
 
+    The recency signal uses ``compiled_at`` (preferred for articles), then
+    ``modified_at``, then ``created_at``, so freshness from source ages /
+    article compilation time is properly captured.
+
     Args:
-        results: List of belief dicts with 'similarity' (semantic score)
-        semantic_weight: Weight for semantic similarity (default 0.50)
-        confidence_weight: Weight for confidence score (default 0.35)
-        recency_weight: Weight for recency score (default 0.15)
-        decay_rate: Exponential decay rate for recency (default 0.01)
-        min_confidence: Filter out beliefs below this confidence (optional)
-        explain: Include score breakdown in results
+        results: List of article (or source) dicts with 'similarity' key.
+        semantic_weight: Weight for semantic similarity (default 0.50).
+        confidence_weight: Weight for confidence score (default 0.35).
+        recency_weight: Weight for recency / freshness (default 0.15).
+        decay_rate: Exponential decay rate for recency (default 0.01).
+        min_confidence: Filter out articles below this confidence (optional).
+        explain: Include score breakdown in each result dict.
 
     Returns:
-        Sorted results with 'final_score' and optional 'score_breakdown'
+        Sorted results with 'final_score' and optional 'score_breakdown'.
     """
     # Normalize weights to sum to 1.0
     total_weight = semantic_weight + confidence_weight + recency_weight
@@ -152,9 +188,9 @@ def multi_signal_rank(
         if min_confidence is not None and confidence < min_confidence:
             continue
 
-        # Recency score
-        created_at = r.get("created_at")
-        recency = compute_recency_score(created_at, decay_rate) if created_at else 0.5
+        # Freshness / recency score — prefer compiled_at (articles) over created_at
+        freshness_ts = r.get("compiled_at") or r.get("modified_at") or r.get("created_at")
+        recency = compute_recency_score(freshness_ts, decay_rate) if freshness_ts else 0.5
 
         # Final score
         final_score = semantic_weight * semantic + confidence_weight * confidence + recency_weight * recency
