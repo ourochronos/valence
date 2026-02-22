@@ -185,7 +185,8 @@ async def sources_search_endpoint(request: Request) -> JSONResponse:
     try:
         from ...core.sources import search_sources
 
-        sources = await search_sources(query=query, limit=limit)
+        result = await search_sources(query=query, limit=limit)
+        sources = result.data if result.success else []
         return JSONResponse({"success": True, "sources": sources, "total_count": len(sources)})
 
     except Exception:

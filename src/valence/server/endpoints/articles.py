@@ -163,15 +163,16 @@ async def search_articles_endpoint(request: Request) -> JSONResponse:
     try:
         from ...core.articles import search_articles
 
-        results = search_articles(
+        result = await search_articles(
             query=query,
             limit=limit,
             domain_filter=body.get("domain_filter"),
         )
+        articles = result.data if result.success else []
         return JSONResponse({
             "success": True,
-            "articles": results,
-            "total_count": len(results),
+            "articles": articles,
+            "total_count": len(articles),
         })
     except Exception:
         logger.exception("Error searching articles")

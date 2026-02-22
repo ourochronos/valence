@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Wrapper for valence CLI with v2 database config
-export VKB_DB_HOST="${VKB_DB_HOST:-localhost}"
-export VKB_DB_PORT="${VKB_DB_PORT:-5434}"
-export VKB_DB_NAME="${VKB_DB_NAME:-valence_v2}"
+export VKB_DB_HOST="${VKB_DB_HOST:-127.0.0.1}"
+export VKB_DB_PORT="${VKB_DB_PORT:-5433}"
+export VKB_DB_NAME="${VKB_DB_NAME:-valence}"
 export VKB_DB_USER="${VKB_DB_USER:-valence}"
 export VKB_DB_PASSWORD="${VKB_DB_PASSWORD:-valence}"
 export ORO_DB_HOST="$VKB_DB_HOST"
