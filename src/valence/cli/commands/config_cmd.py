@@ -66,9 +66,9 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     )
     gemini_p.add_argument(
         "--model",
-        default="gemini-2.0-flash",
+        default="gemini-2.5-flash",
         metavar="MODEL",
-        help="Gemini model name (default: gemini-2.0-flash)",
+        help="Gemini model name (default: gemini-2.5-flash)",
     )
     gemini_p.set_defaults(func=cmd_config_inference_gemini)
 

@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 def create_gemini_backend(
-    model: str = "gemini-2.0-flash",
+    model: str = "gemini-2.5-flash",
     timeout: float = 60.0,
     gemini_bin: str = "gemini",
 ) -> callable:
@@ -27,7 +27,7 @@ def create_gemini_backend(
     preventing shell-injection attacks.
 
     Args:
-        model: Gemini model name (e.g. ``"gemini-2.0-flash"``,
+        model: Gemini model name (e.g. ``"gemini-2.5-flash"``,
             ``"gemini-2.5-pro"``).
         timeout: Seconds to wait for the CLI to respond before raising
             ``asyncio.TimeoutError``.  Defaults to 60 s (generous for

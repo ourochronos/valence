@@ -92,8 +92,8 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--model",
-        default="gemini-2.0-flash",
-        help="Gemini model to use with --live (default: gemini-2.0-flash)",
+        default="gemini-2.5-flash",
+        help="Gemini model to use with --live (default: gemini-2.5-flash)",
     )
     return parser.parse_args()
 
