@@ -112,6 +112,4 @@ __all__ = [
     "validate_verification_submission",
     "validate_evidence_requirements",
     "validate_dispute_submission",
-    # DB persistence
-    "db",
 ]

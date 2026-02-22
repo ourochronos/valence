@@ -47,12 +47,12 @@ class DatabaseStats:
 
         stats = cls()
         tables = [
-            ("beliefs", "beliefs_count"),
+            ("articles", "beliefs_count"),
             ("entities", "entities_count"),
             ("vkb_sessions", "sessions_count"),
             ("vkb_exchanges", "exchanges_count"),
             ("vkb_patterns", "patterns_count"),
-            ("tensions", "tensions_count"),
+            ("contentions", "tensions_count"),
         ]
         for table, attr in tables:
             try:
@@ -77,11 +77,11 @@ OPTIONAL_ENV_VARS = [
 
 # Core tables that must exist for the system to function
 REQUIRED_TABLES = [
-    "beliefs",
+    "articles",
     "entities",
-    "belief_entities",
+    "article_entities",
     "sources",
-    "tensions",
+    "contentions",
     "vkb_sessions",
     "vkb_exchanges",
     "vkb_patterns",
