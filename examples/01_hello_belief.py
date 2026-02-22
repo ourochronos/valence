@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Example 01: Hello Belief - Create and query beliefs.
+"""Example 01: Hello Article — Create and search knowledge articles.
 
-This example demonstrates the core Valence workflow:
-1. Creating a belief with confidence and domains
-2. Querying beliefs by content
-3. Updating beliefs with supersession
+This example demonstrates the core Valence v2 workflow:
+1. Ingesting a source and creating an article
+2. Searching knowledge via knowledge_search
+3. Updating articles with versioning
 
 Requirements:
     - PostgreSQL with pgvector running (see README for Docker setup)
@@ -27,154 +27,126 @@ if src_path.exists():
     sys.path.insert(0, str(src_path))
 
 from valence.substrate.tools import (
-    belief_create,
-    belief_get,
-    belief_query,
-    belief_supersede,
+    article_create,
+    article_get,
+    article_update,
+    knowledge_search,
 )
 
 
 def main() -> None:
-    """Run the hello belief example."""
+    """Run the hello article example."""
     print("=" * 60)
-    print("  Valence Example 01: Hello Belief")
+    print("  Valence Example 01: Hello Article")
     print("=" * 60)
     print()
 
     # =========================================================================
-    # Step 1: Create a simple belief
+    # Step 1: Create a simple article
     # =========================================================================
-    print("[Step 1] Creating a belief...")
+    print("[Step 1] Creating an article...")
     print("-" * 40)
 
-    result = belief_create(
+    result = article_create(
         content="Python is excellent for rapid prototyping.",
-        confidence={"overall": 0.85},
         domain_path=["tech", "programming", "python"],
-        source_type="observation",
     )
 
     if result["success"]:
-        belief = result["belief"]
-        print(f"✓ Created belief: {belief['id'][:8]}...")
-        print(f"  Content: {belief['content']}")
-        print(f"  Confidence: {belief['confidence']['overall']:.0%}")
-        print(f"  Domains: {belief['domain_path']}")
-        belief_id = belief["id"]
+        article = result["article"]
+        print(f"  Created article: {article['id'][:8]}...")
+        print(f"  Content: {article['content']}")
+        article_id = article["id"]
     else:
-        print(f"✗ Failed: {result.get('error')}")
+        print(f"  Failed: {result.get('error')}")
         return
 
     print()
 
     # =========================================================================
-    # Step 2: Create a belief with dimensional confidence
+    # Step 2: Create an article with a title
     # =========================================================================
-    print("[Step 2] Creating a belief with 6D confidence...")
+    print("[Step 2] Creating a titled article...")
     print("-" * 40)
 
-    # Dimensional confidence tracks multiple aspects of certainty
-    result = belief_create(
+    result = article_create(
         content="PostgreSQL handles concurrent writes better than SQLite for multi-user applications.",
-        confidence={
-            "source_reliability": 0.9,      # Trusted sources (benchmarks, docs)
-            "method_quality": 0.85,         # Derived from testing
-            "internal_consistency": 0.95,   # Aligns with other knowledge
-            "temporal_freshness": 1.0,      # Current as of now
-            "corroboration": 0.7,           # Multiple sources agree
-            "domain_applicability": 0.8,    # Applies broadly
-        },
+        title="PostgreSQL vs SQLite Concurrency",
         domain_path=["tech", "databases"],
-        source_type="inference",
-        entities=[
-            {"name": "PostgreSQL", "type": "tool", "role": "subject"},
-            {"name": "SQLite", "type": "tool", "role": "object"},
-        ],
     )
 
     if result["success"]:
-        belief = result["belief"]
-        print(f"✓ Created belief with 6D confidence:")
-        print(f"  Content: {belief['content'][:60]}...")
-        print(f"  Overall confidence: {belief['confidence']['overall']:.0%}")
-        print(f"  Source reliability: {belief['confidence']['source_reliability']:.0%}")
-        print(f"  Corroboration: {belief['confidence']['corroboration']:.0%}")
+        article = result["article"]
+        print(f"  Created article: {article['id'][:8]}...")
+        print(f"  Title: {article.get('title', '(none)')}")
+        print(f"  Content: {article['content'][:60]}...")
     else:
-        print(f"✗ Failed: {result.get('error')}")
+        print(f"  Failed: {result.get('error')}")
 
     print()
 
     # =========================================================================
-    # Step 3: Query beliefs
+    # Step 3: Search knowledge
     # =========================================================================
-    print("[Step 3] Querying beliefs about Python...")
+    print("[Step 3] Searching knowledge about Python...")
     print("-" * 40)
 
-    result = belief_query(
+    result = knowledge_search(
         query="Python programming",
-        domain_filter=["tech"],
         limit=5,
     )
 
     if result["success"]:
-        print(f"✓ Found {result['total_count']} beliefs:")
-        for i, b in enumerate(result["beliefs"], 1):
-            print(f"  {i}. [{b['confidence']['overall']:.0%}] {b['content'][:50]}...")
+        print(f"  Found {result['total_count']} results:")
+        for i, r in enumerate(result["results"], 1):
+            content_preview = r.get("content", "")[:50]
+            print(f"  {i}. [{r['type']}] {content_preview}...")
     else:
-        print(f"✗ Query failed: {result.get('error')}")
+        print(f"  Search failed: {result.get('error')}")
 
     print()
 
     # =========================================================================
-    # Step 4: Get a specific belief with details
+    # Step 4: Get a specific article with details
     # =========================================================================
-    print("[Step 4] Getting belief details...")
+    print("[Step 4] Getting article details...")
     print("-" * 40)
 
-    result = belief_get(
-        belief_id=belief_id,
-        include_history=True,
-        include_tensions=True,
+    result = article_get(
+        article_id=article_id,
+        include_provenance=True,
     )
 
     if result["success"]:
-        b = result["belief"]
-        print(f"✓ Belief details:")
-        print(f"  ID: {b['id']}")
-        print(f"  Content: {b['content']}")
-        print(f"  Status: {b['status']}")
-        print(f"  Created: {b['created_at']}")
-        if result.get("history"):
-            print(f"  History: {len(result['history'])} versions")
-        if result.get("tensions"):
-            print(f"  Tensions: {len(result['tensions'])} active")
+        a = result["article"]
+        print(f"  Article details:")
+        print(f"  ID: {a['id']}")
+        print(f"  Content: {a['content']}")
+        print(f"  Version: {a.get('version', 1)}")
     else:
-        print(f"✗ Failed: {result.get('error')}")
+        print(f"  Failed: {result.get('error')}")
 
     print()
 
     # =========================================================================
-    # Step 5: Supersede a belief (update with history)
+    # Step 5: Update an article (versioned)
     # =========================================================================
-    print("[Step 5] Superseding a belief...")
+    print("[Step 5] Updating an article...")
     print("-" * 40)
 
-    result = belief_supersede(
-        old_belief_id=belief_id,
-        new_content="Python is excellent for rapid prototyping and has mature async support.",
-        reason="Updated to include async capabilities",
-        confidence={"overall": 0.9},
+    result = article_update(
+        article_id=article_id,
+        content="Python is excellent for rapid prototyping and has mature async support.",
     )
 
     if result["success"]:
-        new_belief = result["new_belief"]
-        print(f"✓ Superseded belief:")
-        print(f"  Old ID: {result['old_belief_id'][:8]}...")
-        print(f"  New ID: {new_belief['id'][:8]}...")
-        print(f"  Reason: {result['reason']}")
-        print(f"  New content: {new_belief['content']}")
+        updated = result["article"]
+        print(f"  Updated article:")
+        print(f"  ID: {updated['id']}")
+        print(f"  Version: {updated.get('version', '?')}")
+        print(f"  Content: {updated['content']}")
     else:
-        print(f"✗ Failed: {result.get('error')}")
+        print(f"  Failed: {result.get('error')}")
 
     print()
 
@@ -187,11 +159,10 @@ def main() -> None:
     print("""
 What we demonstrated:
 
-✓ Creating beliefs with simple or dimensional confidence
-✓ Tagging beliefs with domains for organization
-✓ Linking beliefs to entities (people, tools, concepts)
-✓ Querying beliefs with text search and domain filters
-✓ Superseding beliefs while maintaining history
+  Creating articles with domain classification
+  Searching knowledge with knowledge_search
+  Getting article details with provenance
+  Updating articles with version tracking
 
 Next steps:
 - See 02_trust_graph.py for trust operations

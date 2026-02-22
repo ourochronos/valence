@@ -233,6 +233,6 @@ class TestHookDeduplication:
         expected_hash = hashlib.sha256(content.strip().lower().encode()).hexdigest()
 
         # Verify the hash computation matches what our tools use
-        from valence.substrate.tools import _content_hash
+        from valence.core.articles import _content_hash
 
         assert _content_hash(content) == expected_hash

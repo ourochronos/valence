@@ -592,7 +592,7 @@ def _process_verification_reputation(verification: Verification) -> None:
     # Get belief confidence from DB
     belief_confidence = 0.7
     with get_cursor() as cur:
-        cur.execute("SELECT confidence FROM beliefs WHERE id = %s", (str(verification.belief_id),))
+        cur.execute("SELECT confidence FROM articles WHERE id = %s", (str(verification.belief_id),))
         row = cur.fetchone()
         if row and row.get("confidence"):
             conf = row["confidence"]

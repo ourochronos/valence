@@ -92,7 +92,7 @@ def verify_chains(cur, limit: int | None = None) -> ChainReport:
     # These are the "current" versions.
     query = """
         SELECT id, content, status, supersedes_id, superseded_by_id, created_at
-        FROM beliefs
+        FROM articles
         WHERE superseded_by_id IS NULL
           AND supersedes_id IS NOT NULL
     """
@@ -105,7 +105,7 @@ def verify_chains(cur, limit: int | None = None) -> ChainReport:
     # Also find orphans: superseded beliefs whose superseded_by_id points to a non-existent belief
     cur.execute("""
         SELECT b.id, b.superseded_by_id
-        FROM beliefs b
+        FROM articles b
         LEFT JOIN beliefs b2 ON b.superseded_by_id = b2.id
         WHERE b.superseded_by_id IS NOT NULL
           AND b2.id IS NULL
@@ -142,7 +142,7 @@ def verify_chains(cur, limit: int | None = None) -> ChainReport:
 
             visited.add(current_id)
             cur.execute(
-                "SELECT id, content, status, supersedes_id, superseded_by_id, created_at FROM beliefs WHERE id = %s",
+                "SELECT id, content, status, supersedes_id, superseded_by_id, created_at FROM articles WHERE id = %s",
                 (current_id,),
             )
             row = cur.fetchone()
@@ -164,7 +164,7 @@ def verify_chains(cur, limit: int | None = None) -> ChainReport:
 
             if supersedes_id:
                 # The older belief should point back to us via superseded_by_id
-                cur.execute("SELECT superseded_by_id FROM beliefs WHERE id = %s", (supersedes_id,))
+                cur.execute("SELECT superseded_by_id FROM articles WHERE id = %s", (supersedes_id,))
                 older = cur.fetchone()
                 if older:
                     older_superseded_by = str(older["superseded_by_id"]) if older["superseded_by_id"] else None

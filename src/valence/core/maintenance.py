@@ -272,7 +272,7 @@ def vacuum_analyze(cur) -> MaintenanceResult:
     Note: VACUUM cannot run inside a transaction, so the connection
     must have autocommit=True.
     """
-    tables = ["beliefs", "vkb_exchanges", "vkb_sessions", "belief_retrievals", "embedding_coverage"]
+    tables = ["articles", "sources", "vkb_exchanges", "vkb_sessions", "usage_traces", "embedding_coverage"]
     for table in tables:
         cur.execute(f"VACUUM ANALYZE {table}")  # noqa: S608 - table names are hardcoded, not user input
 

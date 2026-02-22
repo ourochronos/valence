@@ -230,18 +230,18 @@ async def admin_embeddings_status(request: Request) -> JSONResponse:
         from our_db import get_cursor
 
         with get_cursor() as cur:
-            cur.execute("SELECT COUNT(*) as total FROM beliefs")
+            cur.execute("SELECT COUNT(*) as total FROM articles")
             total = cur.fetchone()["total"]
-            cur.execute("SELECT COUNT(*) as embedded FROM beliefs WHERE embedding IS NOT NULL")
+            cur.execute("SELECT COUNT(*) as embedded FROM articles WHERE embedding IS NOT NULL")
             embedded = cur.fetchone()["embedded"]
-            cur.execute("SELECT COUNT(*) as missing FROM beliefs WHERE embedding IS NULL")
+            cur.execute("SELECT COUNT(*) as missing FROM articles WHERE embedding IS NULL")
             missing = cur.fetchone()["missing"]
 
         coverage = f"{embedded / total:.1%}" if total > 0 else "N/A"
         result = {
             "success": True,
             "stats": {
-                "total_beliefs": total,
+                "total_articles": total,
                 "with_embeddings": embedded,
                 "missing_embeddings": missing,
                 "coverage": coverage,
@@ -275,7 +275,7 @@ async def admin_embeddings_backfill(request: Request) -> JSONResponse:
 
         with get_cursor() as cur:
             cur.execute(
-                "SELECT id, content FROM beliefs WHERE embedding IS NULL AND status = 'active' LIMIT %s",
+                "SELECT id, content FROM articles WHERE embedding IS NULL AND status = 'active' LIMIT %s",
                 (batch_size,),
             )
             rows = cur.fetchall()
@@ -294,7 +294,7 @@ async def admin_embeddings_backfill(request: Request) -> JSONResponse:
                 embedding = generate_embedding(row["content"])
                 if embedding:
                     with get_cursor() as cur:
-                        cur.execute("UPDATE beliefs SET embedding = %s WHERE id = %s", (embedding, row["id"]))
+                        cur.execute("UPDATE articles SET embedding = %s WHERE id = %s", (embedding, row["id"]))
                     processed += 1
             except Exception:
                 errors += 1
@@ -335,7 +335,7 @@ async def admin_embeddings_migrate(request: Request) -> JSONResponse:
 
         if dry_run:
             with get_cursor() as cur:
-                cur.execute("SELECT COUNT(*) as count FROM beliefs WHERE embedding IS NOT NULL")
+                cur.execute("SELECT COUNT(*) as count FROM articles WHERE embedding IS NOT NULL")
                 count = cur.fetchone()["count"]
             return JSONResponse({
                 "success": True,
@@ -347,7 +347,7 @@ async def admin_embeddings_migrate(request: Request) -> JSONResponse:
 
         with get_cursor() as cur:
             # NULL out all embeddings (they need regeneration with new model)
-            cur.execute("UPDATE beliefs SET embedding = NULL WHERE embedding IS NOT NULL")
+            cur.execute("UPDATE articles SET embedding = NULL WHERE embedding IS NOT NULL")
             affected = cur.rowcount
 
         return JSONResponse({
@@ -380,12 +380,12 @@ async def admin_verify_chains(request: Request) -> JSONResponse:
 
         issues = []
         with get_cursor() as cur:
-            # Check for broken supersession chains (pointing to non-existent beliefs)
+            # Check for broken supersession chains (pointing to non-existent articles)
             cur.execute("""
                 SELECT b.id, b.superseded_by_id
-                FROM beliefs b
+                FROM articles b
                 WHERE b.superseded_by_id IS NOT NULL
-                  AND NOT EXISTS (SELECT 1 FROM beliefs b2 WHERE b2.id = b.superseded_by_id)
+                  AND NOT EXISTS (SELECT 1 FROM articles b2 WHERE b2.id = b.superseded_by_id)
             """)
             broken = cur.fetchall()
             for row in broken:
@@ -400,10 +400,10 @@ async def admin_verify_chains(request: Request) -> JSONResponse:
             cur.execute("""
                 WITH RECURSIVE chain AS (
                     SELECT id, superseded_by_id, 1 as depth, ARRAY[id] as path
-                    FROM beliefs WHERE superseded_by_id IS NOT NULL
+                    FROM articles WHERE superseded_by_id IS NOT NULL
                     UNION ALL
                     SELECT b.id, b.superseded_by_id, c.depth + 1, c.path || b.id
-                    FROM beliefs b JOIN chain c ON b.id = c.superseded_by_id
+                    FROM articles b JOIN chain c ON b.id = c.superseded_by_id
                     WHERE c.depth < 100 AND NOT (b.id = ANY(c.path))
                 )
                 SELECT id, depth FROM chain WHERE depth >= 50

@@ -1,7 +1,8 @@
-"""REST API endpoints for the Valence knowledge substrate.
+"""REST API endpoints for the Valence knowledge substrate (v2).
 
-Provides RESTful access to beliefs, entities, tensions, confidence, and trust.
-All endpoints require authentication and scope-based authorization.
+Provides RESTful access to articles, sources, entities, contentions, and stats.
+Legacy /beliefs and /tensions routes delegate to v2 tool functions for backward
+compatibility. New clients should use /articles and /sources endpoints instead.
 """
 
 from __future__ import annotations
@@ -192,33 +193,12 @@ async def beliefs_supersede_endpoint(request: Request) -> JSONResponse:
         return missing_field_error("reason")
 
     try:
-        from ..substrate.tools.articles import article_create
-        from ..substrate.tools.articles import provenance_link
+        from ..substrate.tools.articles import article_update
 
-        # Create new article
-        create_result = article_create(
+        result = article_update(
+            article_id=belief_id,
             content=new_content,
-            title=body.get("title"),
         )
-        
-        if not create_result.get("success"):
-            return JSONResponse(create_result, status_code=400)
-        
-        new_article_id = create_result["article"]["id"]
-        
-        # Link with supersedes relationship
-        link_result = provenance_link(
-            article_id=new_article_id,
-            source_id=belief_id,
-            relationship="supersedes",
-        )
-        
-        result = {
-            "success": True,
-            "old_belief_id": belief_id,
-            "new_article": create_result["article"],
-            "reason": reason,
-        }
         status_code = 200 if result.get("success") else 404
         return JSONResponse(result, status_code=status_code)
     except Exception:
@@ -369,40 +349,36 @@ async def stats_endpoint(request: Request) -> JSONResponse:
         from our_db import get_cursor
 
         with get_cursor() as cur:
-            cur.execute("SELECT COUNT(*) as total FROM beliefs")
+            cur.execute("SELECT COUNT(*) as total FROM articles")
             total = cur.fetchone()["total"]
 
-            cur.execute("SELECT COUNT(*) as active FROM beliefs WHERE status = 'active' AND superseded_by_id IS NULL")
+            cur.execute("SELECT COUNT(*) as active FROM articles WHERE status = 'active' AND superseded_by_id IS NULL")
             active = cur.fetchone()["active"]
 
-            cur.execute("SELECT COUNT(*) as with_emb FROM beliefs WHERE embedding IS NOT NULL")
+            cur.execute("SELECT COUNT(*) as with_emb FROM articles WHERE embedding IS NOT NULL")
             with_embedding = cur.fetchone()["with_emb"]
 
-            cur.execute("SELECT COUNT(*) as tensions FROM tensions WHERE status = 'detected'")
-            tensions = cur.fetchone()["tensions"]
+            cur.execute("SELECT COUNT(*) as cnt FROM contentions WHERE status = 'detected'")
+            unresolved_contentions = cur.fetchone()["cnt"]
 
             try:
-                cur.execute("SELECT COUNT(DISTINCT d) as count FROM beliefs, LATERAL unnest(domain_path) as d")
+                cur.execute("SELECT COUNT(DISTINCT d) as count FROM articles, LATERAL unnest(domain_path) as d")
                 domains = cur.fetchone()["count"]
             except Exception:
                 domains = 0
 
-            try:
-                cur.execute("SELECT COUNT(*) as federated FROM beliefs WHERE is_local = FALSE")
-                federated = cur.fetchone()["federated"]
-            except Exception:
-                federated = 0
+            cur.execute("SELECT COUNT(*) as cnt FROM sources")
+            source_count = cur.fetchone()["cnt"]
 
         result = {
             "success": True,
             "stats": {
-                "total_beliefs": total,
-                "active_beliefs": active,
-                "local_beliefs": active - federated,
-                "federated_beliefs": federated,
+                "total_articles": total,
+                "active_articles": active,
+                "total_sources": source_count,
                 "with_embeddings": with_embedding,
                 "unique_domains": domains,
-                "unresolved_tensions": tensions,
+                "unresolved_contentions": unresolved_contentions,
             },
         }
         return format_response(result, output_format, text_formatter=format_stats_text)
@@ -434,26 +410,26 @@ async def conflicts_endpoint(request: Request) -> JSONResponse:
         with get_cursor() as cur:
             cur.execute(
                 """
-                WITH belief_pairs AS (
+                WITH article_pairs AS (
                     SELECT
-                        b1.id as id_a, b1.content as content_a, b1.confidence as confidence_a,
-                        b2.id as id_b, b2.content as content_b, b2.confidence as confidence_b,
-                        1 - (b1.embedding <=> b2.embedding) as similarity
-                    FROM beliefs b1
-                    CROSS JOIN beliefs b2
-                    WHERE b1.id < b2.id
-                      AND b1.embedding IS NOT NULL AND b2.embedding IS NOT NULL
-                      AND b1.status = 'active' AND b2.status = 'active'
-                      AND b1.superseded_by_id IS NULL AND b2.superseded_by_id IS NULL
-                      AND 1 - (b1.embedding <=> b2.embedding) > %s
+                        a1.id as id_a, a1.content as content_a, a1.confidence as confidence_a,
+                        a2.id as id_b, a2.content as content_b, a2.confidence as confidence_b,
+                        1 - (a1.embedding <=> a2.embedding) as similarity
+                    FROM articles a1
+                    CROSS JOIN articles a2
+                    WHERE a1.id < a2.id
+                      AND a1.embedding IS NOT NULL AND a2.embedding IS NOT NULL
+                      AND a1.status = 'active' AND a2.status = 'active'
+                      AND a1.superseded_by_id IS NULL AND a2.superseded_by_id IS NULL
+                      AND 1 - (a1.embedding <=> a2.embedding) > %s
                     ORDER BY similarity DESC
                     LIMIT 50
                 )
-                SELECT * FROM belief_pairs
+                SELECT * FROM article_pairs
                 WHERE NOT EXISTS (
                     SELECT 1 FROM contentions t
-                    WHERE (t.article_id = belief_pairs.id_a AND t.related_article_id = belief_pairs.id_b)
-                       OR (t.article_id = belief_pairs.id_b AND t.related_article_id = belief_pairs.id_a)
+                    WHERE (t.article_id = article_pairs.id_a AND t.related_article_id = article_pairs.id_b)
+                       OR (t.article_id = article_pairs.id_b AND t.related_article_id = article_pairs.id_a)
                 )
                 """,
                 (threshold,),
@@ -533,7 +509,7 @@ async def conflicts_endpoint(request: Request) -> JSONResponse:
             "conflicts": conflicts,
             "count": len(conflicts),
             "threshold": threshold,
-            "recorded_tensions": recorded,
+            "recorded_contentions": recorded,
         }
         return format_response(result, output_format, text_formatter=format_conflicts_text)
     except Exception:

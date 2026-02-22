@@ -524,7 +524,7 @@ async def _dispatch_method(method: str, params: dict[str, Any]) -> Any:
                         "role": "user",
                         "content": {
                             "type": "text",
-                            "text": f"Before responding, use belief_query to search for relevant knowledge about: {topic}",
+                            "text": f"Before responding, use knowledge_search to search for relevant knowledge about: {topic}",
                         },
                     }
                 ],
@@ -591,10 +591,10 @@ When the user asks about:
 - Technical approaches previously explored
 - Any topic that may have been discussed before
 
-**FIRST** use `belief_query` to search for relevant knowledge, **THEN** respond with grounded information.
+**FIRST** use `knowledge_search` to search for relevant knowledge, **THEN** respond with grounded information.
 
 ### 2. PROACTIVELY Capture Knowledge
-Use `belief_create` or `insight_extract` when:
+Use `source_ingest` or `insight_extract` when:
 - A decision is made with clear rationale
 - User expresses a preference or value
 - A problem is solved with a novel approach
@@ -612,13 +612,15 @@ use `pattern_record` to capture them.
 
 ## Tool Categories
 
-### Knowledge Substrate (Beliefs)
-- `belief_query` - Search for existing knowledge (USE FIRST)
-- `belief_create` - Store new knowledge
-- `belief_supersede` - Update existing knowledge with history
-- `belief_get` - Get detailed belief information
+### Knowledge Substrate (v2)
+- `knowledge_search` - Search for existing knowledge (USE FIRST)
+- `source_ingest` - Capture raw information as it arrives
+- `article_create` - Store new synthesised knowledge
+- `article_update` - Update existing knowledge with versioning
+- `article_get` - Get detailed article information
+- `article_compile` - Compile sources into an article via LLM
 - `entity_get`, `entity_search` - Work with entities (people, tools, concepts)
-- `tension_list`, `tension_resolve` - Handle contradictions
+- `contention_list`, `contention_resolve` - Handle contradictions
 
 ### Conversation Tracking (VKB)
 - `session_start`, `session_end`, `session_get`, `session_list` - Session management
@@ -659,13 +661,13 @@ def _get_tool_reference() -> str:
 
 def _get_context_prompt() -> str:
     """Get the context injection prompt."""
-    return """You have access to Valence, a personal knowledge substrate.
+    return """You have access to Valence v2, a personal knowledge substrate.
 
 **Core Behaviors:**
 1. **Query First**: Before answering questions about past context, decisions, or preferences,
-   use `belief_query` to search the knowledge base.
+   use `knowledge_search` to search the knowledge base.
 2. **Capture Proactively**: When valuable information emerges (decisions, preferences, insights),
-   use `belief_create` or `insight_extract` to store it for future reference.
+   use `source_ingest` or `insight_extract` to store it for future reference.
 3. **Track Sessions**: Use `session_start` and `session_end` to maintain conversation context.
 
 This ensures your responses are grounded in accumulated knowledge and that new insights
@@ -851,12 +853,12 @@ async def _embedding_backfill_loop(interval_seconds: int = 300) -> None:
 
             with get_cursor() as cur:
                 cur.execute(
-                    "SELECT id, content FROM beliefs WHERE embedding IS NULL AND status = 'active' LIMIT 50"
+                    "SELECT id, content FROM articles WHERE embedding IS NULL AND status = 'active' LIMIT 50"
                 )
                 rows = cur.fetchall()
 
             if rows:
-                logger.info(f"Embedding backfill: found {len(rows)} beliefs without embeddings")
+                logger.info(f"Embedding backfill: found {len(rows)} articles without embeddings")
                 backfilled = 0
                 for row in rows:
                     try:
@@ -864,15 +866,15 @@ async def _embedding_backfill_loop(interval_seconds: int = 300) -> None:
                         embedding_str = vector_to_pgvector(embedding)
                         with get_cursor() as cur:
                             cur.execute(
-                                "UPDATE beliefs SET embedding = %s::vector WHERE id = %s",
+                                "UPDATE articles SET embedding = %s::vector WHERE id = %s",
                                 (embedding_str, row["id"]),
                             )
                         backfilled += 1
                     except Exception:
-                        logger.warning(f"Embedding backfill failed for belief {row['id']}", exc_info=True)
+                        logger.warning(f"Embedding backfill failed for article {row['id']}", exc_info=True)
                 logger.info(f"Embedding backfill: completed {backfilled}/{len(rows)}")
             else:
-                logger.debug("Embedding backfill: all beliefs have embeddings")
+                logger.debug("Embedding backfill: all articles have embeddings")
         except ImportError:
             logger.debug("Embedding backfill: our_embeddings not available, skipping")
         except Exception:

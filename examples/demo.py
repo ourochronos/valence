@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Valence Demo — walk through the core value loop.
+"""Valence v2 Demo — walk through the core value loop.
 
 Prerequisites:
     - PostgreSQL running with valence database initialized
@@ -14,14 +14,13 @@ from __future__ import annotations
 
 import json
 import sys
-from uuid import uuid4
 
-# Import tool handlers directly
-from valence.substrate.tools.beliefs import belief_create, belief_query, belief_get, belief_supersede
+# Import v2 tool handlers directly
+from valence.substrate.tools.sources import source_ingest
+from valence.substrate.tools.articles import article_create, article_get, article_update
+from valence.substrate.tools.retrieval import knowledge_search
 from valence.substrate.tools.entities import entity_search
-from valence.substrate.tools.tensions import tension_list
-from valence.substrate.tools.confidence import confidence_explain
-from valence.substrate.tools.trust import trust_check
+from valence.substrate.tools.contention import contention_list
 from valence.vkb.tools.sessions import session_start, session_end
 from valence.vkb.tools.insights import insight_extract
 
@@ -38,8 +37,8 @@ def pp(label: str, data: dict) -> None:
 
 
 def main() -> int:
-    print("Valence Demo")
-    print("============")
+    print("Valence v2 Demo")
+    print("================")
     print("Walking through the core value loop.\n")
 
     # 1. Start a session
@@ -52,64 +51,45 @@ def main() -> int:
         print("ERROR: Could not start session. Is the database running?")
         return 1
 
-    # 2. Create beliefs with confidence
-    print("\n[2/7] Creating beliefs with dimensional confidence...")
+    # 2. Ingest sources and create articles
+    print("\n[2/7] Ingesting sources and creating articles...")
 
-    b1 = belief_create(
+    s1 = source_ingest(
         content="Python's GIL limits true parallelism for CPU-bound tasks",
-        domain_path=["tech", "python", "concurrency"],
-        confidence={"overall": 0.9, "source_reliability": 0.95},
         source_type="observation",
-        entities=[
-            {"name": "Python", "type": "tool", "role": "subject"},
-            {"name": "GIL", "type": "concept", "role": "subject"},
-        ],
     )
-    pp("Belief 1 created", b1)
+    pp("Source 1 ingested", s1)
 
-    b2 = belief_create(
+    s2 = source_ingest(
         content="asyncio provides effective concurrency for I/O-bound Python applications",
-        domain_path=["tech", "python", "concurrency"],
-        confidence={"overall": 0.85, "source_reliability": 0.9},
         source_type="observation",
-        entities=[
-            {"name": "Python", "type": "tool", "role": "subject"},
-            {"name": "asyncio", "type": "concept", "role": "subject"},
-        ],
     )
-    pp("Belief 2 created", b2)
+    pp("Source 2 ingested", s2)
 
-    b3 = belief_create(
+    a1 = article_create(
         content="PostgreSQL with pgvector enables efficient semantic search at scale",
         domain_path=["tech", "databases"],
-        confidence={"overall": 0.8},
-        source_type="observation",
-        entities=[
-            {"name": "PostgreSQL", "type": "tool", "role": "subject"},
-            {"name": "pgvector", "type": "tool", "role": "subject"},
-        ],
     )
-    pp("Belief 3 created", b3)
+    pp("Article 1 created", a1)
 
     # 3. Query semantically
-    print("\n[3/7] Querying the knowledge base...")
+    print("\n[3/7] Searching the knowledge base...")
 
-    results = belief_query(query="Python concurrency patterns")
-    pp("Query: 'Python concurrency patterns'", results)
+    results = knowledge_search(query="Python concurrency patterns", include_sources=True)
+    pp("Search: 'Python concurrency patterns'", results)
 
-    results2 = belief_query(query="database vector search")
-    pp("Query: 'database vector search'", results2)
+    results2 = knowledge_search(query="database vector search")
+    pp("Search: 'database vector search'", results2)
 
-    # 4. Supersede a belief (update with history)
-    print("\n[4/7] Superseding a belief (update with provenance)...")
+    # 4. Update an article (versioned)
+    print("\n[4/7] Updating an article (versioned)...")
 
-    if b1.get("success") and b1.get("belief_id"):
-        updated = belief_supersede(
-            old_belief_id=b1["belief_id"],
-            new_content="Python's GIL limits true parallelism for CPU-bound tasks, but Python 3.13+ has experimental free-threaded mode",
-            reason="Updated with Python 3.13 free-threading information",
+    if a1.get("success") and a1.get("article", {}).get("id"):
+        updated = article_update(
+            article_id=a1["article"]["id"],
+            content="PostgreSQL with pgvector enables efficient semantic search at scale; also supports HNSW indexing for fast ANN",
         )
-        pp("Belief superseded", updated)
+        pp("Article updated", updated)
 
     # 5. Check entities
     print("\n[5/7] Searching entities...")
@@ -117,11 +97,11 @@ def main() -> int:
     entities = entity_search(query="Python")
     pp("Entity search: 'Python'", entities)
 
-    # 6. Check trust
-    print("\n[6/7] Checking trust on a topic...")
+    # 6. Check contentions
+    print("\n[6/7] Listing contentions...")
 
-    trust = trust_check(topic="python")
-    pp("Trust check: 'python'", trust)
+    contentions = contention_list()
+    pp("Contentions", contentions)
 
     # 7. Extract insight and close session
     print("\n[7/7] Extracting insight and closing session...")
@@ -129,14 +109,14 @@ def main() -> int:
     if session_id:
         insight = insight_extract(
             session_id=session_id,
-            content="Valence demo successfully demonstrates the core value loop: create, query, supersede, trust",
+            content="Valence v2 demo successfully demonstrates the core value loop: ingest, search, update, contention",
             domain_path=["meta", "valence"],
         )
         pp("Insight extracted", insight)
 
         closed = session_end(
             session_id=session_id,
-            summary="Demonstrated Valence core value loop with belief CRUD, semantic search, and trust",
+            summary="Demonstrated Valence v2 core value loop with sources, articles, search, and contentions",
             themes=["valence", "demo", "knowledge-substrate"],
         )
         pp("Session closed", closed)
@@ -146,13 +126,13 @@ def main() -> int:
     print("=" * 60)
     print("\nWhat happened:")
     print("  1. Started a tracked session")
-    print("  2. Created 3 beliefs with dimensional confidence")
-    print("  3. Queried the knowledge base semantically")
-    print("  4. Superseded a belief (full history preserved)")
-    print("  5. Searched entities (auto-created from beliefs)")
-    print("  6. Checked trust scoring on a topic")
+    print("  2. Ingested sources and created articles")
+    print("  3. Searched the knowledge base (articles + sources)")
+    print("  4. Updated an article (full version history preserved)")
+    print("  5. Searched entities (auto-created from articles)")
+    print("  6. Listed contentions (contradictions)")
     print("  7. Extracted an insight and closed the session")
-    print("\nThis is the core value loop. Over time, beliefs accumulate,")
+    print("\nThis is the core value loop. Over time, articles accumulate,")
     print("patterns emerge, and the substrate learns what matters to you.")
 
     return 0

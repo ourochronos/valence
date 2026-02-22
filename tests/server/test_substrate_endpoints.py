@@ -1,4 +1,4 @@
-"""Tests for substrate REST endpoints."""
+"""Tests for substrate REST endpoints (v2)."""
 
 from __future__ import annotations
 
@@ -80,7 +80,7 @@ class TestAuth:
 
 
 # =============================================================================
-# BELIEFS
+# BELIEFS (legacy endpoints → v2 article/retrieval tools)
 # =============================================================================
 
 
@@ -89,27 +89,26 @@ class TestBeliefsListEndpoint:
         resp = client.get("/api/v1/beliefs")
         assert resp.status_code == 400
 
-    @patch("valence.substrate.tools.beliefs.belief_query")
-    def test_happy_path(self, mock_query, client):
-        mock_query.return_value = {"success": True, "beliefs": []}
+    @patch("valence.substrate.tools.articles.article_search")
+    def test_happy_path(self, mock_search, client):
+        mock_search.return_value = {"success": True, "articles": [], "total_count": 0}
         resp = client.get("/api/v1/beliefs", params={"query": "test"})
         assert resp.status_code == 200
         assert resp.json()["success"] is True
-        mock_query.assert_called_once()
-        assert mock_query.call_args.kwargs["query"] == "test"
+        mock_search.assert_called_once()
+        assert mock_search.call_args.kwargs["query"] == "test"
 
-    @patch("valence.substrate.tools.beliefs.belief_query")
-    def test_with_filters(self, mock_query, client):
-        mock_query.return_value = {"success": True, "beliefs": []}
+    @patch("valence.substrate.tools.articles.article_search")
+    def test_with_filters(self, mock_search, client):
+        mock_search.return_value = {"success": True, "articles": [], "total_count": 0}
         resp = client.get(
             "/api/v1/beliefs",
-            params={"query": "test", "domain_filter": "tech,python", "limit": "5", "include_archived": "true"},
+            params={"query": "test", "domain_filter": "tech,python", "limit": "5"},
         )
         assert resp.status_code == 200
-        kwargs = mock_query.call_args.kwargs
+        kwargs = mock_search.call_args.kwargs
         assert kwargs["domain_filter"] == ["tech", "python"]
         assert kwargs["limit"] == 5
-        assert kwargs["include_archived"] is True
 
 
 class TestBeliefsCreateEndpoint:
@@ -117,31 +116,28 @@ class TestBeliefsCreateEndpoint:
         resp = client.post("/api/v1/beliefs", json={})
         assert resp.status_code == 400
 
-    @patch("valence.substrate.tools.beliefs.belief_create")
+    @patch("valence.substrate.tools.articles.article_create")
     def test_happy_path(self, mock_create, client):
-        mock_create.return_value = {"success": True, "belief": {"id": "abc"}}
-        resp = client.post("/api/v1/beliefs", json={"content": "Test belief"})
+        mock_create.return_value = {"success": True, "article": {"id": "abc"}}
+        resp = client.post("/api/v1/beliefs", json={"content": "Test article"})
         assert resp.status_code == 201
         assert resp.json()["success"] is True
         mock_create.assert_called_once()
-        assert mock_create.call_args.kwargs["content"] == "Test belief"
+        assert mock_create.call_args.kwargs["content"] == "Test article"
 
-    @patch("valence.substrate.tools.beliefs.belief_create")
+    @patch("valence.substrate.tools.articles.article_create")
     def test_with_optional_fields(self, mock_create, client):
-        mock_create.return_value = {"success": True, "belief": {"id": "abc"}}
+        mock_create.return_value = {"success": True, "article": {"id": "abc"}}
         resp = client.post(
             "/api/v1/beliefs",
             json={
                 "content": "Test",
                 "domain_path": ["tech"],
-                "confidence": {"overall": 0.9},
-                "visibility": "federated",
             },
         )
         assert resp.status_code == 201
         kwargs = mock_create.call_args.kwargs
         assert kwargs["domain_path"] == ["tech"]
-        assert kwargs["visibility"] == "federated"
 
 
 class TestBeliefsSearchEndpoint:
@@ -149,24 +145,24 @@ class TestBeliefsSearchEndpoint:
         resp = client.get("/api/v1/beliefs/search")
         assert resp.status_code == 400
 
-    @patch("valence.substrate.tools.beliefs.belief_search")
+    @patch("valence.substrate.tools.articles.article_search")
     def test_happy_path(self, mock_search, client):
-        mock_search.return_value = {"success": True, "results": []}
+        mock_search.return_value = {"success": True, "articles": [], "total_count": 0}
         resp = client.get("/api/v1/beliefs/search", params={"query": "embeddings"})
         assert resp.status_code == 200
         mock_search.assert_called_once()
 
 
 class TestBeliefsGetEndpoint:
-    @patch("valence.substrate.tools.beliefs.belief_get")
+    @patch("valence.substrate.tools.articles.article_get")
     def test_happy_path(self, mock_get, client):
-        mock_get.return_value = {"success": True, "belief": {"id": "abc"}}
+        mock_get.return_value = {"success": True, "article": {"id": "abc"}}
         resp = client.get("/api/v1/beliefs/abc-123")
         assert resp.status_code == 200
 
-    @patch("valence.substrate.tools.beliefs.belief_get")
+    @patch("valence.substrate.tools.articles.article_get")
     def test_not_found(self, mock_get, client):
-        mock_get.return_value = {"success": False, "error": "Belief not found"}
+        mock_get.return_value = {"success": False, "error": "Article not found"}
         resp = client.get("/api/v1/beliefs/nonexistent")
         assert resp.status_code == 404
 
@@ -176,15 +172,16 @@ class TestBeliefsSupersede:
         resp = client.post("/api/v1/beliefs/abc/supersede", json={})
         assert resp.status_code == 400
 
-    @patch("valence.substrate.tools.beliefs.belief_supersede")
-    def test_happy_path(self, mock_supersede, client):
-        mock_supersede.return_value = {"success": True, "new_belief": {"id": "def"}}
+    @patch("valence.substrate.tools.articles.article_update")
+    def test_happy_path(self, mock_update, client):
+        mock_update.return_value = {"success": True, "article": {"id": "abc", "version": 2}}
         resp = client.post(
             "/api/v1/beliefs/abc/supersede",
             json={"new_content": "Updated", "reason": "Better info"},
         )
         assert resp.status_code == 200
-        assert mock_supersede.call_args.kwargs["old_belief_id"] == "abc"
+        assert mock_update.call_args.kwargs["article_id"] == "abc"
+        assert mock_update.call_args.kwargs["content"] == "Updated"
 
 
 # =============================================================================
@@ -219,25 +216,24 @@ class TestEntitiesGetEndpoint:
 
 
 # =============================================================================
-# TENSIONS
+# CONTENTIONS (legacy /tensions routes)
 # =============================================================================
 
 
 class TestTensionsListEndpoint:
-    @patch("valence.substrate.tools.tensions.tension_list")
+    @patch("valence.substrate.tools.contention.contention_list")
     def test_happy_path(self, mock_list, client):
-        mock_list.return_value = {"success": True, "tensions": []}
+        mock_list.return_value = {"success": True, "contentions": [], "total_count": 0}
         resp = client.get("/api/v1/tensions")
         assert resp.status_code == 200
 
-    @patch("valence.substrate.tools.tensions.tension_list")
+    @patch("valence.substrate.tools.contention.contention_list")
     def test_with_filters(self, mock_list, client):
-        mock_list.return_value = {"success": True, "tensions": []}
-        resp = client.get("/api/v1/tensions", params={"status": "detected", "severity": "high"})
+        mock_list.return_value = {"success": True, "contentions": [], "total_count": 0}
+        resp = client.get("/api/v1/tensions", params={"status": "detected"})
         assert resp.status_code == 200
         kwargs = mock_list.call_args.kwargs
         assert kwargs["status"] == "detected"
-        assert kwargs["severity"] == "high"
 
 
 class TestTensionsResolveEndpoint:
@@ -245,12 +241,12 @@ class TestTensionsResolveEndpoint:
         resp = client.post("/api/v1/tensions/abc/resolve", json={})
         assert resp.status_code == 400
 
-    @patch("valence.substrate.tools.tensions.tension_resolve")
+    @patch("valence.substrate.tools.contention.contention_resolve")
     def test_happy_path(self, mock_resolve, client):
-        mock_resolve.return_value = {"success": True}
+        mock_resolve.return_value = {"success": True, "contention": {"id": "abc", "status": "resolved"}}
         resp = client.post(
             "/api/v1/tensions/abc/resolve",
-            json={"resolution": "A is correct", "action": "supersede_b"},
+            json={"resolution": "A is correct", "action": "supersede_a"},
         )
         assert resp.status_code == 200
 
@@ -278,19 +274,19 @@ class TestStatsEndpoint:
             {"total": 100},
             {"active": 80},
             {"with_emb": 60},
-            {"tensions": 5},
+            {"cnt": 5},
             {"count": 10},
-            {"federated": 3},
+            {"cnt": 25},
         ]
 
         resp = client.get("/api/v1/stats")
         assert resp.status_code == 200
         data = resp.json()
         assert data["success"] is True
-        assert data["stats"]["total_beliefs"] == 100
-        assert data["stats"]["active_beliefs"] == 80
+        assert data["stats"]["total_articles"] == 100
+        assert data["stats"]["active_articles"] == 80
         assert data["stats"]["with_embeddings"] == 60
-        assert data["stats"]["unresolved_tensions"] == 5
+        assert data["stats"]["unresolved_contentions"] == 5
 
     @patch("our_db.get_cursor")
     def test_text_output(self, mock_gc, client):
@@ -298,7 +294,7 @@ class TestStatsEndpoint:
         mock_gc.return_value = mock_cm
         mock_cur.fetchone.side_effect = [
             {"total": 10}, {"active": 8}, {"with_emb": 6},
-            {"tensions": 1}, {"count": 3}, {"federated": 0},
+            {"cnt": 1}, {"count": 3}, {"cnt": 5},
         ]
 
         resp = client.get("/api/v1/stats", params={"output": "text"})
