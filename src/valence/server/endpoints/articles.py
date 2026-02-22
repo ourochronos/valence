@@ -12,12 +12,32 @@ Routes:
 
 from __future__ import annotations
 
+import json
 import logging
+from datetime import datetime, date
+from decimal import Decimal
+from uuid import UUID
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from ..auth_helpers import authenticate, require_scope
+
+
+class _Encoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, Decimal):
+            return float(o)
+        if isinstance(o, (datetime, date)):
+            return o.isoformat()
+        if isinstance(o, UUID):
+            return str(o)
+        return super().default(o)
+
+
+def _json_response(data, **kw):
+    body = json.dumps(data, cls=_Encoder)
+    return JSONResponse(content=json.loads(body), **kw)
 from ..endpoint_utils import _parse_bool, _parse_int
 from ..errors import internal_error, invalid_json_error, missing_field_error, validation_error
 
@@ -169,7 +189,7 @@ async def search_articles_endpoint(request: Request) -> JSONResponse:
             domain_filter=body.get("domain_filter"),
         )
         articles = result.data if result.success else []
-        return JSONResponse({
+        return _json_response({
             "success": True,
             "articles": articles,
             "total_count": len(articles),
@@ -236,7 +256,7 @@ async def get_provenance_endpoint(request: Request) -> JSONResponse:
         from ...core.provenance import get_provenance
 
         provenance = get_provenance(article_id=article_id)
-        return JSONResponse({
+        return _json_response({
             "success": True,
             "provenance": provenance,
             "count": len(provenance),
@@ -269,7 +289,7 @@ async def trace_claim_endpoint(request: Request) -> JSONResponse:
         from ...core.provenance import trace_claim
 
         sources = trace_claim(article_id=article_id, claim_text=claim_text)
-        return JSONResponse({
+        return _json_response({
             "success": True,
             "sources": sources,
             "count": len(sources),

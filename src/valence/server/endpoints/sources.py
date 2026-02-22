@@ -13,11 +13,30 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, date
+from decimal import Decimal
+from uuid import UUID
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from ..auth_helpers import authenticate, require_scope
+
+
+class _Encoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, Decimal):
+            return float(o)
+        if isinstance(o, (datetime, date)):
+            return o.isoformat()
+        if isinstance(o, UUID):
+            return str(o)
+        return super().default(o)
+
+
+def _json_response(data, **kw):
+    body = json.dumps(data, cls=_Encoder)
+    return JSONResponse(content=json.loads(body), **kw)
 from ..endpoint_utils import _parse_int, parse_output_format
 from ..errors import internal_error, invalid_json_error, missing_field_error, not_found_error, conflict_error
 
@@ -72,7 +91,7 @@ async def sources_create_endpoint(request: Request) -> JSONResponse:
             url=body.get("url"),
             metadata=body.get("metadata"),
         )
-        return JSONResponse({"success": True, "source": source}, status_code=201)
+        return _json_response({"success": True, "source": source}, status_code=201)
 
     except ConflictError as e:
         return conflict_error(e.message)
@@ -106,7 +125,7 @@ async def sources_get_endpoint(request: Request) -> JSONResponse:
         from ...core.exceptions import NotFoundError
 
         source = await get_source(source_id)
-        return JSONResponse({"success": True, "source": source})
+        return _json_response({"success": True, "source": source})
 
     except NotFoundError:
         return not_found_error(f"source {source_id}")
@@ -146,7 +165,7 @@ async def sources_list_endpoint(request: Request) -> JSONResponse:
             limit=limit,
             offset=offset,
         )
-        return JSONResponse({"success": True, "sources": sources, "total_count": len(sources)})
+        return _json_response({"success": True, "sources": sources, "total_count": len(sources)})
 
     except Exception:
         logger.exception("Error listing sources")
@@ -187,7 +206,7 @@ async def sources_search_endpoint(request: Request) -> JSONResponse:
 
         result = await search_sources(query=query, limit=limit)
         sources = result.data if result.success else []
-        return JSONResponse({"success": True, "sources": sources, "total_count": len(sources)})
+        return _json_response({"success": True, "sources": sources, "total_count": len(sources)})
 
     except Exception:
         logger.exception("Error searching sources")

@@ -17,7 +17,7 @@ from pathlib import Path
 # Set DB config before imports
 for key in ['HOST', 'PORT', 'NAME', 'USER', 'PASSWORD']:
     val = os.environ.get(f'VKB_DB_{key}') or {
-        'HOST': 'localhost', 'PORT': '5434', 'NAME': 'valence_v2',
+        'HOST': '127.0.0.1', 'PORT': '5433', 'NAME': 'valence',
         'USER': 'valence', 'PASSWORD': 'valence'
     }[key]
     os.environ[f'VKB_DB_{key}'] = val
