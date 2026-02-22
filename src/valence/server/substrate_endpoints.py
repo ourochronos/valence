@@ -38,7 +38,7 @@ async def beliefs_list_endpoint(request: Request) -> JSONResponse:
         return missing_field_error("query")
 
     try:
-        from ..substrate.tools.beliefs import belief_query
+        from ..substrate.tools.articles import article_search
 
         domain_filter = None
         df_raw = request.query_params.get("domain_filter")
@@ -55,15 +55,10 @@ async def beliefs_list_endpoint(request: Request) -> JSONResponse:
             except json.JSONDecodeError:
                 return validation_error("ranking must be valid JSON")
 
-        result = belief_query(
+        result = article_search(
             query=query,
             domain_filter=domain_filter,
-            entity_id=request.query_params.get("entity_id"),
-            include_superseded=_parse_bool(request.query_params.get("include_superseded")),
-            include_revoked=_parse_bool(request.query_params.get("include_revoked")),
-            include_archived=_parse_bool(request.query_params.get("include_archived")),
             limit=_parse_int(request.query_params.get("limit"), 20, 100),
-            ranking=ranking,
         )
         return JSONResponse(result)
     except Exception:
@@ -89,18 +84,13 @@ async def beliefs_create_endpoint(request: Request) -> JSONResponse:
         return missing_field_error("content")
 
     try:
-        from ..substrate.tools.beliefs import belief_create
+        from ..substrate.tools.articles import article_create
 
-        result = belief_create(
+        result = article_create(
             content=content,
-            confidence=body.get("confidence"),
+            title=body.get("title"),
+            source_ids=body.get("source_ids"),
             domain_path=body.get("domain_path"),
-            source_type=body.get("source_type"),
-            source_ref=body.get("source_ref"),
-            opt_out_federation=body.get("opt_out_federation", False),
-            entities=body.get("entities"),
-            visibility=body.get("visibility", "private"),
-            sharing_intent=body.get("sharing_intent"),
         )
         status_code = 201 if result.get("success") else 400
         return JSONResponse(result, status_code=status_code)
@@ -122,7 +112,7 @@ async def beliefs_search_endpoint(request: Request) -> JSONResponse:
         return missing_field_error("query")
 
     try:
-        from ..substrate.tools.beliefs import belief_search
+        from ..substrate.tools.articles import article_search
 
         domain_filter = None
         df_raw = request.query_params.get("domain_filter")
@@ -139,14 +129,10 @@ async def beliefs_search_endpoint(request: Request) -> JSONResponse:
             except json.JSONDecodeError:
                 return validation_error("ranking must be valid JSON")
 
-        result = belief_search(
+        result = article_search(
             query=query,
-            min_similarity=_parse_float(request.query_params.get("min_similarity"), 0.5) or 0.5,
-            min_confidence=_parse_float(request.query_params.get("min_confidence")),
             domain_filter=domain_filter,
-            include_archived=_parse_bool(request.query_params.get("include_archived")),
             limit=_parse_int(request.query_params.get("limit"), 10, 100),
-            ranking=ranking,
         )
         return JSONResponse(result)
     except Exception:
@@ -167,12 +153,11 @@ async def beliefs_get_endpoint(request: Request) -> JSONResponse:
         return missing_field_error("belief_id")
 
     try:
-        from ..substrate.tools.beliefs import belief_get
+        from ..substrate.tools.articles import article_get
 
-        result = belief_get(
-            belief_id=belief_id,
-            include_history=_parse_bool(request.query_params.get("include_history")),
-            include_tensions=_parse_bool(request.query_params.get("include_tensions")),
+        result = article_get(
+            article_id=belief_id,
+            include_provenance=_parse_bool(request.query_params.get("include_provenance")),
         )
         status_code = 200 if result.get("success") else 404
         return JSONResponse(result, status_code=status_code)
@@ -207,14 +192,33 @@ async def beliefs_supersede_endpoint(request: Request) -> JSONResponse:
         return missing_field_error("reason")
 
     try:
-        from ..substrate.tools.beliefs import belief_supersede
+        from ..substrate.tools.articles import article_create
+        from ..substrate.tools.articles import provenance_link
 
-        result = belief_supersede(
-            old_belief_id=belief_id,
-            new_content=new_content,
-            reason=reason,
-            confidence=body.get("confidence"),
+        # Create new article
+        create_result = article_create(
+            content=new_content,
+            title=body.get("title"),
         )
+        
+        if not create_result.get("success"):
+            return JSONResponse(create_result, status_code=400)
+        
+        new_article_id = create_result["article"]["id"]
+        
+        # Link with supersedes relationship
+        link_result = provenance_link(
+            article_id=new_article_id,
+            source_id=belief_id,
+            relationship="supersedes",
+        )
+        
+        result = {
+            "success": True,
+            "old_belief_id": belief_id,
+            "new_article": create_result["article"],
+            "reason": reason,
+        }
         status_code = 200 if result.get("success") else 404
         return JSONResponse(result, status_code=status_code)
     except Exception:
@@ -294,13 +298,11 @@ async def tensions_list_endpoint(request: Request) -> JSONResponse:
         return err
 
     try:
-        from ..substrate.tools.tensions import tension_list
+        from ..substrate.tools.contention import contention_list
 
-        result = tension_list(
-            status=request.query_params.get("status"),
-            severity=request.query_params.get("severity"),
-            entity_id=request.query_params.get("entity_id"),
-            limit=_parse_int(request.query_params.get("limit"), 20, 100),
+        result = contention_list(
+            article_id=request.query_params.get("article_id"),
+            status=request.query_params.get("status", "detected"),
         )
         return JSONResponse(result)
     except Exception:
@@ -334,12 +336,12 @@ async def tensions_resolve_endpoint(request: Request) -> JSONResponse:
         return missing_field_error("action")
 
     try:
-        from ..substrate.tools.tensions import tension_resolve
+        from ..substrate.tools.contention import contention_resolve
 
-        result = tension_resolve(
-            tension_id=tension_id,
-            resolution=resolution,
-            action=action,
+        result = contention_resolve(
+            contention_id=tension_id,
+            resolution=action,
+            rationale=resolution,
         )
         status_code = 200 if result.get("success") else 404
         return JSONResponse(result, status_code=status_code)
