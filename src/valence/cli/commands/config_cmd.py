@@ -40,6 +40,22 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         metavar="SUBCOMMAND",
     )
 
+    # valence config show
+    show_all_p = config_sub.add_parser(
+        "show",
+        help="Show all system configuration",
+    )
+    show_all_p.set_defaults(func=cmd_config_show_all)
+
+    # valence config set <key> <value>
+    set_p = config_sub.add_parser(
+        "set",
+        help="Set a configuration value",
+    )
+    set_p.add_argument("key", help="Configuration key")
+    set_p.add_argument("value", help="Configuration value (JSON string)")
+    set_p.set_defaults(func=cmd_config_set)
+
     # valence config inference ...
     inference_parser = config_sub.add_parser(
         "inference",
@@ -116,6 +132,70 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 # ---------------------------------------------------------------------------
 # Handlers
 # ---------------------------------------------------------------------------
+
+
+def cmd_config_show_all(args: argparse.Namespace) -> int:
+    """Display all system configuration."""
+    try:
+        from valence.lib.our_db import get_cursor  # type: ignore[import]
+
+        with get_cursor() as cur:
+            cur.execute("SELECT key, value, updated_at FROM system_config ORDER BY key")
+            rows = cur.fetchall()
+
+        if not rows:
+            print("No configuration found.")
+            return 0
+
+        config_dict = {}
+        for row in rows:
+            key = row["key"]
+            val = row["value"]
+            if isinstance(val, str):
+                try:
+                    val = json.loads(val)
+                except json.JSONDecodeError:
+                    pass
+            # Mask sensitive values
+            if isinstance(val, dict) and "api_key" in val:
+                val = _display_value(val)
+            config_dict[key] = val
+
+        output_result(config_dict)
+        return 0
+    except Exception as exc:
+        output_error(f"Error reading configuration: {exc}")
+        return 1
+
+
+def cmd_config_set(args: argparse.Namespace) -> int:
+    """Set a configuration value."""
+    try:
+        # Try to parse value as JSON, fall back to string
+        try:
+            value = json.loads(args.value)
+        except json.JSONDecodeError:
+            value = args.value
+
+        from valence.lib.our_db import get_cursor  # type: ignore[import]
+
+        with get_cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO system_config (key, value)
+                VALUES (%s, %s::jsonb)
+                ON CONFLICT (key) DO UPDATE
+                    SET value = EXCLUDED.value,
+                        updated_at = NOW()
+                """,
+                (args.key, json.dumps(value)),
+            )
+
+        print(f"✓ Configuration set: {args.key} = {value}")
+        return 0
+    except Exception as exc:
+        output_error(f"Error setting configuration: {exc}")
+        return 1
 
 
 def cmd_config_inference_show(args: argparse.Namespace) -> int:

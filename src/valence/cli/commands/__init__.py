@@ -7,29 +7,40 @@ its argparse sub-commands and sets ``parser.set_defaults(func=handler)``.
 from . import (
     articles,
     beliefs,
+    compile,
     config_cmd,
     conflicts,
     embeddings,
+    ingest,
     maintenance,
     migration,
     provenance,
     sources,
     stats,
+    status,
+    unified_search,
 )
 from .articles import cmd_articles_create, cmd_articles_get, cmd_articles_search
 from .beliefs import cmd_add, cmd_init, cmd_list, cmd_query
+from .compile import cmd_compile
 from .conflicts import cmd_conflicts
 from .embeddings import cmd_embeddings
+from .ingest import cmd_ingest
 from .maintenance import cmd_maintenance
 from .migration import cmd_migrate
 from .provenance import cmd_provenance_get, cmd_provenance_link, cmd_provenance_trace
-from .sources import cmd_sources_ingest, cmd_sources_list, cmd_sources_search
+from .sources import cmd_sources_get, cmd_sources_ingest, cmd_sources_list, cmd_sources_search
 from .stats import cmd_stats
+from .status import cmd_status
+from .unified_search import cmd_search
 
 # All command modules with register() functions, in registration order.
-# New v2 modules (sources, articles, provenance) are registered first for
-# discoverability; legacy modules follow for backward compatibility.
+# New v2 modules are registered first for discoverability; legacy modules follow.
 COMMAND_MODULES = [
+    unified_search,  # valence search
+    ingest,  # valence ingest
+    compile,  # valence compile
+    status,  # valence status
     sources,
     articles,
     provenance,
@@ -44,6 +55,11 @@ COMMAND_MODULES = [
 
 __all__ = [
     "COMMAND_MODULES",
+    # New v2 commands
+    "cmd_search",
+    "cmd_ingest",
+    "cmd_compile",
+    "cmd_status",
     # v2 commands
     "cmd_articles_create",
     "cmd_articles_get",
@@ -51,6 +67,7 @@ __all__ = [
     "cmd_provenance_get",
     "cmd_provenance_link",
     "cmd_provenance_trace",
+    "cmd_sources_get",
     "cmd_sources_ingest",
     "cmd_sources_list",
     "cmd_sources_search",
