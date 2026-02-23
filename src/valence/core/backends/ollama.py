@@ -47,7 +47,7 @@ def create_ollama_backend(
 
     backend = create_openai_backend(
         base_url=f"{host.rstrip('/')}/v1",
-        api_key="ollama",      # Ollama doesn't validate the key
+        api_key="ollama",  # Ollama doesn't validate the key
         model=model,
         timeout=timeout,
     )

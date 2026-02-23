@@ -132,7 +132,7 @@ def text_similarity(text_a: str, text_b: str) -> float:
 
 def _tokenize(text: str) -> list[str]:
     """Simple whitespace + punctuation tokenizer with lowercasing."""
-    return [t for t in re.split(r'\W+', text.lower()) if t and len(t) > 1]
+    return [t for t in re.split(r"\W+", text.lower()) if t and len(t) > 1]
 
 
 def build_embedding_capability_advertisement() -> dict[str, Any]:

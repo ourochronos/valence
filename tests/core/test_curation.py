@@ -27,15 +27,11 @@ class TestSignalConfidence:
 
     def test_explicit_request_highest(self):
         """Explicit requests should have the highest confidence."""
-        assert SIGNAL_CONFIDENCE["explicit_request"] >= max(
-            v for k, v in SIGNAL_CONFIDENCE.items() if k != "explicit_request"
-        )
+        assert SIGNAL_CONFIDENCE["explicit_request"] >= max(v for k, v in SIGNAL_CONFIDENCE.items() if k != "explicit_request")
 
     def test_mentioned_in_passing_lowest(self):
         """Mentioned in passing should have the lowest confidence."""
-        assert SIGNAL_CONFIDENCE["mentioned_in_passing"] <= min(
-            v for k, v in SIGNAL_CONFIDENCE.items() if k != "mentioned_in_passing"
-        )
+        assert SIGNAL_CONFIDENCE["mentioned_in_passing"] <= min(v for k, v in SIGNAL_CONFIDENCE.items() if k != "mentioned_in_passing")
 
     def test_session_summary_above_threshold(self):
         """Session summaries should be above the default capture threshold."""

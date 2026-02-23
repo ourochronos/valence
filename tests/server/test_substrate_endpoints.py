@@ -293,8 +293,12 @@ class TestStatsEndpoint:
         mock_cm, mock_cur = _mock_cursor()
         mock_gc.return_value = mock_cm
         mock_cur.fetchone.side_effect = [
-            {"total": 10}, {"active": 8}, {"with_emb": 6},
-            {"cnt": 1}, {"count": 3}, {"cnt": 5},
+            {"total": 10},
+            {"active": 8},
+            {"with_emb": 6},
+            {"cnt": 1},
+            {"count": 3},
+            {"cnt": 5},
         ]
 
         resp = client.get("/api/v1/stats", params={"output": "text"})

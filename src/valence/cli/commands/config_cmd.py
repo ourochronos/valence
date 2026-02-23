@@ -105,8 +105,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         "--model",
         default="qwen3:30b",
         metavar="MODEL",
-        help="Ollama model name (default: qwen3:30b). "
-             "Must be pulled first: ollama pull <model>",
+        help="Ollama model name (default: qwen3:30b). Must be pulled first: ollama pull <model>",
     )
     ollama_p.set_defaults(func=cmd_config_inference_ollama)
 
@@ -196,10 +195,9 @@ def _show_config_direct() -> int:
     """Read inference config directly from the database (no server required)."""
     try:
         from our_db import get_cursor  # type: ignore[import]
+
         with get_cursor() as cur:
-            cur.execute(
-                "SELECT value, updated_at FROM system_config WHERE key = 'inference' LIMIT 1"
-            )
+            cur.execute("SELECT value, updated_at FROM system_config WHERE key = 'inference' LIMIT 1")
             row = cur.fetchone()
         if row is None:
             print("No inference backend configured (running in degraded/mock mode).")
@@ -221,6 +219,7 @@ def _write_config_direct(key: str, value: dict, display_value: dict) -> int:
     """Write a system_config entry directly to the database (no server required)."""
     try:
         from our_db import get_cursor  # type: ignore[import]
+
         with get_cursor() as cur:
             cur.execute(
                 """

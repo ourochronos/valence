@@ -291,10 +291,7 @@ class TestSplitArticle:
         assert SOURCE_ID_3 in calls_str
         # Specifically, the new article should have inserts for all three
         # Count occurrences of NEW_ARTICLE_ID in article_sources inserts
-        article_sources_calls = [
-            str(c) for c in mock_cur.execute.call_args_list
-            if "article_sources" in str(c)
-        ]
+        article_sources_calls = [str(c) for c in mock_cur.execute.call_args_list if "article_sources" in str(c)]
         new_art_source_calls = [c for c in article_sources_calls if NEW_ARTICLE_ID in c]
         assert len(new_art_source_calls) == 3  # one insert per source
 
@@ -309,10 +306,7 @@ class TestSplitArticle:
         ):
             await split_article(ARTICLE_ID)
 
-        mutation_calls = [
-            str(c) for c in mock_cur.execute.call_args_list
-            if "article_mutations" in str(c) and "split" in str(c)
-        ]
+        mutation_calls = [str(c) for c in mock_cur.execute.call_args_list if "article_mutations" in str(c) and "split" in str(c)]
         # Should be exactly 2 mutation inserts (one for each article)
         assert len(mutation_calls) == 2
         # Both should reference each other
@@ -468,10 +462,7 @@ class TestMergeArticles:
             await merge_articles(ARTICLE_ID_A, ARTICLE_ID_B)
 
         # Count article_sources INSERT calls for merged article (self.MERGED_ID)
-        source_insert_calls = [
-            str(c) for c in mock_cur.execute.call_args_list
-            if "article_sources" in str(c) and self.MERGED_ID in str(c)
-        ]
+        source_insert_calls = [str(c) for c in mock_cur.execute.call_args_list if "article_sources" in str(c) and self.MERGED_ID in str(c)]
         # 3 unique (source_id, relationship) combos: shared+originates, s2+confirms, s3+contends
         assert len(source_insert_calls) == 3
 
@@ -486,10 +477,7 @@ class TestMergeArticles:
         ):
             await merge_articles(ARTICLE_ID_A, ARTICLE_ID_B)
 
-        mutation_calls = [
-            str(c) for c in mock_cur.execute.call_args_list
-            if "article_mutations" in str(c) and "merged" in str(c)
-        ]
+        mutation_calls = [str(c) for c in mock_cur.execute.call_args_list if "article_mutations" in str(c) and "merged" in str(c)]
         # 3 mutations: one for A, one for B, one for the merged article
         assert len(mutation_calls) == 3
         combined = " ".join(mutation_calls)
@@ -535,10 +523,7 @@ class TestMergeArticles:
             await merge_articles(ARTICLE_ID_A, ARTICLE_ID_B)
 
         # Find the INSERT INTO articles call and check title argument
-        insert_calls = [
-            c for c in mock_cur.execute.call_args_list
-            if "INSERT INTO articles" in str(c)
-        ]
+        insert_calls = [c for c in mock_cur.execute.call_args_list if "INSERT INTO articles" in str(c)]
         assert len(insert_calls) == 1
         # The args should contain "Article A + Article B"
         insert_args = str(insert_calls[0])
@@ -556,10 +541,7 @@ class TestMergeArticles:
             await merge_articles(ARTICLE_ID_A, ARTICLE_ID_B)
 
         # The INSERT call's first positional arg after the SQL is the content
-        insert_calls = [
-            c for c in mock_cur.execute.call_args_list
-            if "INSERT INTO articles" in str(c)
-        ]
+        insert_calls = [c for c in mock_cur.execute.call_args_list if "INSERT INTO articles" in str(c)]
         insert_args = str(insert_calls[0])
         assert "Content from article A" in insert_args
         assert "Content from article B" in insert_args
@@ -583,10 +565,7 @@ class TestMergeArticles:
         ):
             await merge_articles(ARTICLE_ID_A, ARTICLE_ID_B)
 
-        source_inserts = [
-            str(c) for c in mock_cur.execute.call_args_list
-            if "article_sources" in str(c) and self.MERGED_ID in str(c)
-        ]
+        source_inserts = [str(c) for c in mock_cur.execute.call_args_list if "article_sources" in str(c) and self.MERGED_ID in str(c)]
         # 3 unique: (s1, originates), (s2, confirms), (s3, contends)
         assert len(source_inserts) == 3
 

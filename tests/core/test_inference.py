@@ -42,8 +42,10 @@ def _sync_backend(response: str):
 
 def _async_backend(response: str):
     """Return an async callable that returns response."""
+
     async def _fn(prompt: str) -> str:
         return response
+
     return _fn
 
 

@@ -200,11 +200,7 @@ def admin_stats() -> dict[str, Any]:
             if cfg_row:
                 import json
 
-                cfg = (
-                    json.loads(cfg_row["value"])
-                    if isinstance(cfg_row["value"], str)
-                    else cfg_row["value"]
-                )
+                cfg = json.loads(cfg_row["value"]) if isinstance(cfg_row["value"], str) else cfg_row["value"]
                 max_articles = int(cfg.get("max_articles", 10000))
             else:
                 max_articles = 10000
@@ -277,10 +273,7 @@ def admin_maintenance(
     if not any([recompute_scores, process_queue, evict_if_over_capacity]):
         return {
             "success": False,
-            "error": (
-                "At least one operation must be requested: "
-                "recompute_scores, process_queue, evict_if_over_capacity"
-            ),
+            "error": ("At least one operation must be requested: recompute_scores, process_queue, evict_if_over_capacity"),
         }
 
     results: dict[str, Any] = {}

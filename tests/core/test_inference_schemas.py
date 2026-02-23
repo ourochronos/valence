@@ -60,9 +60,7 @@ def _j(obj: dict) -> str:
 
 class TestRelationshipEnum:
     def test_all_values_present(self):
-        assert set(RELATIONSHIP_ENUM) == {
-            "originates", "confirms", "supersedes", "contradicts", "contends"
-        }
+        assert set(RELATIONSHIP_ENUM) == {"originates", "confirms", "supersedes", "contradicts", "contends"}
 
     def test_is_list(self):
         assert isinstance(RELATIONSHIP_ENUM, list)
@@ -124,17 +122,13 @@ class TestValidateCompile:
             validate_output(TASK_COMPILE, _j(data))
 
     def test_invalid_relationship_in_list_raises(self):
-        data = self._valid(source_relationships=[
-            {"source_id": "x", "relationship": "INVALID"}
-        ])
+        data = self._valid(source_relationships=[{"source_id": "x", "relationship": "INVALID"}])
         with pytest.raises(InferenceSchemaError, match="INVALID"):
             validate_output(TASK_COMPILE, _j(data))
 
     def test_all_valid_relationship_values(self):
         for rel in RELATIONSHIP_ENUM:
-            data = self._valid(source_relationships=[
-                {"source_id": "x", "relationship": rel}
-            ])
+            data = self._valid(source_relationships=[{"source_id": "x", "relationship": rel}])
             result = validate_output(TASK_COMPILE, _j(data))
             assert result["source_relationships"][0]["relationship"] == rel
 
@@ -487,10 +481,7 @@ class TestValidateCommon:
 class TestInferenceProviderSchemaValidation:
     async def test_valid_compile_response_populates_parsed(self):
         p = InferenceProvider()
-        response = json.dumps({
-            "title": "T", "content": "C",
-            "source_relationships": [{"source_id": "x", "relationship": "originates"}]
-        })
+        response = json.dumps({"title": "T", "content": "C", "source_relationships": [{"source_id": "x", "relationship": "originates"}]})
         p.configure(lambda prompt: response)
         result = await p.infer(TASK_COMPILE, "prompt")
         assert not result.degraded
@@ -509,9 +500,7 @@ class TestInferenceProviderSchemaValidation:
 
     async def test_valid_update_response_populates_parsed(self):
         p = InferenceProvider()
-        response = json.dumps({
-            "content": "Updated.", "relationship": "confirms", "changes_summary": "Minor fix."
-        })
+        response = json.dumps({"content": "Updated.", "relationship": "confirms", "changes_summary": "Minor fix."})
         p.configure(lambda prompt: response)
         result = await p.infer(TASK_UPDATE, "prompt")
         assert result.parsed is not None
@@ -519,9 +508,7 @@ class TestInferenceProviderSchemaValidation:
 
     async def test_valid_contention_response_populates_parsed(self):
         p = InferenceProvider()
-        response = json.dumps({
-            "is_contention": True, "materiality": 0.6, "explanation": "Disagrees."
-        })
+        response = json.dumps({"is_contention": True, "materiality": 0.6, "explanation": "Disagrees."})
         p.configure(lambda prompt: response)
         result = await p.infer(TASK_CONTENTION, "prompt")
         assert result.parsed is not None
@@ -529,9 +516,7 @@ class TestInferenceProviderSchemaValidation:
 
     async def test_valid_split_response_populates_parsed(self):
         p = InferenceProvider()
-        response = json.dumps({
-            "split_index": 100, "part_a_title": "A", "part_b_title": "B", "reasoning": "R"
-        })
+        response = json.dumps({"split_index": 100, "part_a_title": "A", "part_b_title": "B", "reasoning": "R"})
         p.configure(lambda prompt: response)
         result = await p.infer(TASK_SPLIT, "prompt")
         assert result.parsed is not None
@@ -539,9 +524,7 @@ class TestInferenceProviderSchemaValidation:
 
     async def test_valid_classify_response_populates_parsed(self):
         p = InferenceProvider()
-        response = json.dumps({
-            "relationship": "supersedes", "confidence": 0.9, "reasoning": "Newer data."
-        })
+        response = json.dumps({"relationship": "supersedes", "confidence": 0.9, "reasoning": "Newer data."})
         p.configure(lambda prompt: response)
         result = await p.infer(TASK_CLASSIFY, "prompt")
         assert result.parsed is not None

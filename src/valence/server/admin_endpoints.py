@@ -77,11 +77,13 @@ async def admin_migrate_up(request: Request) -> JSONResponse:
         runner = MigrationRunner()
         applied = runner.up(dry_run=dry_run)
 
-        return JSONResponse({
-            "success": True,
-            "applied": applied,
-            "dry_run": dry_run,
-        })
+        return JSONResponse(
+            {
+                "success": True,
+                "applied": applied,
+                "dry_run": dry_run,
+            }
+        )
     except Exception:
         logger.exception("Migration up failed")
         return internal_error()
@@ -108,11 +110,13 @@ async def admin_migrate_down(request: Request) -> JSONResponse:
         runner = MigrationRunner()
         rolled_back = runner.down(dry_run=dry_run)
 
-        return JSONResponse({
-            "success": True,
-            "rolled_back": rolled_back,
-            "dry_run": dry_run,
-        })
+        return JSONResponse(
+            {
+                "success": True,
+                "rolled_back": rolled_back,
+                "dry_run": dry_run,
+            }
+        )
     except Exception:
         logger.exception("Migration down failed")
         return internal_error()
@@ -281,11 +285,13 @@ async def admin_embeddings_backfill(request: Request) -> JSONResponse:
             rows = cur.fetchall()
 
         if dry_run:
-            return JSONResponse({
-                "success": True,
-                "would_process": len(rows),
-                "dry_run": True,
-            })
+            return JSONResponse(
+                {
+                    "success": True,
+                    "would_process": len(rows),
+                    "dry_run": True,
+                }
+            )
 
         processed = 0
         errors = 0
@@ -299,12 +305,14 @@ async def admin_embeddings_backfill(request: Request) -> JSONResponse:
             except Exception:
                 errors += 1
 
-        return JSONResponse({
-            "success": True,
-            "processed": processed,
-            "errors": errors,
-            "remaining": len(rows) - processed - errors,
-        })
+        return JSONResponse(
+            {
+                "success": True,
+                "processed": processed,
+                "errors": errors,
+                "remaining": len(rows) - processed - errors,
+            }
+        )
     except Exception:
         logger.exception("Embedding backfill failed")
         return internal_error()
@@ -337,26 +345,30 @@ async def admin_embeddings_migrate(request: Request) -> JSONResponse:
             with get_cursor() as cur:
                 cur.execute("SELECT COUNT(*) as count FROM articles WHERE embedding IS NOT NULL")
                 count = cur.fetchone()["count"]
-            return JSONResponse({
-                "success": True,
-                "would_affect": count,
-                "model": model,
-                "dims": dims,
-                "dry_run": True,
-            })
+            return JSONResponse(
+                {
+                    "success": True,
+                    "would_affect": count,
+                    "model": model,
+                    "dims": dims,
+                    "dry_run": True,
+                }
+            )
 
         with get_cursor() as cur:
             # NULL out all embeddings (they need regeneration with new model)
             cur.execute("UPDATE articles SET embedding = NULL WHERE embedding IS NOT NULL")
             affected = cur.rowcount
 
-        return JSONResponse({
-            "success": True,
-            "cleared_embeddings": affected,
-            "model": model,
-            "dims": dims,
-            "note": "Run /admin/embeddings/backfill to regenerate with new model",
-        })
+        return JSONResponse(
+            {
+                "success": True,
+                "cleared_embeddings": affected,
+                "model": model,
+                "dims": dims,
+                "note": "Run /admin/embeddings/backfill to regenerate with new model",
+            }
+        )
     except Exception:
         logger.exception("Embedding migration failed")
         return internal_error()
@@ -389,12 +401,14 @@ async def admin_verify_chains(request: Request) -> JSONResponse:
             """)
             broken = cur.fetchall()
             for row in broken:
-                issues.append({
-                    "type": "broken_chain",
-                    "belief_id": str(row["id"]),
-                    "points_to": str(row["superseded_by_id"]),
-                    "description": "Superseded belief points to non-existent belief",
-                })
+                issues.append(
+                    {
+                        "type": "broken_chain",
+                        "belief_id": str(row["id"]),
+                        "points_to": str(row["superseded_by_id"]),
+                        "description": "Superseded belief points to non-existent belief",
+                    }
+                )
 
             # Check for cycles
             cur.execute("""
@@ -410,19 +424,23 @@ async def admin_verify_chains(request: Request) -> JSONResponse:
             """)
             deep = cur.fetchall()
             for row in deep:
-                issues.append({
-                    "type": "deep_chain",
-                    "belief_id": str(row["id"]),
-                    "depth": row["depth"],
-                    "description": "Supersession chain is unusually deep",
-                })
+                issues.append(
+                    {
+                        "type": "deep_chain",
+                        "belief_id": str(row["id"]),
+                        "depth": row["depth"],
+                        "description": "Supersession chain is unusually deep",
+                    }
+                )
 
-        return JSONResponse({
-            "success": True,
-            "issues": issues,
-            "count": len(issues),
-            "status": "healthy" if not issues else "issues_found",
-        })
+        return JSONResponse(
+            {
+                "success": True,
+                "issues": issues,
+                "count": len(issues),
+                "status": "healthy" if not issues else "issues_found",
+            }
+        )
     except Exception:
         logger.exception("Chain verification failed")
         return internal_error()

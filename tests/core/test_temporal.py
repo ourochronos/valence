@@ -250,9 +250,9 @@ class TestSupersessionChain:
         )
         # Algorithm: find first i where when < timestamps[i], return belief_ids[i] (or None if i==0)
         # Semantically: timestamps[i] is when belief_ids[i] was superseded
-        assert chain.get_at_time(datetime(2025, 3, 1)) == "b"   # when < ts[1], return ids[1]
-        assert chain.get_at_time(datetime(2025, 8, 1)) == "c"   # when < ts[2], return ids[2]
-        assert chain.get_at_time(datetime(2026, 1, 1)) == "c"   # no match, return current
+        assert chain.get_at_time(datetime(2025, 3, 1)) == "b"  # when < ts[1], return ids[1]
+        assert chain.get_at_time(datetime(2025, 8, 1)) == "c"  # when < ts[2], return ids[2]
+        assert chain.get_at_time(datetime(2026, 1, 1)) == "c"  # no match, return current
 
     def test_get_at_time_before_first(self):
         chain = SupersessionChain(

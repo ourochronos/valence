@@ -235,9 +235,9 @@ class TestDetectContention:
         contention_row = _contention_row(materiality=0.7)
         cur = _make_cursor(
             fetchone_seq=[
-                _article_row(),   # article lookup
-                _source_row(),    # source lookup
-                contention_row,   # INSERT RETURNING
+                _article_row(),  # article lookup
+                _source_row(),  # source lookup
+                contention_row,  # INSERT RETURNING
             ]
         )
         set_llm_backend(lambda _p: _llm_contends(materiality=0.7))
@@ -362,9 +362,7 @@ class TestMaterialityThreshold:
     async def test_exactly_at_threshold_creates_contention(self):
         """Materiality equal to threshold is accepted (>= comparison)."""
         contention_row = _contention_row(materiality=0.3)
-        cur = _make_cursor(
-            fetchone_seq=[_article_row(), _source_row(), contention_row]
-        )
+        cur = _make_cursor(fetchone_seq=[_article_row(), _source_row(), contention_row])
         set_llm_backend(lambda _p: _llm_contends(materiality=0.3))
         try:
             with _patch_cursor(cur), _skip_schema_ensure(), _patch_threshold(0.3):
@@ -471,8 +469,8 @@ class TestResolveContention:
         updated_row = _contention_row(status="dismissed", resolution="testing")
         cur = _make_cursor(
             fetchone_seq=[
-                _contention_row(),   # load contention
-                updated_row,          # UPDATE RETURNING
+                _contention_row(),  # load contention
+                updated_row,  # UPDATE RETURNING
             ]
         )
         with _patch_cursor(cur), _skip_schema_ensure():
@@ -489,8 +487,8 @@ class TestResolveContention:
         updated_row = _contention_row(status="resolved", resolution="article wins")
         cur = _make_cursor(
             fetchone_seq=[
-                _contention_row(),   # load contention
-                updated_row,          # UPDATE RETURNING
+                _contention_row(),  # load contention
+                updated_row,  # UPDATE RETURNING
             ]
         )
         with _patch_cursor(cur), _skip_schema_ensure():
@@ -506,8 +504,8 @@ class TestResolveContention:
         # accept_both branch: UPDATE articles (no fetchone call), then UPDATE contentions RETURNING
         cur = _make_cursor(
             fetchone_seq=[
-                _contention_row(),   # load contention
-                updated_row,          # UPDATE contentions RETURNING
+                _contention_row(),  # load contention
+                updated_row,  # UPDATE contentions RETURNING
             ]
         )
         with _patch_cursor(cur), _skip_schema_ensure():
@@ -530,11 +528,11 @@ class TestResolveContention:
         # UPDATE contentions RETURNING
         cur = _make_cursor(
             fetchone_seq=[
-                contention,           # load contention
-                article,              # load article A (in _apply_supersede_b)
-                source,               # load source
-                updated_article,      # UPDATE articles RETURNING
-                updated_contention,   # UPDATE contentions RETURNING
+                contention,  # load contention
+                article,  # load article A (in _apply_supersede_b)
+                source,  # load source
+                updated_article,  # UPDATE articles RETURNING
+                updated_contention,  # UPDATE contentions RETURNING
             ]
         )
         # LLM unavailable → fallback uses source content directly
@@ -563,9 +561,7 @@ class TestResolveContention:
                 updated_contention,
             ]
         )
-        set_llm_backend(
-            lambda _p: json.dumps({"content": "Merged content from LLM."})
-        )
+        set_llm_backend(lambda _p: json.dumps({"content": "Merged content from LLM."}))
         try:
             with _patch_cursor(cur), _skip_schema_ensure():
                 result = await resolve_contention(CONTENTION_ID, "supersede_b", "Merge")
@@ -576,9 +572,7 @@ class TestResolveContention:
     async def test_resolve_records_resolution_text(self):
         """Resolution rationale is stored on the contention row."""
         updated_row = _contention_row(status="dismissed", resolution="Not important")
-        cur = _make_cursor(
-            fetchone_seq=[_contention_row(), updated_row]
-        )
+        cur = _make_cursor(fetchone_seq=[_contention_row(), updated_row])
         with _patch_cursor(cur), _skip_schema_ensure():
             result = await resolve_contention(CONTENTION_ID, "dismiss", "Not important")
 
@@ -631,9 +625,7 @@ class TestLLMBackend:
         set_llm_backend(None)
         # Now heuristic is used → contention may be created
         contention_row = _contention_row()
-        cur2 = _make_cursor(
-            fetchone_seq=[_article_row(), _source_row(), contention_row]
-        )
+        cur2 = _make_cursor(fetchone_seq=[_article_row(), _source_row(), contention_row])
         with _patch_cursor(cur2), _skip_schema_ensure(), _patch_threshold(0.3):
             result2 = await detect_contention(ARTICLE_ID, SOURCE_ID)
         # Heuristic returns 0.35 which is >= 0.3 → creates contention
@@ -659,9 +651,7 @@ class TestLLMBackend:
     async def test_llm_returns_invalid_json_falls_back_to_heuristic(self):
         """Malformed LLM JSON falls back to heuristic."""
         contention_row = _contention_row()
-        cur = _make_cursor(
-            fetchone_seq=[_article_row(), _source_row(), contention_row]
-        )
+        cur = _make_cursor(fetchone_seq=[_article_row(), _source_row(), contention_row])
         set_llm_backend(lambda _p: "this is not json !! {{{")
         try:
             with _patch_cursor(cur), _skip_schema_ensure(), _patch_threshold(0.3):
@@ -674,9 +664,7 @@ class TestLLMBackend:
     async def test_invalid_contention_type_defaults_to_contradiction(self):
         """Unknown contention_type from LLM is normalized to 'contradiction'."""
         contention_row = _contention_row()
-        cur = _make_cursor(
-            fetchone_seq=[_article_row(), _source_row(), contention_row]
-        )
+        cur = _make_cursor(fetchone_seq=[_article_row(), _source_row(), contention_row])
         llm_resp = json.dumps(
             {
                 "is_contention": True,

@@ -133,6 +133,7 @@ class TestAutoCapture:
         """DB error during belief creation should return 0, not raise."""
         conn, cursor, _ = mock_conn
         import psycopg2
+
         cursor.execute = MagicMock(side_effect=psycopg2.Error("test error"))
 
         session_data = {

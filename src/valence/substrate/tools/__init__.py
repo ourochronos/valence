@@ -11,6 +11,9 @@ from __future__ import annotations
 # Re-export shared utilities (also ensures patch target backward compat)
 from ._common import _validate_enum, get_cursor  # noqa: F401
 
+# Re-export admin tools (WU-10)
+from .admin import admin_forget, admin_maintenance, admin_stats  # noqa: F401
+
 # Re-export article tool implementations (WU-04, WU-06, WU-07)
 from .articles import (  # noqa: F401
     article_compile,
@@ -39,22 +42,20 @@ from .entities import entity_get, entity_search  # noqa: F401
 # Re-export handler dispatch
 from .handlers import SUBSTRATE_HANDLERS, handle_substrate_tool  # noqa: F401
 
-# Backward-compat aliases (tension_ → contention_)
-tension_list = contention_list  # noqa: F401
-tension_resolve = contention_resolve  # noqa: F401
-
-# Re-export source tools (WU-03)
-# Re-export admin tools (WU-10)
-from .admin import admin_forget, admin_maintenance, admin_stats  # noqa: F401
-
 # Re-export retrieval (WU-05)
 from .retrieval import knowledge_search  # noqa: F401
+
+# Re-export source tools (WU-03)
 from .sources import (  # noqa: F401
     source_get,
     source_ingest,
     source_list,
     source_search,
 )
+
+# Backward-compat aliases (tension_ → contention_)
+tension_list = contention_list  # noqa: F401
+tension_resolve = contention_resolve  # noqa: F401
 
 __all__ = [
     # Definitions

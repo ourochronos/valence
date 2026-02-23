@@ -77,11 +77,7 @@ async def _call_llm(prompt: str, task_type: str = TASK_COMPILE) -> str:
     """
     result = await _inference_provider.infer(task_type, prompt)
     if result.degraded:
-        raise NotImplementedError(
-            result.error
-            or "No LLM backend configured for compilation. "
-            "Call valence.core.compilation.set_llm_backend(fn)."
-        )
+        raise NotImplementedError(result.error or "No LLM backend configured for compilation. Call valence.core.compilation.set_llm_backend(fn).")
     return result.content
 
 
@@ -99,10 +95,7 @@ def _ensure_degraded_column() -> None:
         return
     try:
         with get_cursor() as cur:
-            cur.execute(
-                "ALTER TABLE articles "
-                "ADD COLUMN IF NOT EXISTS degraded BOOLEAN DEFAULT FALSE"
-            )
+            cur.execute("ALTER TABLE articles ADD COLUMN IF NOT EXISTS degraded BOOLEAN DEFAULT FALSE")
     except Exception:
         pass
     _DEGRADED_SCHEMA_ENSURED = True
@@ -123,9 +116,7 @@ def _get_right_sizing() -> dict[str, int]:
     """Read ``right_sizing`` from ``system_config``, falling back to defaults."""
     try:
         with get_cursor() as cur:
-            cur.execute(
-                "SELECT value FROM system_config WHERE key = 'right_sizing' LIMIT 1"
-            )
+            cur.execute("SELECT value FROM system_config WHERE key = 'right_sizing' LIMIT 1")
             row = cur.fetchone()
             if row:
                 val = row["value"]
@@ -153,9 +144,7 @@ def _count_tokens(content: str) -> int:
 # ---------------------------------------------------------------------------
 
 
-def _build_compilation_prompt(
-    sources: list[dict], title_hint: str | None, target_tokens: int
-) -> str:
+def _build_compilation_prompt(sources: list[dict], title_hint: str | None, target_tokens: int) -> str:
     """Build the LLM prompt for compiling multiple sources into a single article."""
     source_blocks = []
     for src in sources:
@@ -190,9 +179,7 @@ Respond ONLY with valid JSON matching this exact schema (no markdown fences):
 Use the actual source id values (shown above) in source_relationships."""
 
 
-def _build_update_prompt(
-    article: dict, source: dict, target_tokens: int
-) -> str:
+def _build_update_prompt(article: dict, source: dict, target_tokens: int) -> str:
     """Build the LLM prompt for incrementally updating an article with a new source."""
     article_title = article.get("title") or "Untitled Article"
     article_content = (article.get("content") or "").strip()
@@ -334,17 +321,11 @@ async def compile_article(
     except (NotImplementedError, InferenceSchemaError, ValueError, json.JSONDecodeError) as exc:
         logger.warning("LLM compilation unavailable (%s), using fallback concatenation", exc)
         is_degraded = True
-        content_parts = [
-            f"## {s.get('title') or 'Source'}\n{s.get('content', '')}"
-            for s in sources
-        ]
+        content_parts = [f"## {s.get('title') or 'Source'}\n{s.get('content', '')}" for s in sources]
         parsed = {
             "title": title_hint or (sources[0].get("title") if sources else "Compiled Article"),
             "content": "\n\n".join(content_parts),
-            "source_relationships": [
-                {"source_id": s["id"], "relationship": "originates"}
-                for s in sources
-            ],
+            "source_relationships": [{"source_id": s["id"], "relationship": "originates"} for s in sources],
         }
 
     article_content: str = parsed.get("content") or ""
@@ -420,9 +401,7 @@ async def compile_article(
                     json.dumps({"reason": "exceeds_max_tokens", "token_count": token_count}),
                 ),
             )
-            logger.info(
-                "Article %s queued for split (tokens=%d > max=%d)", article_id, token_count, max_tokens
-            )
+            logger.info("Article %s queued for split (tokens=%d > max=%d)", article_id, token_count, max_tokens)
 
         # DR-9: Mark degraded articles and queue for reprocessing (WU-13).
         if is_degraded:
@@ -572,7 +551,9 @@ async def update_article_from_source(
             )
             logger.info(
                 "Article %s queued for split after update (tokens=%d > max=%d)",
-                article_id, token_count, max_tokens,
+                article_id,
+                token_count,
+                max_tokens,
             )
 
         # DR-9: Mark degraded articles and queue for reprocessing (WU-13).
@@ -592,9 +573,7 @@ async def update_article_from_source(
                         json.dumps({"reason": "inference_unavailable_at_update_time"}),
                     ),
                 )
-                logger.info(
-                    "Article %s update marked degraded; queued for recompile", article_id
-                )
+                logger.info("Article %s update marked degraded; queued for recompile", article_id)
             except Exception as exc:  # pragma: no cover
                 logger.warning("Failed to mark article %s degraded after update: %s", article_id, exc)
 
@@ -660,7 +639,10 @@ async def process_mutation_queue(batch_size: int = 10) -> ValenceResponse:
         except Exception as exc:
             logger.error(
                 "Mutation queue item %s (op=%s, article=%s) failed: %s",
-                item_id, operation, article_id, exc,
+                item_id,
+                operation,
+                article_id,
+                exc,
             )
             _set_queue_item_status(item_id, "failed", error=str(exc))
 
@@ -702,7 +684,8 @@ async def _process_mutation_item(operation: str, article_id: str, payload: dict)
             _article = result.data if hasattr(result, "data") else result.get("article", {})
             logger.info(
                 "Recompile queued for article %s → new article %s",
-                article_id, (_article or {}).get("id", "?"),
+                article_id,
+                (_article or {}).get("id", "?"),
             )
         else:
             logger.warning("recompile: no sources found for article %s", article_id)
@@ -711,6 +694,7 @@ async def _process_mutation_item(operation: str, article_id: str, payload: dict)
         # WU-07 implements the actual split; try to call it if available
         try:
             from valence.core import articles as _articles  # noqa: PLC0415
+
             split_fn = getattr(_articles, "split_article", None)
             if split_fn is None:
                 raise NotImplementedError("split_article not yet implemented (WU-07 pending)")
@@ -728,6 +712,7 @@ async def _process_mutation_item(operation: str, article_id: str, payload: dict)
             return  # Not a failure — just a no-op
         try:
             from valence.core import articles as _articles  # noqa: PLC0415
+
             merge_fn = getattr(_articles, "merge_articles", None)
             if merge_fn is None:
                 raise NotImplementedError("merge_articles not yet implemented (WU-07 pending)")
@@ -757,6 +742,7 @@ async def _process_mutation_item(operation: str, article_id: str, payload: dict)
         if usage_score < threshold:
             try:
                 from valence.core import forgetting as _forgetting  # noqa: PLC0415
+
                 evict_fn = getattr(_forgetting, "evict_lowest", None)
                 if evict_fn:
                     result = evict_fn(1)
@@ -764,14 +750,18 @@ async def _process_mutation_item(operation: str, article_id: str, payload: dict)
                         await result
                     logger.info(
                         "Evicted low-usage article %s (score=%.3f < threshold=%.3f)",
-                        article_id, usage_score, threshold,
+                        article_id,
+                        usage_score,
+                        threshold,
                     )
             except ImportError:
                 logger.warning("forgetting module not available for decay_check on %s", article_id)
         else:
             logger.debug(
                 "decay_check: article %s usage_score=%.3f >= threshold=%.3f, no eviction",
-                article_id, usage_score, threshold,
+                article_id,
+                usage_score,
+                threshold,
             )
 
     else:

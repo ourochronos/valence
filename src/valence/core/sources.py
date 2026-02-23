@@ -26,9 +26,7 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-VALID_SOURCE_TYPES = frozenset(
-    ["document", "conversation", "web", "code", "observation", "tool_output", "user_input"]
-)
+VALID_SOURCE_TYPES = frozenset(["document", "conversation", "web", "code", "observation", "tool_output", "user_input"])
 
 # Reliability defaults per source type (C1 spec)
 RELIABILITY_DEFAULTS: dict[str, float] = {
@@ -110,9 +108,7 @@ async def ingest_source(
         return err("content must be non-empty")
 
     if source_type not in VALID_SOURCE_TYPES:
-        return err(
-            f"Invalid source_type '{source_type}'. Must be one of: {', '.join(sorted(VALID_SOURCE_TYPES))}"
-        )
+        return err(f"Invalid source_type '{source_type}'. Must be one of: {', '.join(sorted(VALID_SOURCE_TYPES))}")
 
     fingerprint = _compute_fingerprint(content)
     reliability = RELIABILITY_DEFAULTS.get(source_type, 0.5)
@@ -127,9 +123,7 @@ async def ingest_source(
         existing = cur.fetchone()
         if existing:
             existing_id = str(existing["id"])
-            return err(
-                f"Duplicate source: fingerprint {fingerprint!r} already exists (existing_id={existing_id})"
-            )
+            return err(f"Duplicate source: fingerprint {fingerprint!r} already exists (existing_id={existing_id})")
 
         cur.execute(
             """

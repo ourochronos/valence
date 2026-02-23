@@ -224,6 +224,7 @@ class TestArgumentParser:
 def _reset_config():
     """Reset CLI config singleton for each test."""
     from valence.cli.config import reset_cli_config
+
     reset_cli_config()
     yield
     reset_cli_config()
@@ -250,6 +251,7 @@ class TestInitCommand:
     def test_init_connection_error(self, mock_get_client):
         """Init handles connection error."""
         from valence.cli.http_client import ValenceConnectionError
+
         mock_client = MagicMock()
         mock_client.post.side_effect = ValenceConnectionError("http://127.0.0.1:8420")
         mock_get_client.return_value = mock_client
@@ -300,6 +302,7 @@ class TestAddCommand:
     def test_add_api_error(self, mock_get_client):
         """Add handles API error."""
         from valence.cli.http_client import ValenceAPIError
+
         mock_client = MagicMock()
         mock_client.post.side_effect = ValenceAPIError(400, "VALIDATION", "Content too short")
         mock_get_client.return_value = mock_client
@@ -452,6 +455,7 @@ class TestStatsCommand:
     def test_stats_connection_error(self, mock_get_client):
         """Stats handles connection error."""
         from valence.cli.http_client import ValenceConnectionError
+
         mock_client = MagicMock()
         mock_client.get.side_effect = ValenceConnectionError("http://127.0.0.1:8420")
         mock_get_client.return_value = mock_client

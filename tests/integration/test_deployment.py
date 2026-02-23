@@ -328,7 +328,6 @@ class TestRemoteEndpoints:
             pytest.skip("VALENCE_DOMAIN not set")
 
 
-
 class TestIdempotency:
     """Tests for deployment idempotency."""
 

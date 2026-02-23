@@ -243,10 +243,7 @@ class TestRemoveSource:
         with _patch_cursor(cur):
             await remove_source(SOURCE_ID)
 
-        tombstone_calls = [
-            c for c in cur.execute.call_args_list
-            if c.args and "INSERT INTO tombstones" in str(c.args[0])
-        ]
+        tombstone_calls = [c for c in cur.execute.call_args_list if c.args and "INSERT INTO tombstones" in str(c.args[0])]
         assert len(tombstone_calls) == 1
         # 'admin_action' is hardcoded in the SQL string itself
         tombstone_sql = tombstone_calls[0].args[0]
@@ -339,10 +336,7 @@ class TestRemoveArticle:
         with _patch_cursor(cur):
             await remove_article(ARTICLE_A_ID)
 
-        tombstone_calls = [
-            c for c in cur.execute.call_args_list
-            if c.args and "INSERT INTO tombstones" in str(c.args[0])
-        ]
+        tombstone_calls = [c for c in cur.execute.call_args_list if c.args and "INSERT INTO tombstones" in str(c.args[0])]
         assert len(tombstone_calls) == 1
         # params: (content_type, content_id, metadata_json) — reason is hardcoded in SQL
         metadata_str = tombstone_calls[0].args[1][2]  # 3rd param = metadata JSON
@@ -362,10 +356,7 @@ class TestRemoveArticle:
         with _patch_cursor(cur):
             await remove_article(ARTICLE_A_ID)
 
-        tombstone_calls = [
-            c for c in cur.execute.call_args_list
-            if c.args and "INSERT INTO tombstones" in str(c.args[0])
-        ]
+        tombstone_calls = [c for c in cur.execute.call_args_list if c.args and "INSERT INTO tombstones" in str(c.args[0])]
         assert len(tombstone_calls) == 1
         params = tombstone_calls[0].args[1]
         assert params[0] == "article"

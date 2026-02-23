@@ -177,14 +177,16 @@ class TestCompactExchanges:
         # Second call: get all exchanges for sess-1 (20 exchanges)
         exchanges = []
         for i in range(20):
-            exchanges.append({
-                "id": f"ex-{i}",
-                "sequence": i,
-                "role": "user" if i % 2 == 0 else "assistant",
-                "content": f"message {i}",
-                "tokens_approx": 10,
-                "tool_uses": None,
-            })
+            exchanges.append(
+                {
+                    "id": f"ex-{i}",
+                    "sequence": i,
+                    "role": "user" if i % 2 == 0 else "assistant",
+                    "content": f"message {i}",
+                    "tokens_approx": 10,
+                    "tool_uses": None,
+                }
+            )
 
         cur.fetchall.side_effect = [candidates, exchanges]
 
@@ -225,10 +227,7 @@ class TestCompactExchanges:
 
         # SQL says 9 exchanges, but after fetch there are exactly 10 (= keep_first + keep_last)
         candidates = [{"id": "sess-1", "exchange_count": 9}]
-        exchanges = [
-            {"id": f"ex-{i}", "sequence": i, "role": "user", "content": f"m{i}", "tokens_approx": 5, "tool_uses": None}
-            for i in range(10)
-        ]
+        exchanges = [{"id": f"ex-{i}", "sequence": i, "role": "user", "content": f"m{i}", "tokens_approx": 5, "tool_uses": None} for i in range(10)]
         cur.fetchall.side_effect = [candidates, exchanges]
 
         result = compact_exchanges(cur, config)
@@ -243,10 +242,7 @@ class TestCompactExchanges:
 
         # 8 exchanges, keep 2+2, compact 4
         candidates = [{"id": "sess-1", "exchange_count": 8}]
-        exchanges = [
-            {"id": f"ex-{i}", "sequence": i, "role": "user", "content": f"m{i}", "tokens_approx": 5, "tool_uses": None}
-            for i in range(8)
-        ]
+        exchanges = [{"id": f"ex-{i}", "sequence": i, "role": "user", "content": f"m{i}", "tokens_approx": 5, "tool_uses": None} for i in range(8)]
         cur.fetchall.side_effect = [candidates, exchanges]
 
         result = compact_exchanges(cur, config)
@@ -281,8 +277,13 @@ class TestCmdMaintenanceCompact:
         mock_get_client.return_value = mock_client
 
         args = argparse.Namespace(
-            run_all=False, retention=False, archive=False,
-            tombstones=False, compact=True, views=False, vacuum=False,
+            run_all=False,
+            retention=False,
+            archive=False,
+            tombstones=False,
+            compact=True,
+            views=False,
+            vacuum=False,
             dry_run=False,
         )
         result = cmd_maintenance(args)

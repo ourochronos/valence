@@ -47,10 +47,7 @@ def create_openai_backend(
     try:
         from openai import AsyncOpenAI
     except ImportError as exc:
-        raise ImportError(
-            "The 'openai' package is required for the OpenAI-compatible backend. "
-            "Install it with: pip install openai"
-        ) from exc
+        raise ImportError("The 'openai' package is required for the OpenAI-compatible backend. Install it with: pip install openai") from exc
 
     client = AsyncOpenAI(
         base_url=base_url,
@@ -58,10 +55,7 @@ def create_openai_backend(
         timeout=timeout,
     )
 
-    default_system = (
-        "You are a precise knowledge-management assistant. "
-        "Respond ONLY with valid JSON; no markdown, no commentary."
-    )
+    default_system = "You are a precise knowledge-management assistant. Respond ONLY with valid JSON; no markdown, no commentary."
     effective_system = system_prompt if system_prompt is not None else default_system
 
     async def backend(prompt: str) -> str:
@@ -78,14 +72,13 @@ def create_openai_backend(
 
         content = response.choices[0].message.content
         if content is None:
-            raise RuntimeError(
-                f"OpenAI-compat backend ({base_url}) returned empty content "
-                f"for model {model!r}"
-            )
+            raise RuntimeError(f"OpenAI-compat backend ({base_url}) returned empty content for model {model!r}")
 
         logger.debug(
             "OpenAI-compat backend: received %d chars (model=%s url=%s)",
-            len(content), model, base_url,
+            len(content),
+            model,
+            base_url,
         )
         return content
 

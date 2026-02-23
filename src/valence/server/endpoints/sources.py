@@ -21,6 +21,10 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from ..auth_helpers import authenticate, require_scope
+from ..endpoint_utils import _parse_int
+from ..errors import conflict_error, internal_error, invalid_json_error, missing_field_error, not_found_error
+
+logger = logging.getLogger(__name__)
 
 
 class _Encoder(json.JSONEncoder):
@@ -37,10 +41,6 @@ class _Encoder(json.JSONEncoder):
 def _json_response(data, **kw):
     body = json.dumps(data, cls=_Encoder)
     return JSONResponse(content=json.loads(body), **kw)
-from ..endpoint_utils import _parse_int
-from ..errors import conflict_error, internal_error, invalid_json_error, missing_field_error, not_found_error
-
-logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +97,7 @@ async def sources_create_endpoint(request: Request) -> JSONResponse:
         return conflict_error(e.message)
     except ValidationException as e:
         from ..errors import validation_error
+
         return validation_error(e.message)
     except Exception:
         logger.exception("Error ingesting source")

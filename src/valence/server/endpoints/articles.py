@@ -22,6 +22,10 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from ..auth_helpers import authenticate, require_scope
+from ..endpoint_utils import _parse_bool
+from ..errors import internal_error, invalid_json_error, missing_field_error
+
+logger = logging.getLogger(__name__)
 
 
 class _Encoder(json.JSONEncoder):
@@ -38,10 +42,6 @@ class _Encoder(json.JSONEncoder):
 def _json_response(data, **kw):
     body = json.dumps(data, cls=_Encoder)
     return JSONResponse(content=json.loads(body), **kw)
-from ..endpoint_utils import _parse_bool
-from ..errors import internal_error, invalid_json_error, missing_field_error
-
-logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -189,11 +189,13 @@ async def search_articles_endpoint(request: Request) -> JSONResponse:
             domain_filter=body.get("domain_filter"),
         )
         articles = result.data if result.success else []
-        return _json_response({
-            "success": True,
-            "articles": articles,
-            "total_count": len(articles),
-        })
+        return _json_response(
+            {
+                "success": True,
+                "articles": articles,
+                "total_count": len(articles),
+            }
+        )
     except Exception:
         logger.exception("Error searching articles")
         return internal_error()
@@ -256,11 +258,13 @@ async def get_provenance_endpoint(request: Request) -> JSONResponse:
         from ...core.provenance import get_provenance
 
         provenance = get_provenance(article_id=article_id)
-        return _json_response({
-            "success": True,
-            "provenance": provenance,
-            "count": len(provenance),
-        })
+        return _json_response(
+            {
+                "success": True,
+                "provenance": provenance,
+                "count": len(provenance),
+            }
+        )
     except Exception:
         logger.exception("Error fetching provenance for article %s", article_id)
         return internal_error()
@@ -289,11 +293,13 @@ async def trace_claim_endpoint(request: Request) -> JSONResponse:
         from ...core.provenance import trace_claim
 
         sources = trace_claim(article_id=article_id, claim_text=claim_text)
-        return _json_response({
-            "success": True,
-            "sources": sources,
-            "count": len(sources),
-        })
+        return _json_response(
+            {
+                "success": True,
+                "sources": sources,
+                "count": len(sources),
+            }
+        )
     except Exception:
         logger.exception("Error tracing claim for article %s", article_id)
         return internal_error()

@@ -183,6 +183,7 @@ async def get_article(
 
         if include_provenance:
             from uuid import UUID as _UUID
+
             cur.execute(
                 """
                 SELECT
@@ -204,10 +205,7 @@ async def get_article(
             )
             provenance = []
             for prow in cur.fetchall():
-                entry = {
-                    k: (v.isoformat() if isinstance(v, datetime) else str(v) if isinstance(v, _UUID) else v)
-                    for k, v in dict(prow).items()
-                }
+                entry = {k: (v.isoformat() if isinstance(v, datetime) else str(v) if isinstance(v, _UUID) else v) for k, v in dict(prow).items()}
                 provenance.append(entry)
             article["provenance"] = provenance
 
@@ -364,9 +362,9 @@ async def split_article(article_id: str) -> ValenceResponse:
         # Split content
         first_half, second_half = _split_content_at_midpoint(content)
         if not first_half:
-            first_half = content[:len(content) // 2]
+            first_half = content[: len(content) // 2]
         if not second_half:
-            second_half = content[len(content) // 2:]
+            second_half = content[len(content) // 2 :]
 
         # --- Update original article with first half ---
         first_token_count = _count_tokens(first_half)

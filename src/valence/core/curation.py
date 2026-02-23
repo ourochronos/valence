@@ -12,13 +12,13 @@ import os
 # Signal types mapped to base confidence scores.
 # Higher confidence = stronger signal that this should be captured.
 SIGNAL_CONFIDENCE: dict[str, float] = {
-    "explicit_request": 0.90,       # "remember X"
+    "explicit_request": 0.90,  # "remember X"
     "decision_with_rationale": 0.80,
     "stated_preference": 0.75,
     "correction": 0.70,
     "project_fact": 0.65,
-    "session_summary": 0.50,        # lowered: corroboration will raise it
-    "session_theme": 0.50,          # lowered: corroboration will raise it
+    "session_summary": 0.50,  # lowered: corroboration will raise it
+    "session_theme": 0.50,  # lowered: corroboration will raise it
     "mentioned_in_passing": 0.35,
 }
 

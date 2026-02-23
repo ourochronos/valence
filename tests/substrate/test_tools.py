@@ -716,5 +716,3 @@ class TestTensionResolve:
 
         assert result["success"] is False
         assert "not found" in result["error"]
-
-

@@ -23,11 +23,11 @@ logger = logging.getLogger(__name__)
 # Task type constants
 # ---------------------------------------------------------------------------
 
-TASK_COMPILE = "compile"          # Sources → article (highest complexity)
-TASK_UPDATE = "update"            # Incremental article update (medium)
-TASK_CLASSIFY = "classify"        # Relationship classification (low)
-TASK_CONTENTION = "contention"    # Contention detection (medium)
-TASK_SPLIT = "split"              # Intelligent split point (low)
+TASK_COMPILE = "compile"  # Sources → article (highest complexity)
+TASK_UPDATE = "update"  # Incremental article update (medium)
+TASK_CLASSIFY = "classify"  # Relationship classification (low)
+TASK_CONTENTION = "contention"  # Contention detection (medium)
+TASK_SPLIT = "split"  # Intelligent split point (low)
 
 _ALL_TASKS = {TASK_COMPILE, TASK_UPDATE, TASK_CLASSIFY, TASK_CONTENTION, TASK_SPLIT}
 
@@ -43,20 +43,20 @@ RELATIONSHIP_ENUM = ["originates", "confirms", "supersedes", "contradicts", "con
 
 # Maps task_type → list of required output keys
 _TASK_REQUIRED_OUTPUT_FIELDS: dict[str, list[str]] = {
-    TASK_COMPILE:    ["title", "content", "source_relationships"],
-    TASK_UPDATE:     ["content", "relationship", "changes_summary"],
-    TASK_CLASSIFY:   ["relationship", "confidence", "reasoning"],
+    TASK_COMPILE: ["title", "content", "source_relationships"],
+    TASK_UPDATE: ["content", "relationship", "changes_summary"],
+    TASK_CLASSIFY: ["relationship", "confidence", "reasoning"],
     TASK_CONTENTION: ["is_contention", "materiality", "explanation"],
-    TASK_SPLIT:      ["split_index", "part_a_title", "part_b_title", "reasoning"],
+    TASK_SPLIT: ["split_index", "part_a_title", "part_b_title", "reasoning"],
 }
 
 # Fields that contain relationship_enum values and must be validated
 _TASK_RELATIONSHIP_FIELDS: dict[str, list[str]] = {
-    TASK_COMPILE:  [],   # relationships are in a list; validated separately
-    TASK_UPDATE:   ["relationship"],
+    TASK_COMPILE: [],  # relationships are in a list; validated separately
+    TASK_UPDATE: ["relationship"],
     TASK_CLASSIFY: ["relationship"],
     TASK_CONTENTION: [],
-    TASK_SPLIT:    [],
+    TASK_SPLIT: [],
 }
 
 # Output schema descriptions — used in prompt builders
@@ -140,69 +140,47 @@ def validate_output(task_type: str, raw_json: str) -> dict:
             are missing, or enum values are invalid.
     """
     if task_type not in _TASK_REQUIRED_OUTPUT_FIELDS:
-        raise InferenceSchemaError(
-            f"Unknown task type {task_type!r}; expected one of {list(_ALL_TASKS)}"
-        )
+        raise InferenceSchemaError(f"Unknown task type {task_type!r}; expected one of {list(_ALL_TASKS)}")
 
     text = _strip_markdown_fences(raw_json)
 
     try:
         parsed = json.loads(text)
     except json.JSONDecodeError as exc:
-        raise InferenceSchemaError(
-            f"[{task_type}] Response is not valid JSON: {exc}. "
-            f"Got: {raw_json[:200]!r}"
-        ) from exc
+        raise InferenceSchemaError(f"[{task_type}] Response is not valid JSON: {exc}. Got: {raw_json[:200]!r}") from exc
 
     if not isinstance(parsed, dict):
-        raise InferenceSchemaError(
-            f"[{task_type}] Response must be a JSON object, got {type(parsed).__name__}. "
-            f"Value: {raw_json[:200]!r}"
-        )
+        raise InferenceSchemaError(f"[{task_type}] Response must be a JSON object, got {type(parsed).__name__}. Value: {raw_json[:200]!r}")
 
     required = _TASK_REQUIRED_OUTPUT_FIELDS[task_type]
     missing = [k for k in required if k not in parsed]
     if missing:
-        raise InferenceSchemaError(
-            f"[{task_type}] Response missing required fields: {missing!r}. "
-            f"Got keys: {list(parsed.keys())!r}"
-        )
+        raise InferenceSchemaError(f"[{task_type}] Response missing required fields: {missing!r}. Got keys: {list(parsed.keys())!r}")
 
     # Validate relationship enum fields
     for field_name in _TASK_RELATIONSHIP_FIELDS.get(task_type, []):
         val = parsed.get(field_name)
         if val is not None and val not in RELATIONSHIP_ENUM:
-            raise InferenceSchemaError(
-                f"[{task_type}] Field {field_name!r} has invalid value {val!r}; "
-                f"must be one of {RELATIONSHIP_ENUM}"
-            )
+            raise InferenceSchemaError(f"[{task_type}] Field {field_name!r} has invalid value {val!r}; must be one of {RELATIONSHIP_ENUM}")
 
     # Task-specific extra validation
     if task_type == TASK_COMPILE:
         source_rels = parsed.get("source_relationships", [])
         if not isinstance(source_rels, list):
-            raise InferenceSchemaError(
-                f"[{task_type}] 'source_relationships' must be a list, "
-                f"got {type(source_rels).__name__}"
-            )
+            raise InferenceSchemaError(f"[{task_type}] 'source_relationships' must be a list, got {type(source_rels).__name__}")
         for i, item in enumerate(source_rels):
             if not isinstance(item, dict):
-                raise InferenceSchemaError(
-                    f"[{task_type}] source_relationships[{i}] must be an object"
-                )
+                raise InferenceSchemaError(f"[{task_type}] source_relationships[{i}] must be an object")
             rel = item.get("relationship")
             if rel is not None and rel not in RELATIONSHIP_ENUM:
                 raise InferenceSchemaError(
-                    f"[{task_type}] source_relationships[{i}].relationship "
-                    f"has invalid value {rel!r}; must be one of {RELATIONSHIP_ENUM}"
+                    f"[{task_type}] source_relationships[{i}].relationship has invalid value {rel!r}; must be one of {RELATIONSHIP_ENUM}"
                 )
 
     if task_type == TASK_SPLIT:
         si = parsed.get("split_index")
         if not isinstance(si, int):
-            raise InferenceSchemaError(
-                f"[{task_type}] 'split_index' must be an integer, got {type(si).__name__}"
-            )
+            raise InferenceSchemaError(f"[{task_type}] 'split_index' must be an integer, got {type(si).__name__}")
 
     if task_type == TASK_CONTENTION:
         # Coerce is_contention to bool if needed (some LLMs return strings)
@@ -210,10 +188,7 @@ def validate_output(task_type: str, raw_json: str) -> dict:
         if isinstance(raw_val, str):
             parsed["is_contention"] = raw_val.lower() in ("true", "1", "yes")
         elif not isinstance(raw_val, bool):
-            raise InferenceSchemaError(
-                f"[{task_type}] 'is_contention' must be a boolean, "
-                f"got {type(raw_val).__name__}: {raw_val!r}"
-            )
+            raise InferenceSchemaError(f"[{task_type}] 'is_contention' must be a boolean, got {type(raw_val).__name__}: {raw_val!r}")
 
     # Apply defaults for optional fields
     _apply_defaults(task_type, parsed)
@@ -346,9 +321,7 @@ class InferenceProvider:
             self._task_overrides = dict(task_overrides)
         # If backend is set and task_overrides is None, leave existing overrides.
 
-    def set_task_override(
-        self, task_type: str, backend: Callable[[str], Any] | None
-    ) -> None:
+    def set_task_override(self, task_type: str, backend: Callable[[str], Any] | None) -> None:
         """Set or clear an override for a single task type.
 
         Args:
@@ -388,10 +361,7 @@ class InferenceProvider:
         if backend is None:
             return InferenceResult.degraded_result(
                 task_type=task_type,
-                error=(
-                    f"No inference backend configured for task '{task_type}'. "
-                    "Call inference.provider.configure(backend) before use."
-                ),
+                error=(f"No inference backend configured for task '{task_type}'. Call inference.provider.configure(backend) before use."),
             )
 
         try:
@@ -402,9 +372,7 @@ class InferenceProvider:
                 content = await result
             elif not isinstance(result, str):
                 # Sync callable that returned something non-string; wrap
-                content = await asyncio.get_event_loop().run_in_executor(
-                    None, lambda: str(backend(prompt))
-                )
+                content = await asyncio.get_event_loop().run_in_executor(None, lambda: str(backend(prompt)))
                 # Re-call: above already called backend(prompt), capture fresh
                 # Actually just use the non-string result directly
                 content = str(result)
@@ -412,9 +380,7 @@ class InferenceProvider:
                 content = result
 
         except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "Inference backend failed for task %r: %s", task_type, exc
-            )
+            logger.warning("Inference backend failed for task %r: %s", task_type, exc)
             return InferenceResult.degraded_result(
                 task_type=task_type,
                 error=f"Backend error: {exc}",
@@ -426,9 +392,7 @@ class InferenceProvider:
             try:
                 parsed = validate_output(task_type, content)
             except InferenceSchemaError as exc:
-                logger.warning(
-                    "Schema validation failed for task %r: %s", task_type, exc
-                )
+                logger.warning("Schema validation failed for task %r: %s", task_type, exc)
                 # Do not set degraded — return raw content; caller decides
 
         return InferenceResult.success(content=content, task_type=task_type, parsed=parsed)
@@ -443,10 +407,7 @@ class InferenceProvider:
         return self._default_backend is not None or bool(self._task_overrides)
 
     def __repr__(self) -> str:
-        return (
-            f"InferenceProvider(available={self.available}, "
-            f"task_overrides={list(self._task_overrides.keys())})"
-        )
+        return f"InferenceProvider(available={self.available}, task_overrides={list(self._task_overrides.keys())})"
 
 
 # ---------------------------------------------------------------------------

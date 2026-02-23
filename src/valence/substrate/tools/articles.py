@@ -41,13 +41,15 @@ def article_create(
     """
     from ...core.articles import create_article
 
-    result = _run_async(create_article(
-        content=content,
-        title=title,
-        source_ids=source_ids,
-        author_type=author_type,
-        domain_path=domain_path,
-    ))
+    result = _run_async(
+        create_article(
+            content=content,
+            title=title,
+            source_ids=source_ids,
+            author_type=author_type,
+            domain_path=domain_path,
+        )
+    )
     if not result.success:
         return {"success": False, "error": result.error}
     return {"success": True, "article": result.data}
@@ -98,11 +100,13 @@ def article_update(
     """
     from ...core.articles import update_article
 
-    result = _run_async(update_article(
-        article_id=article_id,
-        content=content,
-        source_id=source_id,
-    ))
+    result = _run_async(
+        update_article(
+            article_id=article_id,
+            content=content,
+            source_id=source_id,
+        )
+    )
     if not result.success:
         return {"success": False, "error": result.error}
     return {"success": True, "article": result.data}
@@ -165,12 +169,14 @@ def provenance_link(
     """
     from ...core.provenance import link_source
 
-    result = _run_async(link_source(
-        article_id=article_id,
-        source_id=source_id,
-        relationship=relationship,
-        notes=notes,
-    ))
+    result = _run_async(
+        link_source(
+            article_id=article_id,
+            source_id=source_id,
+            relationship=relationship,
+            notes=notes,
+        )
+    )
     if not result.success:
         return {"success": False, "error": result.error}
     return {"success": True, "link": result.data}

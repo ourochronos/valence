@@ -146,6 +146,7 @@ class TestInitSchemaExceptionHandling:
 
             # Verify the except clause structure by checking source
             import valence.substrate.mcp_server as mod
+
             source = Path(mod.__file__).read_text()
             assert "except (DatabaseException, OurDatabaseError)" in source
 
