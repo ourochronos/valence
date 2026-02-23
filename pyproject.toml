@@ -36,16 +36,7 @@ dependencies = [
     "our-db>=0.1.0",
     "our-models>=0.1.0",
     "our-confidence>=0.1.0",
-    "our-crypto>=0.1.0",
-    "our-identity>=0.1.0",
-    "our-consensus>=0.1.0",
-    "our-storage>=0.1.0",
-    "our-mcp-base>=0.1.0",
-    "our-compliance>=0.1.0",
-    "our-network>=0.1.0",
     "our-embeddings>=0.1.0",
-    "our-privacy>=0.1.0",
-    "our-federation>=0.1.0",
     # Existing deps
     "mcp>=1.0",
     "openai>=1.0",
@@ -95,9 +86,6 @@ valence-substrate = "valence.substrate.mcp_server:run"  # legacy: substrate-only
 valence-vkb = "valence.vkb.mcp_server:run"  # legacy: vkb-only stdio server
 valence-server = "valence.server.app:run"
 valence-token = "valence.server.cli:main"
-valence-federation = "valence.cli.federation:main"
-valence-seed = "valence.cli.seed:main"
-valence-router = "valence.cli.router:main"
 
 [project.urls]
 Homepage = "https://github.com/ourochronos/valence"

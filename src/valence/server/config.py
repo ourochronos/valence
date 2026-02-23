@@ -277,10 +277,6 @@ def get_settings() -> ServerSettings:
     global _settings
     if _settings is None:
         _settings = ServerSettings()
-        # Register with core config layer so federation can access without importing server
-        from our_federation.config import set_federation_config
-
-        set_federation_config(_settings)
     return _settings
 
 
