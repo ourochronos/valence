@@ -3,8 +3,9 @@
 Implements WU-05 (C9 — Knowledge Retrieval, C8 — Freshness Awareness).
 
 retrieve() is the single entry-point for agents and tools:
-  - Searches articles (compiled knowledge) via full-text + vector similarity.
-  - Searches ungrouped sources (not linked to any article) via full-text.
+  - Searches articles (compiled knowledge) via hybrid search (vector + text).
+  - Combines signals using Reciprocal Rank Fusion (RRF).
+  - Searches ungrouped sources (not linked to any article) via hybrid search.
   - Ranks by: relevance * 0.5 + confidence * 0.35 + freshness * 0.15.
   - Queues recompile in mutation_queue for any ungrouped sources surfaced.
   - Records usage_traces for every article result returned.
@@ -17,27 +18,74 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from valence.lib.our_db import get_cursor
+from valence.lib.our_embeddings.service import generate_embedding
 
 from .ranking import multi_signal_rank
 from .response import ValenceResponse, ok
 
 logger = logging.getLogger(__name__)
 
+# RRF constant (standard value from literature)
+RRF_K = 60
+# Default rank for items not found by one search method
+DEFAULT_RANK = 1000
+
 
 # ---------------------------------------------------------------------------
-# Internal helpers (sync — called via asyncio.to_thread)
+# Shared helpers
 # ---------------------------------------------------------------------------
+
+
+def _try_generate_embedding(query: str) -> str | None:
+    """Generate a query embedding, returning pgvector literal or None on failure."""
+    try:
+        vec = generate_embedding(query)
+        return "[" + ",".join(str(v) for v in vec) + "]"
+    except Exception as exc:
+        logger.warning("Embedding generation failed, falling back to text-only: %s", exc)
+        return None
+
+
+def _serialize_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Convert a DB row dict: UUID → str, datetime → ISO string."""
+    d = dict(row)
+    for key, val in list(d.items()):
+        if isinstance(val, datetime):
+            d[key] = val.isoformat()
+        elif isinstance(val, uuid.UUID):
+            d[key] = str(val)
+    return d
+
+
+def _extract_rrf_scores(d: dict[str, Any], rrf_min: float, rrf_range: float) -> None:
+    """Normalize RRF score and attach search signal fields to result dict (in-place)."""
+    raw_rrf = float(d.get("rrf_score", 0) or 0)
+    normalized = (raw_rrf - rrf_min) / rrf_range if rrf_range > 0 else 0.5
+
+    d["similarity"] = normalized  # consumed by multi_signal_rank
+    d["rrf_score"] = raw_rrf
+    d["vec_score"] = float(d.get("vec_score", 0) or 0)
+    d["text_score"] = float(d.get("text_score", 0) or 0)
+    d["vec_rank"] = int(d.get("vec_rank", 0) or 0)
+    d["text_rank"] = int(d.get("text_rank", 0) or 0)
+
+
+def _rrf_range(rows: list[dict[str, Any]]) -> tuple[float, float, float]:
+    """Return (max_rrf, min_rrf, range) for a set of rows."""
+    scores = [float(r.get("rrf_score", 0) or 0) for r in rows]
+    mx = max(scores) if scores else 1.0
+    mn = min(scores) if scores else 0.0
+    return mx, mn, (mx - mn) if mx > mn else 1.0
 
 
 def _compute_freshness_days(article: dict[str, Any]) -> float:
-    """Return days since last article update (compiled_at or modified_at or created_at).
-
-    Returns a float number of days (0 = just updated).
-    """
+    """Return days since last article update (compiled_at or modified_at or created_at)."""
     for col in ("compiled_at", "modified_at", "created_at"):
         val = article.get(col)
         if val is None:
@@ -57,18 +105,17 @@ def _compute_freshness_days(article: dict[str, Any]) -> float:
 def _freshness_score(days: float, decay_rate: float = 0.01) -> float:
     """Convert age-in-days to a [0, 1] freshness score.
 
-    Uses the same exponential decay as recency_score in ranking.py.
-    Default: half-life ≈ 69 days.
+    Uses exponential decay. Default: half-life ≈ 69 days.
     """
-    import math
-
     return max(0.0, min(1.0, math.exp(-decay_rate * days)))
 
 
-def _build_provenance_summary(
-    article_id: str,
-    cur: Any,
-) -> dict[str, Any]:
+# ---------------------------------------------------------------------------
+# Provenance / metadata helpers
+# ---------------------------------------------------------------------------
+
+
+def _build_provenance_summary(article_id: str, cur: Any) -> dict[str, Any]:
     """Query article_sources for a single article and build provenance summary."""
     cur.execute(
         """
@@ -122,26 +169,14 @@ def _record_usage_trace(
             (article_id, query, tool_name, final_score, session_id),
         )
     except Exception as exc:
-        # Non-fatal — log and continue
         logger.warning("Failed to record usage trace for article %s: %s", article_id, exc)
 
 
 def _queue_recompile(source_id: str, query: str, cur: Any) -> None:
-    """Queue a recompile mutation for an ungrouped source.
-
-    Uses the smallest available article_id that exists in the articles table
-    as a placeholder — this is required by the FK constraint on mutation_queue.
-    If no articles exist yet, we skip quietly (nothing to recompile against).
-    """
+    """Queue a recompile mutation for an ungrouped source."""
     try:
-        # Recompile entries in mutation_queue reference an article_id (FK).
-        # For ungrouped sources, we have no article yet. We enqueue via a sentinel
-        # by looking up any existing active article as the owner. The compilation
-        # job will pick up the source_id from the payload.
         cur.execute(
-            """
-            SELECT id FROM articles WHERE status = 'active' ORDER BY created_at LIMIT 1
-            """,
+            "SELECT id FROM articles WHERE status = 'active' ORDER BY created_at LIMIT 1",
         )
         row = cur.fetchone()
         if row is None:
@@ -161,50 +196,104 @@ def _queue_recompile(source_id: str, query: str, cur: Any) -> None:
         logger.warning("Failed to queue recompile for source %s: %s", source_id, exc)
 
 
-def _search_articles_sync(query: str, limit: int) -> list[dict[str, Any]]:
-    """Full-text search over articles, with optional vector re-ranking."""
-    with get_cursor() as cur:
-        cur.execute(
-            """
-            SELECT a.*,
-                   ts_rank(a.content_tsv, websearch_to_tsquery('english', %s)) AS text_rank
-            FROM articles a
-            WHERE a.content_tsv @@ websearch_to_tsquery('english', %s)
-              AND a.status = 'active'
-              AND a.superseded_by_id IS NULL
-            ORDER BY text_rank DESC
-            LIMIT %s
-            """,
-            (query, query, limit * 2),
-        )
-        rows = cur.fetchall()
+# ---------------------------------------------------------------------------
+# Search: articles
+# ---------------------------------------------------------------------------
 
+_ARTICLE_HYBRID_SQL = """
+WITH vec AS (
+    SELECT id,
+           ROW_NUMBER() OVER (ORDER BY embedding <=> %(emb)s::vector) AS vec_rank,
+           1 - (embedding <=> %(emb)s::vector) AS vec_score
+    FROM articles
+    WHERE status = 'active'
+      AND superseded_by_id IS NULL
+      AND embedding IS NOT NULL
+    ORDER BY embedding <=> %(emb)s::vector
+    LIMIT %(search_limit)s
+),
+txt AS (
+    SELECT id,
+           ROW_NUMBER() OVER (
+               ORDER BY ts_rank(content_tsv, websearch_to_tsquery('english', %(q)s)) DESC
+           ) AS text_rank,
+           ts_rank(content_tsv, websearch_to_tsquery('english', %(q)s)) AS text_score
+    FROM articles
+    WHERE status = 'active'
+      AND superseded_by_id IS NULL
+      AND content_tsv @@ websearch_to_tsquery('english', %(q)s)
+    LIMIT %(search_limit)s
+)
+SELECT a.*,
+       COALESCE(v.vec_rank, %(default_rank)s) AS vec_rank,
+       COALESCE(v.vec_score, 0) AS vec_score,
+       COALESCE(t.text_rank, %(default_rank)s) AS text_rank,
+       COALESCE(t.text_score, 0) AS text_score,
+       (1.0 / (%(k)s + COALESCE(v.vec_rank, %(default_rank)s)))
+       + (1.0 / (%(k)s + COALESCE(t.text_rank, %(default_rank)s))) AS rrf_score
+FROM articles a
+LEFT JOIN vec v ON v.id = a.id
+LEFT JOIN txt t ON t.id = a.id
+WHERE v.id IS NOT NULL OR t.id IS NOT NULL
+ORDER BY rrf_score DESC
+LIMIT %(lim)s
+"""
+
+_ARTICLE_TEXT_ONLY_SQL = """
+SELECT a.*,
+       ts_rank(a.content_tsv, websearch_to_tsquery('english', %(q)s)) AS text_score,
+       0.0 AS vec_score,
+       ROW_NUMBER() OVER (
+           ORDER BY ts_rank(a.content_tsv, websearch_to_tsquery('english', %(q)s)) DESC
+       ) AS text_rank,
+       %(default_rank)s AS vec_rank,
+       (1.0 / (%(k)s + ROW_NUMBER() OVER (
+           ORDER BY ts_rank(a.content_tsv, websearch_to_tsquery('english', %(q)s)) DESC
+       ))) AS rrf_score
+FROM articles a
+WHERE a.content_tsv @@ websearch_to_tsquery('english', %(q)s)
+  AND a.status = 'active'
+  AND a.superseded_by_id IS NULL
+ORDER BY rrf_score DESC
+LIMIT %(lim)s
+"""
+
+
+def _search_articles_sync(query: str, limit: int) -> list[dict[str, Any]]:
+    """Hybrid search: vector KNN + full-text combined via RRF."""
+    embedding_str = _try_generate_embedding(query)
+
+    params = {
+        "q": query,
+        "k": RRF_K,
+        "default_rank": DEFAULT_RANK,
+        "lim": limit,
+    }
+
+    with get_cursor() as cur:
+        if embedding_str is None:
+            cur.execute(_ARTICLE_TEXT_ONLY_SQL, params)
+        else:
+            params["emb"] = embedding_str
+            params["search_limit"] = limit * 2
+            cur.execute(_ARTICLE_HYBRID_SQL, params)
+
+        rows = cur.fetchall()
         if not rows:
             return []
 
-        # Normalise text ranks to [0, 1]
-        max_rank = max(float(r.get("text_rank", 0) or 0) for r in rows) or 1.0
+        _, rrf_min, rrf_range = _rrf_range(rows)
+
         results = []
         for row in rows:
-            d = dict(row)
-            # Serialise non-JSON types
-            for key in list(d.keys()):
-                import uuid
-
-                if isinstance(d[key], datetime):
-                    d[key] = d[key].isoformat()
-                elif isinstance(d[key], uuid.UUID):
-                    d[key] = str(d[key])
+            d = _serialize_row(row)
             d.pop("content_tsv", None)
             d.pop("embedding", None)
-
-            text_rel = float(row.get("text_rank", 0) or 0) / max_rank
-            d["similarity"] = text_rel
-            d["text_relevance"] = text_rel
+            _extract_rrf_scores(d, rrf_min, rrf_range)
             d["type"] = "article"
             results.append(d)
 
-        # Attach provenance summary, freshness, contention flags
+        # Attach provenance, freshness, contention flags
         for d in results:
             article_id = d.get("id") or d.get("article_id")
             if article_id:
@@ -223,49 +312,105 @@ def _search_articles_sync(query: str, limit: int) -> list[dict[str, Any]]:
         return results
 
 
-def _search_ungrouped_sources_sync(query: str, limit: int) -> list[dict[str, Any]]:
-    """Search sources that are NOT linked to any article."""
-    with get_cursor() as cur:
-        cur.execute(
-            """
-            SELECT s.id, s.type, s.title, s.url, s.content, s.reliability,
-                   s.fingerprint, s.created_at,
-                   ts_rank(s.content_tsv, websearch_to_tsquery('english', %s)) AS text_rank
-            FROM sources s
-            WHERE s.content_tsv @@ websearch_to_tsquery('english', %s)
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM article_sources asrc
-                  WHERE asrc.source_id = s.id
-              )
-            ORDER BY text_rank DESC
-            LIMIT %s
-            """,
-            (query, query, limit),
-        )
-        rows = cur.fetchall()
+# ---------------------------------------------------------------------------
+# Search: ungrouped sources
+# ---------------------------------------------------------------------------
 
+_SOURCE_HYBRID_SQL = """
+WITH vec AS (
+    SELECT id,
+           ROW_NUMBER() OVER (ORDER BY embedding <=> %(emb)s::vector) AS vec_rank,
+           1 - (embedding <=> %(emb)s::vector) AS vec_score
+    FROM sources
+    WHERE embedding IS NOT NULL
+      AND NOT EXISTS (
+          SELECT 1 FROM article_sources asrc WHERE asrc.source_id = sources.id
+      )
+    ORDER BY embedding <=> %(emb)s::vector
+    LIMIT %(search_limit)s
+),
+txt AS (
+    SELECT id,
+           ROW_NUMBER() OVER (
+               ORDER BY ts_rank(content_tsv, websearch_to_tsquery('english', %(q)s)) DESC
+           ) AS text_rank,
+           ts_rank(content_tsv, websearch_to_tsquery('english', %(q)s)) AS text_score
+    FROM sources
+    WHERE content_tsv @@ websearch_to_tsquery('english', %(q)s)
+      AND NOT EXISTS (
+          SELECT 1 FROM article_sources asrc WHERE asrc.source_id = sources.id
+      )
+    LIMIT %(search_limit)s
+)
+SELECT s.id, s.type, s.title, s.url, s.content, s.reliability,
+       s.fingerprint, s.created_at,
+       COALESCE(v.vec_rank, %(default_rank)s) AS vec_rank,
+       COALESCE(v.vec_score, 0) AS vec_score,
+       COALESCE(t.text_rank, %(default_rank)s) AS text_rank,
+       COALESCE(t.text_score, 0) AS text_score,
+       (1.0 / (%(k)s + COALESCE(v.vec_rank, %(default_rank)s)))
+       + (1.0 / (%(k)s + COALESCE(t.text_rank, %(default_rank)s))) AS rrf_score
+FROM sources s
+LEFT JOIN vec v ON v.id = s.id
+LEFT JOIN txt t ON t.id = s.id
+WHERE v.id IS NOT NULL OR t.id IS NOT NULL
+ORDER BY rrf_score DESC
+LIMIT %(lim)s
+"""
+
+_SOURCE_TEXT_ONLY_SQL = """
+SELECT s.id, s.type, s.title, s.url, s.content, s.reliability,
+       s.fingerprint, s.created_at,
+       ts_rank(s.content_tsv, websearch_to_tsquery('english', %(q)s)) AS text_score,
+       0.0 AS vec_score,
+       ROW_NUMBER() OVER (
+           ORDER BY ts_rank(s.content_tsv, websearch_to_tsquery('english', %(q)s)) DESC
+       ) AS text_rank,
+       %(default_rank)s AS vec_rank,
+       (1.0 / (%(k)s + ROW_NUMBER() OVER (
+           ORDER BY ts_rank(s.content_tsv, websearch_to_tsquery('english', %(q)s)) DESC
+       ))) AS rrf_score
+FROM sources s
+WHERE s.content_tsv @@ websearch_to_tsquery('english', %(q)s)
+  AND NOT EXISTS (
+      SELECT 1 FROM article_sources asrc WHERE asrc.source_id = s.id
+  )
+ORDER BY rrf_score DESC
+LIMIT %(lim)s
+"""
+
+
+def _search_ungrouped_sources_sync(query: str, limit: int) -> list[dict[str, Any]]:
+    """Hybrid search for sources not linked to any article."""
+    embedding_str = _try_generate_embedding(query)
+
+    params = {
+        "q": query,
+        "k": RRF_K,
+        "default_rank": DEFAULT_RANK,
+        "lim": limit,
+    }
+
+    with get_cursor() as cur:
+        if embedding_str is None:
+            cur.execute(_SOURCE_TEXT_ONLY_SQL, params)
+        else:
+            params["emb"] = embedding_str
+            params["search_limit"] = limit * 2
+            cur.execute(_SOURCE_HYBRID_SQL, params)
+
+        rows = cur.fetchall()
         if not rows:
             return []
 
-        max_rank = max(float(r.get("text_rank", 0) or 0) for r in rows) or 1.0
+        _, rrf_min, rrf_range = _rrf_range(rows)
+
         results = []
         for row in rows:
-            d = dict(row)
-            import uuid
-
-            for key in list(d.keys()):
-                if isinstance(d[key], datetime):
-                    d[key] = d[key].isoformat()
-                elif isinstance(d[key], uuid.UUID):
-                    d[key] = str(d[key])
-
-            text_rel = float(row.get("text_rank", 0) or 0) / max_rank
-            d["similarity"] = text_rel
+            d = _serialize_row(row)
+            _extract_rrf_scores(d, rrf_min, rrf_range)
             d["type"] = "source"
-            # Sources use reliability as confidence
             d["confidence"] = {"overall": float(d.get("reliability", 0.5))}
-            # Freshness from created_at
             freshness_days = _compute_freshness_days(d)
             d["freshness"] = freshness_days
             d["freshness_score"] = _freshness_score(freshness_days)
@@ -276,6 +421,11 @@ def _search_ungrouped_sources_sync(query: str, limit: int) -> list[dict[str, Any
         return results
 
 
+# ---------------------------------------------------------------------------
+# Unified retrieval
+# ---------------------------------------------------------------------------
+
+
 def _retrieve_sync(
     query: str,
     limit: int,
@@ -283,34 +433,21 @@ def _retrieve_sync(
     session_id: str | None,
 ) -> list[dict[str, Any]]:
     """Synchronous implementation of unified retrieval."""
-
-    # --- Article search ---
     article_results = _search_articles_sync(query, limit)
 
-    # --- Ungrouped source search (always, unless caller opts out) ---
     source_results: list[dict[str, Any]] = []
     if include_sources:
         source_results = _search_ungrouped_sources_sync(query, limit)
 
-    # --- Merge + rank ---
     all_results = article_results + source_results
-
     if not all_results:
         return []
 
-    # Inject freshness_score as the recency signal into multi_signal_rank.
-    # multi_signal_rank uses created_at for recency; we override by injecting
-    # a synthetic "created_at" that represents our freshness_score directly.
-    # Instead, we use multi_signal_rank's recency path but substitute the
-    # pre-computed freshness_score into the result so the downstream consumer
-    # can see it.  For ranking purposes we set a synthetic created_at to NOW
-    # minus freshness_days (already computed) so the built-in recency calc
-    # reproduces the freshness_score.
+    # multi_signal_rank uses created_at for recency — substitute freshness_days
+    # so the built-in exponential decay reproduces our freshness_score.
     now = datetime.now(UTC)
     for r in all_results:
         freshness_days = r.get("freshness", 90.0)
-        # Write a synthetic created_at back into the dict so multi_signal_rank
-        # calculates the same exponential-decay recency value we already computed.
         r["_original_created_at"] = r.get("created_at")
         r["created_at"] = (now - timedelta(days=freshness_days)).isoformat()
 
@@ -329,7 +466,7 @@ def _retrieve_sync(
 
     ranked = ranked[:limit]
 
-    # --- Side effects ---
+    # Side effects: usage traces + recompile queue
     with get_cursor() as cur:
         for item in ranked:
             if item.get("type") == "article":

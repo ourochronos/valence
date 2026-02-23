@@ -35,11 +35,18 @@ def _make_article_row(
     days_old: float = 2.0,
     confidence_overall: float = 0.7,
     text_rank: float = 0.8,
+    vec_rank: int = 1,
+    vec_score: float = 0.8,
+    text_score: float = 0.8,
+    rrf_score: float | None = None,
 ) -> dict:
-    """Build a minimal article DB row (as returned by psycopg2)."""
+    """Build a minimal article DB row (as returned by psycopg2 with RRF columns)."""
     now_utc = datetime.now(UTC)
     created = now_utc - timedelta(days=days_old + 10)
     compiled = now_utc - timedelta(days=days_old)
+    # Compute RRF score from ranks if not provided
+    if rrf_score is None:
+        rrf_score = (1.0 / (60 + vec_rank)) + (1.0 / (60 + int(1.0 / text_rank if text_rank > 0 else 1000)))
     return {
         "id": uuid.UUID(article_id),
         "content": content,
@@ -65,6 +72,10 @@ def _make_article_row(
         "content_tsv": None,
         "embedding": None,
         "text_rank": text_rank,
+        "vec_rank": vec_rank,
+        "vec_score": vec_score,
+        "text_score": text_score,
+        "rrf_score": rrf_score,
     }
 
 
@@ -74,10 +85,16 @@ def _make_source_row(
     days_old: float = 5.0,
     reliability: float = 0.8,
     text_rank: float = 0.6,
+    vec_rank: int = 1,
+    vec_score: float = 0.6,
+    text_score: float = 0.6,
+    rrf_score: float | None = None,
 ) -> dict:
-    """Build a minimal ungrouped source DB row."""
+    """Build a minimal ungrouped source DB row with RRF columns."""
     now_utc = datetime.now(UTC)
     created = now_utc - timedelta(days=days_old)
+    if rrf_score is None:
+        rrf_score = (1.0 / (60 + vec_rank)) + (1.0 / (60 + int(1.0 / text_rank if text_rank > 0 else 1000)))
     return {
         "id": uuid.UUID(source_id),
         "type": "document",
@@ -88,6 +105,10 @@ def _make_source_row(
         "fingerprint": "fp1",
         "created_at": created,
         "text_rank": text_rank,
+        "vec_rank": vec_rank,
+        "vec_score": vec_score,
+        "text_score": text_score,
+        "rrf_score": rrf_score,
     }
 
 
@@ -178,8 +199,13 @@ def _make_cursor(
 
 @contextmanager
 def _patch_get_cursor(cur: MagicMock) -> Generator:
-    """Patch both the core.retrieval and our_db get_cursor."""
-    with patch("valence.core.retrieval.get_cursor", return_value=cur):
+    """Patch both the core.retrieval get_cursor and generate_embedding."""
+    # Return a dummy embedding so hybrid search takes the vector path
+    dummy_embedding = [0.1] * 1536
+    with (
+        patch("valence.core.retrieval.get_cursor", return_value=cur),
+        patch("valence.core.retrieval.generate_embedding", return_value=dummy_embedding),
+    ):
         yield cur
 
 
@@ -393,9 +419,15 @@ class TestRankingOrder:
 
     @pytest.mark.asyncio
     async def test_higher_relevance_ranks_first(self):
-        """Article with higher text_rank should rank above lower-ranked article."""
-        high = _make_article_row(article_id=ARTICLE_ID, text_rank=0.95, confidence_overall=0.7, days_old=5)
-        low = _make_article_row(article_id=ARTICLE_ID_2, text_rank=0.2, confidence_overall=0.7, days_old=5)
+        """Article with higher RRF score should rank above lower-scored article."""
+        high = _make_article_row(
+            article_id=ARTICLE_ID, text_rank=0.95, vec_rank=1, rrf_score=0.033,
+            confidence_overall=0.7, days_old=5,
+        )
+        low = _make_article_row(
+            article_id=ARTICLE_ID_2, text_rank=0.2, vec_rank=5, rrf_score=0.016,
+            confidence_overall=0.7, days_old=5,
+        )
 
         fetch_all_responses = [[high, low]]
         fetch_one_responses = [
