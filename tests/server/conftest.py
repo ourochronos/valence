@@ -164,15 +164,5 @@ def mock_db_for_health():
 def mock_substrate_tools():
     """Mock substrate tools."""
     with patch("valence.server.app.SUBSTRATE_TOOLS", []) as mock_st:
-        with patch("valence.server.app.handle_substrate_tool") as mock_handler:
-            mock_handler.return_value = {"success": True, "data": "test"}
+        with patch("valence.server.app.TOOL_HANDLERS", {}) as mock_handler:
             yield {"tools": mock_st, "handler": mock_handler}
-
-
-@pytest.fixture
-def mock_vkb_tools():
-    """Mock VKB tools."""
-    with patch("valence.server.app.VKB_TOOLS", []) as mock_vt:
-        with patch("valence.server.app.handle_vkb_tool") as mock_handler:
-            mock_handler.return_value = {"success": True, "data": "test"}
-            yield {"tools": mock_vt, "handler": mock_handler}

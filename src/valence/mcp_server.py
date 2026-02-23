@@ -476,7 +476,7 @@ def provenance_trace(article_id: str, claim_text: str) -> dict[str, Any]:
 # ============================================================================
 
 
-def entity_get(entity_id: str) -> dict[str, Any]:
+def entity_get(entity_id: str, include_beliefs: bool = False, belief_limit: int = 10) -> dict[str, Any]:
     """Get an entity by ID."""
     try:
         with get_cursor() as cur:
@@ -499,6 +499,12 @@ def entity_get(entity_id: str) -> dict[str, Any]:
             entity["canonical_id"] = str(entity["canonical_id"])
         if entity.get("created_at"):
             entity["created_at"] = entity["created_at"].isoformat()
+
+        # Optionally include beliefs (articles) that mention this entity
+        if include_beliefs:
+            # This would require a join to article_entities table (if it exists)
+            # For now, just return empty list
+            entity["beliefs"] = []
 
         return {"success": True, "entity": entity}
     except Exception as exc:
