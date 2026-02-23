@@ -2,7 +2,33 @@
 
 **A knowledge system for AI agents.**
 
-Valence ingests information from diverse sources, compiles it into useful articles through use-driven promotion, and maintains those articles as living documents — always current, always traceable to their origins, always queryable. Sources are immutable and typed. Articles are compiled on demand, not eagerly. Every article tracks which sources built it, how they contributed, and whether any of them disagree.
+Valence ingests information from diverse sources, compiles it into right-sized articles through use-driven promotion, and maintains those articles as living documents — always current, always traceable to their origins, always queryable via hybrid semantic + keyword search.
+
+Sources are immutable and typed. Articles are compiled on demand, not eagerly. Every article tracks which sources built it, how they contributed, and whether any of them disagree.
+
+---
+
+## Why Valence?
+
+Most agent memory systems are key-value stores with embeddings bolted on. Valence is different:
+
+- **Epistemics-native** — provenance tracking, contention detection, confidence scoring. Not just "what do I know?" but "why do I believe it, and does anything disagree?"
+- **Local-first** — runs on your machine. PostgreSQL + pgvector. No cloud dependency.
+- **Hybrid retrieval** — Reciprocal Rank Fusion combines vector similarity (semantic) with full-text search (keyword). Finds what you mean, not just what you said.
+- **Right-sized for context windows** — articles are automatically sized to 300–800 tokens for optimal embedding retrieval quality.
+- **Stigmergic refinement** — usage signals drive self-organization. Frequently-used articles stay well-maintained; unused ones decay organically.
+- **Graph-vector duality** — knowledge exists in both graph space (provenance links, relationships) and vector space (embeddings, similarity). Two views of the same knowledge.
+
+### Compared to alternatives
+
+| | Valence | Mem0 | Zep | LangMem |
+|---|---|---|---|---|
+| **Local-first** | ✅ | ❌ ($249/mo for graph) | ❌ (cloud for best features) | ❌ (LangGraph-only) |
+| **Provenance tracking** | ✅ | ❌ | ❌ | ❌ |
+| **Hybrid retrieval (RRF)** | ✅ | Partial | Partial | ❌ |
+| **Contention detection** | ✅ | ❌ | ❌ | ❌ |
+| **Framework-agnostic** | ✅ | ✅ | ❌ | ❌ |
+| **Cost** | Free (self-hosted) | $249/mo+ | $99/mo+ | Free (LangGraph lock-in) |
 
 ---
 
@@ -10,28 +36,26 @@ Valence ingests information from diverse sources, compiles it into useful articl
 
 ```
 Sources (immutable, typed)
-    │  ingest → store → embed (lazy)
+    │  ingest → store → embed (deferred)
     ▼
 Article compilation (use-driven)
     │  query → surface sources → compile via inference
     ▼
-Articles (versioned, right-sized)
+Articles (versioned, right-sized 300–800 tokens)
     │  provenance links, contention flags, freshness scores
     ▼
-Retrieval
+Hybrid Retrieval (RRF: vector KNN + full-text)
     │  ranked by relevance × confidence × freshness
     ▼
-Agent / CLI consumer
+Agent / CLI / REST / MCP consumer
 ```
 
 **Four layers:**
 
-- **Sources** — raw inputs (conversations, documents, web, code, observations, tool outputs). Ingested cheaply, stored immutably. Embedding and entity extraction deferred until needed.
-- **Articles** — compiled knowledge units. Created when a query surfaces ungrouped sources; updated when new source material arrives. Each article is right-sized for context windows and carries full provenance.
+- **Sources** — raw inputs (conversations, documents, web, code, observations, tool outputs). Ingested cheaply, stored immutably. Embedding deferred until needed.
+- **Articles** — compiled knowledge units. Created when a query surfaces ungrouped sources; updated when new source material arrives. Each article is right-sized and carries full provenance.
 - **Provenance** — typed relationships from sources to articles: `originates`, `confirms`, `supersedes`, `contradicts`, `contends`. Contention is surfaced at retrieval time, not silently resolved.
-- **Traces** — usage signals that drive self-organization. Articles used frequently stay well-maintained; unused articles deprioritize in retrieval and are candidates for organic forgetting.
-
-**Inference router** handles five task types (compile, update, classify, contention detection, split) via a single configured backend. Falls back to degraded mode with explicit visibility — outputs produced in degraded mode are flagged and requeued when inference becomes available.
+- **Traces** — usage signals that drive self-organization. Articles used frequently stay well-maintained; unused articles deprioritize and are candidates for organic forgetting.
 
 ---
 
@@ -53,7 +77,7 @@ PostgreSQL + pgvector starts on `localhost:5433`. The Valence API server starts 
 docker compose up -d postgres
 ```
 
-Then run the server locally:
+Then install and run locally:
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
@@ -61,14 +85,28 @@ pip install -e ".[dev]"
 valence init          # apply schema migrations
 ```
 
-Set connection info via environment or `.env`:
+### Configure
+
+Copy `.env.example` to `.env` and edit:
 
 ```bash
-VKB_DB_HOST=localhost
-VKB_DB_PORT=5433
-VKB_DB_NAME=valence
-VKB_DB_USER=valence
-VKB_DB_PASSWORD=valence
+cp .env.example .env
+```
+
+Key settings:
+
+```bash
+# Database (all have sensible defaults for Docker)
+VALENCE_DB_HOST=127.0.0.1
+VALENCE_DB_PORT=5433
+VALENCE_DB_NAME=valence
+VALENCE_DB_USER=valence
+VALENCE_DB_PASSWORD=valence
+
+# Embeddings (OpenAI recommended; local fallback available)
+VALENCE_EMBEDDING_PROVIDER=openai
+VALENCE_EMBEDDING_MODEL=text-embedding-3-small
+OPENAI_API_KEY=sk-your-key-here
 ```
 
 ### Configure inference
@@ -78,9 +116,6 @@ By default, the system runs in degraded mode (concatenation fallback). Configure
 ```bash
 # Gemini 2.5 Flash via local gemini CLI (no API key needed)
 valence config inference gemini
-
-# Cerebras (ultra-low-latency classification)
-valence config inference cerebras --api-key YOUR_KEY
 
 # Local Ollama (fully offline)
 valence config inference ollama --model qwen3:30b
@@ -93,73 +128,76 @@ valence config inference show
 
 ```bash
 # Ingest a source
-valence sources ingest "Python's GIL was replaced in 3.13 by per-interpreter locks." \
+valence ingest "Python's GIL was replaced in 3.13 by per-interpreter locks." \
   --type document --title "Python 3.13 release notes"
 
-# Search sources
-valence sources search "Python GIL"
+# Search (hybrid: semantic + keyword)
+valence search "Python concurrency"
 
-# Search articles (compiled on first use)
-valence articles search "Python concurrency"
-
-# Get an article with its provenance
-valence articles get <article-id> --provenance
+# System status
+valence status
 ```
 
 ---
 
 ## CLI Usage
 
-### Sources
+### Unified search
 
 ```bash
-# Ingest from stdin or argument
-valence sources ingest "Content here" --type web --title "My Source" --url https://example.com
-valence sources ingest "$(cat notes.txt)" --type document
+# Search everything (articles + sources)
+valence search "query"
+valence search "Python GIL" --limit 10
 
-# List sources (filterable by type)
-valence sources list
-valence sources list --type conversation --limit 50
+# Search only articles or sources
+valence search "query" --articles-only
+valence search "query" --sources-only
+```
 
-# Get a specific source
-valence sources get <source-id>
+### Ingest
 
-# Search sources (full-text)
-valence sources search "search terms"
+```bash
+# From argument, file, URL, or stdin
+valence ingest "Content here" --type observation --title "My note"
+valence ingest path/to/file.md --type document
+valence ingest https://example.com/page --type web
+cat notes.txt | valence ingest - --type document
 ```
 
 **Source types:** `document`, `conversation`, `web`, `code`, `observation`, `tool_output`, `user_input`
 
+### Compile
+
+```bash
+# Auto-compile all unlinked sources
+valence compile --auto
+
+# Compile specific sources into an article
+valence compile <source-id-1> <source-id-2> --title "Topic hint"
+```
+
 ### Articles
 
 ```bash
-# Search compiled articles (triggers compilation if needed)
-valence articles search "query about anything"
-valence articles search "Python" --domain engineering
-
-# Get article with full provenance
-valence articles get <article-id> --provenance
-
-# List recent articles
 valence articles list
+valence articles get <article-id>
+valence articles search "query"
+```
 
-# Create an article manually (operator-authored)
-valence articles create "This is article content." --title "My Article"
-valence articles create "Agent-synthesized insight" --author-type agent
+### Sources
+
+```bash
+valence sources list
+valence sources get <source-id>
+valence sources search "query"
 ```
 
 ### Provenance
 
 ```bash
-# List all sources for an article
 valence provenance get <article-id>
-
-# Trace a specific claim back to contributing sources
-valence provenance trace <article-id> "the claim text to trace"
-
-# Link a source to an article with a typed relationship
+valence provenance trace <article-id> "claim text to trace"
 valence provenance link <article-id> <source-id> --relationship confirms
-valence provenance link <article-id> <source-id> --relationship contradicts --notes "Newer data disagrees"
 ```
 
 **Relationship types:** `originates`, `confirms`, `supersedes`, `contradicts`, `contends`
@@ -167,11 +205,16 @@ valence provenance link <article-id> <source-id> --relationship contradicts --no
 ### Configuration
 
 ```bash
-# Inference backend
-valence config inference show
+valence config show                              # all current settings
+valence config set <key> <value>                 # set a config value
+valence config inference show                    # inference backend
 valence config inference gemini --model gemini-2.5-flash
-valence config inference cerebras --api-key KEY --model llama-4-scout-17b-16e-instruct
-valence config inference ollama --host http://localhost:11434 --model qwen3:30b
+```
+
+### Status
+
+```bash
+valence status    # article count, source count, embedding coverage, DB info
 ```
 
 ### Global flags
@@ -180,57 +223,48 @@ valence config inference ollama --host http://localhost:11434 --model qwen3:30b
 valence --json articles search "query"          # JSON output
 valence --output table sources list             # table output
 valence --server http://remote:8420 stats       # remote server
-valence --timeout 60 articles search "big query"
 ```
 
 ---
 
-## Configuration
+## Interfaces
 
-Configuration lives in two places:
+### CLI (primary)
+The `valence` command covers all operations. See above.
 
-**Environment / `.env`** — database connection and server binding:
+### REST API
+OpenAPI 3.1 spec at `docs/openapi.yaml`. Server runs on port 8420:
 
 ```bash
-VKB_DB_HOST=localhost
-VKB_DB_PORT=5433
-VKB_DB_NAME=valence
-VKB_DB_USER=valence
-VKB_DB_PASSWORD=valence
-VALENCE_HOST=127.0.0.1
-VALENCE_PORT=8420
+valence serve                    # start the API server
+curl http://localhost:8420/health
 ```
 
-**`system_config` table** — inference backend (written by `valence config inference`):
+### MCP (compatibility)
+For MCP-aware clients (Claude Desktop, etc.):
 
-```json
-{
-  "provider": "gemini",
-  "model": "gemini-2.5-flash"
-}
+```bash
+valence mcp    # start MCP server on stdio
 ```
-
-The server reads `system_config` at startup. Changes take effect on restart.
-
----
-
-## Integration
 
 ### OpenClaw
-
-Valence integrates with OpenClaw via CLI wrapping. OpenClaw calls `valence` subcommands directly; no MCP server required.
+Valence integrates with OpenClaw via CLI skill wrapping:
 
 ```bash
-# OpenClaw skill wraps the CLI:
-valence sources ingest "$CONTENT" --type observation
-valence articles search "$QUERY"
+# OpenClaw skill calls valence CLI directly
+valence ingest "$CONTENT" --type observation
+valence search "$QUERY"
 ```
 
-Inference backend is configurable per platform — call `valence config inference` to set the backend appropriate for your environment.
+---
 
-### Claude Code
+## Costs
 
-Claude Code integration via plugin system is planned (future). The plugin will call `valence` CLI commands and inherit whatever inference backend is configured. No CLAUDE.md requirement on users.
+Valence is free to self-host. Optional costs:
+
+- **Embeddings**: OpenAI text-embedding-3-small costs ~$0.02 per million tokens. A typical knowledge base of 100 articles costs <$0.01 to embed.
+- **Compilation**: Uses your configured inference backend. Gemini CLI and Ollama are free. Cloud providers charge per-token.
+- **Database**: PostgreSQL + pgvector. Runs locally or on any Postgres host.
 
 ---
 
@@ -239,7 +273,6 @@ Claude Code integration via plugin system is planned (future). The plugin will c
 ```bash
 git clone https://github.com/ourochronos/valence.git
 cd valence
-git checkout v2/knowledge-system
 
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
@@ -257,13 +290,11 @@ pytest tests/ -x -q
 ruff check src/
 ```
 
-**Current branch:** `v2/knowledge-system` — v2 rewrite. `main` contains v1 (beliefs, federation, MCP, 78 tables). v2 replaces all of that with 20 tables, CLI-first, provenance-native.
-
 ---
 
 ## Data Sovereignty
 
-All inference runs in the US. Gemini Flash via local CLI, Cerebras (US cloud), or Ollama (local). No direct calls to non-US endpoints. All data stays local unless you explicitly federate (not in v2 scope).
+All data stays local by default. Embeddings (if using OpenAI) are one-way — content cannot be reconstructed from them. Inference can run fully local via Ollama or Gemini CLI. No telemetry, no cloud dependencies.
 
 ---
 
