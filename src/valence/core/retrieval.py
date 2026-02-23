@@ -20,7 +20,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from our_db import get_cursor
+from valence.lib.our_db import get_cursor
 
 from .ranking import multi_signal_rank
 from .response import ValenceResponse, ok

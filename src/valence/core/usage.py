@@ -27,7 +27,7 @@ import os
 from datetime import UTC, datetime
 from typing import Any
 
-from our_db import get_cursor
+from valence.lib.our_db import get_cursor
 
 from .response import ValenceResponse, ok
 

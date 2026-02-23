@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from our_confidence import DimensionalConfidence
+from valence.lib.our_confidence import DimensionalConfidence
 
 
 @dataclass

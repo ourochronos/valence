@@ -9,8 +9,8 @@ import json
 import logging
 from typing import Any
 
-from our_db import get_cursor
-from our_models import Exchange, Session
+from valence.lib.our_db import get_cursor
+from valence.lib.our_models import Exchange, Session
 
 logger = logging.getLogger(__name__)
 

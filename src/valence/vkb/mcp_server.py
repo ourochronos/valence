@@ -24,8 +24,9 @@ from typing import Any
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
-from our_db import init_schema
-from our_db.exceptions import DatabaseError as OurDatabaseError
+
+from valence.lib.our_db import init_schema
+from valence.lib.our_db.exceptions import DatabaseError as OurDatabaseError
 
 from ..core.exceptions import DatabaseException, ValidationException
 from ..core.health import cli_health_check, startup_checks

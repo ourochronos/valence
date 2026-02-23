@@ -32,12 +32,6 @@ classifiers = [
 ]
 
 dependencies = [
-    # Ourochronos bricks
-    "our-db>=0.1.0",
-    "our-models>=0.1.0",
-    "our-confidence>=0.1.0",
-    "our-embeddings>=0.1.0",
-    # Existing deps
     "mcp>=1.0",
     "openai>=1.0",
     "psycopg2-binary>=2.9",

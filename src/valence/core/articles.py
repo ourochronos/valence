@@ -15,7 +15,7 @@ import os
 from datetime import datetime
 from typing import Any
 
-from our_db import get_cursor
+from valence.lib.our_db import get_cursor
 
 from .response import ValenceResponse, err, ok
 
@@ -44,7 +44,7 @@ def _compute_embedding(content: str) -> str | None:
     if os.environ.get("VALENCE_ASYNC_EMBEDDINGS"):
         return None
     try:
-        from our_embeddings.service import generate_embedding, vector_to_pgvector
+        from valence.lib.our_embeddings.service import generate_embedding, vector_to_pgvector
 
         return vector_to_pgvector(generate_embedding(content))
     except Exception:

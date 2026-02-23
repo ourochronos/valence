@@ -266,7 +266,7 @@ def _mock_cursor():
 
 
 class TestStatsEndpoint:
-    @patch("our_db.get_cursor")
+    @patch("valence.lib.our_db.get_cursor")
     def test_happy_path(self, mock_gc, client):
         mock_cm, mock_cur = _mock_cursor()
         mock_gc.return_value = mock_cm
@@ -288,7 +288,7 @@ class TestStatsEndpoint:
         assert data["stats"]["with_embeddings"] == 60
         assert data["stats"]["unresolved_contentions"] == 5
 
-    @patch("our_db.get_cursor")
+    @patch("valence.lib.our_db.get_cursor")
     def test_text_output(self, mock_gc, client):
         mock_cm, mock_cur = _mock_cursor()
         mock_gc.return_value = mock_cm
@@ -312,7 +312,7 @@ class TestStatsEndpoint:
 
 
 class TestConflictsEndpoint:
-    @patch("our_db.get_cursor")
+    @patch("valence.lib.our_db.get_cursor")
     def test_no_conflicts(self, mock_gc, client):
         mock_cm, mock_cur = _mock_cursor()
         mock_gc.return_value = mock_cm
@@ -324,7 +324,7 @@ class TestConflictsEndpoint:
         assert data["success"] is True
         assert data["count"] == 0
 
-    @patch("our_db.get_cursor")
+    @patch("valence.lib.our_db.get_cursor")
     def test_with_threshold(self, mock_gc, client):
         mock_cm, mock_cur = _mock_cursor()
         mock_gc.return_value = mock_cm

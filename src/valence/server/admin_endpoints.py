@@ -37,7 +37,7 @@ async def admin_migrate_status(request: Request) -> JSONResponse:
     output_format = parse_output_format(request)
 
     try:
-        from our_db import get_cursor
+        from valence.lib.our_db import get_cursor
 
         with get_cursor() as cur:
             cur.execute("""
@@ -231,7 +231,7 @@ async def admin_embeddings_status(request: Request) -> JSONResponse:
     output_format = parse_output_format(request)
 
     try:
-        from our_db import get_cursor
+        from valence.lib.our_db import get_cursor
 
         with get_cursor() as cur:
             cur.execute("SELECT COUNT(*) as total FROM articles")
@@ -274,8 +274,8 @@ async def admin_embeddings_backfill(request: Request) -> JSONResponse:
     dry_run = body.get("dry_run", False)
 
     try:
-        from our_db import get_cursor
-        from our_embeddings.service import generate_embedding
+        from valence.lib.our_db import get_cursor
+        from valence.lib.our_embeddings.service import generate_embedding
 
         with get_cursor() as cur:
             cur.execute(
@@ -339,7 +339,7 @@ async def admin_embeddings_migrate(request: Request) -> JSONResponse:
     dry_run = body.get("dry_run", False)
 
     try:
-        from our_db import get_cursor
+        from valence.lib.our_db import get_cursor
 
         if dry_run:
             with get_cursor() as cur:
@@ -388,7 +388,7 @@ async def admin_verify_chains(request: Request) -> JSONResponse:
         return err
 
     try:
-        from our_db import get_cursor
+        from valence.lib.our_db import get_cursor
 
         issues = []
         with get_cursor() as cur:

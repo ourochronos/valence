@@ -97,27 +97,29 @@ def clean_env(monkeypatch):
     for key in list(os.environ.keys()):
         if any(key.startswith(prefix) for prefix in env_prefixes):
             monkeypatch.delenv(key, raising=False)
-    
+
     # Prevent pydantic-settings from reading .env file by patching model_config
     from valence.core.config import CoreSettings
     from pydantic_settings import SettingsConfigDict
-    
+
     # Store originals
     original_core_config = CoreSettings.model_config
-    
+
     # Patch CoreSettings
     CoreSettings.model_config = SettingsConfigDict(
         env_file=None,
         env_file_encoding="utf-8",
         extra="ignore",
     )
-    
+
     # Also patch ServerSettings if it's already loaded
     original_server_config = None
     try:
         import sys
-        if 'valence.server.config' in sys.modules:
+
+        if "valence.server.config" in sys.modules:
             from valence.server.config import ServerSettings
+
             original_server_config = ServerSettings.model_config
             ServerSettings.model_config = SettingsConfigDict(
                 env_prefix="VALENCE_",
@@ -127,17 +129,19 @@ def clean_env(monkeypatch):
             )
     except Exception:
         pass
-    
+
     clear_config_cache()
     yield
-    
+
     # Restore original configs
     CoreSettings.model_config = original_core_config
     if original_server_config is not None:
         try:
             import sys
-            if 'valence.server.config' in sys.modules:
+
+            if "valence.server.config" in sys.modules:
                 from valence.server.config import ServerSettings
+
                 ServerSettings.model_config = original_server_config
         except Exception:
             pass
@@ -233,7 +237,7 @@ def mock_get_cursor():
     async def fake_get_cursor(dict_cursor: bool = True) -> AsyncGenerator:
         yield mock_conn
 
-    with patch("our_db.get_cursor", fake_get_cursor):
+    with patch("valence.lib.our_db.get_cursor", fake_get_cursor):
         yield mock_conn
 
 
@@ -245,7 +249,7 @@ def mock_get_cursor():
 @pytest.fixture(autouse=True)
 def reset_db_pool():
     """Reset the connection pool singleton before each test."""
-    import our_db.db as db_mod
+    import valence.lib.our_db.db as db_mod
 
     # Reset the pool singleton
     db_mod.ConnectionPool._instance = None
@@ -275,7 +279,7 @@ def mock_psycopg2_pool():
     mock_pool.putconn = MagicMock()
     mock_pool.closeall = MagicMock()
 
-    with patch("our_db.db.psycopg2_pool.ThreadedConnectionPool") as mock_pool_class:
+    with patch("valence.lib.our_db.db.psycopg2_pool.ThreadedConnectionPool") as mock_pool_class:
         mock_pool_class.return_value = mock_pool
         yield {
             "pool_class": mock_pool_class,
@@ -513,7 +517,7 @@ def source_row_factory():
 @pytest.fixture
 def mock_openai():
     """Mock OpenAI client for embedding generation."""
-    with patch("our_embeddings.service.OpenAI") as mock_class:
+    with patch("valence.lib.our_embeddings.service.OpenAI") as mock_class:
         mock_client = MagicMock()
         mock_class.return_value = mock_client
 

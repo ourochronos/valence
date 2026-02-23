@@ -11,8 +11,8 @@ import sys
 from dataclasses import dataclass, field
 from typing import Any
 
-from our_db import count_rows, table_exists
-from our_db.db import get_connection_params
+from valence.lib.our_db import count_rows, table_exists
+from valence.lib.our_db.db import get_connection_params
 
 from .exceptions import ConfigException, DatabaseException
 

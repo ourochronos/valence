@@ -336,7 +336,7 @@ class TestBeliefCreate:
     @pytest.fixture(autouse=True)
     def no_embeddings(self):
         """Disable embedding-based fuzzy dedup for unit tests."""
-        with patch("our_embeddings.service.generate_embedding", side_effect=RuntimeError("test")):
+        with patch("valence.lib.our_embeddings.service.generate_embedding", side_effect=RuntimeError("test")):
             yield
 
     def test_belief_create_basic(self, mock_get_cursor, sample_belief_row):
