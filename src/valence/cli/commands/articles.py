@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 
-from ..config import get_cli_config
 from ..http_client import ValenceAPIError, ValenceConnectionError, get_client
 from ..output import output_error, output_result
 

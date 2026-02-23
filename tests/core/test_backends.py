@@ -74,9 +74,7 @@ class TestGeminiBackend:
 
         # The prompt must NOT appear in the subprocess args (shell injection risk)
         for arg in captured_args:
-            assert "sensitive user prompt" not in str(arg), (
-                f"Prompt found in CLI argument {arg!r} — shell injection risk!"
-            )
+            assert "sensitive user prompt" not in str(arg), f"Prompt found in CLI argument {arg!r} — shell injection risk!"
 
         # The prompt MUST have been sent via stdin
         assert len(captured_input) == 1
@@ -203,6 +201,7 @@ class TestOpenAICompatBackend:
             # Re-import to pick up patched AsyncOpenAI
             from valence.core.backends import openai_compat as _oc
             import importlib
+
             importlib.reload(_oc)
 
             # Create fresh backend after patching
@@ -230,9 +229,7 @@ class TestOpenAICompatBackend:
             mock_client.chat.completions.create = AsyncMock(return_value=fake_response)
 
             importlib.reload(_oc)
-            backend = _oc.create_openai_backend(
-                base_url="http://x/v1", api_key="k", model="m"
-            )
+            backend = _oc.create_openai_backend(base_url="http://x/v1", api_key="k", model="m")
             with pytest.raises(RuntimeError, match="empty content"):
                 await backend("test")
 
@@ -320,14 +317,14 @@ class TestBackendWithInferenceProvider:
 
         mock_proc = AsyncMock()
         mock_proc.returncode = 0
-        classify_response = json.dumps({
-            "relationship": "confirms",
-            "confidence": 0.9,
-            "reasoning": "The source confirms the article.",
-        })
-        mock_proc.communicate = AsyncMock(
-            return_value=(classify_response.encode(), b"")
+        classify_response = json.dumps(
+            {
+                "relationship": "confirms",
+                "confidence": 0.9,
+                "reasoning": "The source confirms the article.",
+            }
         )
+        mock_proc.communicate = AsyncMock(return_value=(classify_response.encode(), b""))
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
             provider.configure(backend)

@@ -15,6 +15,7 @@ for v2 equivalents.
 from __future__ import annotations
 
 import pytest
+
 pytest.skip(
     "Deprecated: belief system replaced by v2 articles/sources (WU-11)",
     allow_module_level=True,

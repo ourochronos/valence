@@ -14,14 +14,14 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
-from our_confidence import (
+from valence.lib.our_confidence import (
     DEFAULT_WEIGHTS,
     ConfidenceDimension,
     DimensionalConfidence,
     confidence_label,
 )
-from our_db import get_cursor
-from our_models import Belief, Entity, Tension
+from valence.lib.our_db import get_cursor
+from valence.lib.our_models import Belief, Entity, Tension
 
 from ...core.utils import escape_ilike
 

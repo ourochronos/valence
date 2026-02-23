@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, date
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -22,6 +22,10 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from ..auth_helpers import authenticate, require_scope
+from ..endpoint_utils import _parse_bool
+from ..errors import internal_error, invalid_json_error, missing_field_error
+
+logger = logging.getLogger(__name__)
 
 
 class _Encoder(json.JSONEncoder):
@@ -38,10 +42,6 @@ class _Encoder(json.JSONEncoder):
 def _json_response(data, **kw):
     body = json.dumps(data, cls=_Encoder)
     return JSONResponse(content=json.loads(body), **kw)
-from ..endpoint_utils import _parse_bool, _parse_int
-from ..errors import internal_error, invalid_json_error, missing_field_error, validation_error
-
-logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -92,15 +92,15 @@ async def create_article_endpoint(request: Request) -> JSONResponse:
     try:
         from ...core.articles import create_article
 
-        result = create_article(
+        result = await create_article(
             content=content,
             title=body.get("title"),
             source_ids=body.get("source_ids"),
             author_type=body.get("author_type", "system"),
             domain_path=body.get("domain_path"),
         )
-        status = 201 if result.get("success") else 400
-        return JSONResponse(result, status_code=status)
+        status = 201 if result.to_dict().get("success") else 400
+        return JSONResponse(result.to_dict(), status_code=status)
     except Exception:
         logger.exception("Error creating article")
         return internal_error()
@@ -121,9 +121,9 @@ async def get_article_endpoint(request: Request) -> JSONResponse:
     try:
         from ...core.articles import get_article
 
-        result = get_article(article_id=article_id, include_provenance=include_provenance)
-        status = 200 if result.get("success") else 404
-        return JSONResponse(result, status_code=status)
+        result = await get_article(article_id=article_id, include_provenance=include_provenance)
+        status = 200 if result.to_dict().get("success") else 404
+        return JSONResponse(result.to_dict(), status_code=status)
     except Exception:
         logger.exception("Error fetching article %s", article_id)
         return internal_error()
@@ -151,13 +151,13 @@ async def update_article_endpoint(request: Request) -> JSONResponse:
     try:
         from ...core.articles import update_article
 
-        result = update_article(
+        result = await update_article(
             article_id=article_id,
             content=content,
             source_id=body.get("source_id"),
         )
-        status = 200 if result.get("success") else 404
-        return JSONResponse(result, status_code=status)
+        status = 200 if result.to_dict().get("success") else 404
+        return JSONResponse(result.to_dict(), status_code=status)
     except Exception:
         logger.exception("Error updating article %s", article_id)
         return internal_error()
@@ -189,11 +189,13 @@ async def search_articles_endpoint(request: Request) -> JSONResponse:
             domain_filter=body.get("domain_filter"),
         )
         articles = result.data if result.success else []
-        return _json_response({
-            "success": True,
-            "articles": articles,
-            "total_count": len(articles),
-        })
+        return _json_response(
+            {
+                "success": True,
+                "articles": articles,
+                "total_count": len(articles),
+            }
+        )
     except Exception:
         logger.exception("Error searching articles")
         return internal_error()
@@ -229,14 +231,14 @@ async def link_provenance_endpoint(request: Request) -> JSONResponse:
     try:
         from ...core.provenance import link_source
 
-        result = link_source(
+        result = await link_source(
             article_id=article_id,
             source_id=source_id,
             relationship=relationship,
             notes=body.get("notes"),
         )
-        status = 201 if result.get("success") else 400
-        return JSONResponse(result, status_code=status)
+        status = 201 if result.to_dict().get("success") else 400
+        return JSONResponse(result.to_dict(), status_code=status)
     except Exception:
         logger.exception("Error linking provenance for article %s", article_id)
         return internal_error()
@@ -255,12 +257,15 @@ async def get_provenance_endpoint(request: Request) -> JSONResponse:
     try:
         from ...core.provenance import get_provenance
 
-        provenance = get_provenance(article_id=article_id)
-        return _json_response({
-            "success": True,
-            "provenance": provenance,
-            "count": len(provenance),
-        })
+        result = await get_provenance(article_id=article_id)
+        provenance = result.data if result.success else []
+        return _json_response(
+            {
+                "success": True,
+                "provenance": provenance,
+                "count": len(provenance),
+            }
+        )
     except Exception:
         logger.exception("Error fetching provenance for article %s", article_id)
         return internal_error()
@@ -288,12 +293,15 @@ async def trace_claim_endpoint(request: Request) -> JSONResponse:
     try:
         from ...core.provenance import trace_claim
 
-        sources = trace_claim(article_id=article_id, claim_text=claim_text)
-        return _json_response({
-            "success": True,
-            "sources": sources,
-            "count": len(sources),
-        })
+        result = await trace_claim(article_id=article_id, claim_text=claim_text)
+        sources = result.data if result.success else []
+        return _json_response(
+            {
+                "success": True,
+                "sources": sources,
+                "count": len(sources),
+            }
+        )
     except Exception:
         logger.exception("Error tracing claim for article %s", article_id)
         return internal_error()

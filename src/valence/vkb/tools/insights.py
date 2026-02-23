@@ -10,8 +10,8 @@ import json
 import logging
 from typing import Any
 
-from our_confidence import DimensionalConfidence
-from our_db import get_cursor
+from valence.lib.our_confidence import DimensionalConfidence
+from valence.lib.our_db import get_cursor
 
 logger = logging.getLogger(__name__)
 

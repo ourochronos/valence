@@ -8,6 +8,22 @@ from datetime import UTC, datetime
 logger = logging.getLogger(__name__)
 
 
+def get_db_connection():
+    """Get a database connection from the pool.
+
+    This is a thin wrapper around our_db.get_connection() for backward compatibility.
+
+    Returns:
+        psycopg2 connection object
+
+    Raises:
+        DatabaseError: If connection fails
+    """
+    from valence.lib import our_db
+
+    return our_db.get_connection()
+
+
 def format_confidence(conf: dict) -> str:
     """Format confidence for display."""
     if not conf:

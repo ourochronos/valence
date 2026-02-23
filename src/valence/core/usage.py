@@ -24,10 +24,10 @@ from __future__ import annotations
 import logging
 import math
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
-from our_db import get_cursor
+from valence.lib.our_db import get_cursor
 
 from .response import ValenceResponse, ok
 
@@ -45,12 +45,12 @@ _DECAY_RATE: float = float(os.environ.get("VALENCE_USAGE_DECAY_RATE", "0.01"))
 def _decayed_weight(retrieved_at: datetime, now: datetime | None = None) -> float:
     """Compute exp(-λ · days_since_retrieval) for a single retrieval timestamp."""
     if now is None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
     # Make both tz-aware for safe subtraction
     if retrieved_at.tzinfo is None:
-        retrieved_at = retrieved_at.replace(tzinfo=timezone.utc)
+        retrieved_at = retrieved_at.replace(tzinfo=UTC)
     if now.tzinfo is None:
-        now = now.replace(tzinfo=timezone.utc)
+        now = now.replace(tzinfo=UTC)
     days = max(0.0, (now - retrieved_at).total_seconds() / 86_400)
     return math.exp(-_DECAY_RATE * days)
 
@@ -65,7 +65,7 @@ def _compute_score(retrieval_timestamps: list[datetime], source_count: int) -> f
     Returns:
         Float usage score ≥ 0.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     recency_sum = sum(_decayed_weight(ts, now) for ts in retrieval_timestamps)
     connection_bonus = math.log1p(source_count) * 0.5
     return recency_sum + connection_bonus

@@ -9,12 +9,15 @@ Pull a model: ``ollama pull qwen3:30b``
 
 from __future__ import annotations
 
+from collections.abc import Callable, Coroutine
+from typing import Any
+
 
 def create_ollama_backend(
     host: str = "http://localhost:11434",
     model: str = "qwen3:30b",
     timeout: float = 120.0,
-) -> callable:
+) -> Callable[[str], Coroutine[Any, Any, str]]:
     """Return an async callable that routes inference through a local Ollama server.
 
     Args:
@@ -47,11 +50,11 @@ def create_ollama_backend(
 
     backend = create_openai_backend(
         base_url=f"{host.rstrip('/')}/v1",
-        api_key="ollama",      # Ollama doesn't validate the key
+        api_key="ollama",  # Ollama doesn't validate the key
         model=model,
         timeout=timeout,
     )
-    backend.__name__ = f"ollama_backend({model}@{host})"
+    backend.__name__ = f"ollama_backend({model}@{host})"  # type: ignore[attr-defined]
     backend._model = model  # type: ignore[attr-defined]
     backend._host = host  # type: ignore[attr-defined]
     backend._provider = "ollama"  # type: ignore[attr-defined]

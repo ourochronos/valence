@@ -9,6 +9,8 @@ Requires the ``openai`` Python package (already installed in the venv).
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Coroutine
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +21,7 @@ def create_openai_backend(
     model: str,
     timeout: float = 60.0,
     system_prompt: str | None = None,
-) -> callable:
+) -> Callable[[str], Coroutine[Any, Any, str]]:
     """Return an async callable suitable for ``InferenceProvider.configure()``.
 
     Sends the prompt as the user message in a chat-completions request.  The
@@ -47,10 +49,7 @@ def create_openai_backend(
     try:
         from openai import AsyncOpenAI
     except ImportError as exc:
-        raise ImportError(
-            "The 'openai' package is required for the OpenAI-compatible backend. "
-            "Install it with: pip install openai"
-        ) from exc
+        raise ImportError("The 'openai' package is required for the OpenAI-compatible backend. Install it with: pip install openai") from exc
 
     client = AsyncOpenAI(
         base_url=base_url,
@@ -58,10 +57,7 @@ def create_openai_backend(
         timeout=timeout,
     )
 
-    default_system = (
-        "You are a precise knowledge-management assistant. "
-        "Respond ONLY with valid JSON; no markdown, no commentary."
-    )
+    default_system = "You are a precise knowledge-management assistant. Respond ONLY with valid JSON; no markdown, no commentary."
     effective_system = system_prompt if system_prompt is not None else default_system
 
     async def backend(prompt: str) -> str:
@@ -78,18 +74,17 @@ def create_openai_backend(
 
         content = response.choices[0].message.content
         if content is None:
-            raise RuntimeError(
-                f"OpenAI-compat backend ({base_url}) returned empty content "
-                f"for model {model!r}"
-            )
+            raise RuntimeError(f"OpenAI-compat backend ({base_url}) returned empty content for model {model!r}")
 
         logger.debug(
             "OpenAI-compat backend: received %d chars (model=%s url=%s)",
-            len(content), model, base_url,
+            len(content),
+            model,
+            base_url,
         )
         return content
 
-    backend.__name__ = f"openai_compat_backend({model}@{base_url})"
-    backend._model = model
-    backend._base_url = base_url
+    backend.__name__ = f"openai_compat_backend({model}@{base_url})"  # type: ignore[attr-defined]
+    backend._model = model  # type: ignore[attr-defined]
+    backend._base_url = base_url  # type: ignore[attr-defined]
     return backend

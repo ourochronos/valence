@@ -206,10 +206,7 @@ class TestRecordUsage:
 
         # Confirm the SELECT on usage_traces passed the correct article_id
         calls = mock_cur.execute.call_args_list
-        trace_select_found = any(
-            "usage_traces" in str(c) and ARTICLE_A_ID in str(c)
-            for c in calls
-        )
+        trace_select_found = any("usage_traces" in str(c) and ARTICLE_A_ID in str(c) for c in calls)
         assert trace_select_found
 
     async def test_queries_source_count_for_article(self):
@@ -472,9 +469,7 @@ class TestUsageScoreOrdering:
         # Article B: never retrieved
         score_b = _compute_score([], source_count=0)
 
-        assert score_a > score_b, (
-            f"A (5 retrievals, score={score_a:.4f}) should beat B (0 retrievals, score={score_b:.4f})"
-        )
+        assert score_a > score_b, f"A (5 retrievals, score={score_a:.4f}) should beat B (0 retrievals, score={score_b:.4f})"
 
     def test_decay_candidates_b_before_a(self):
         """get_decay_candidates ordering: B (score=0) appears before A (score=4.9)."""
@@ -524,6 +519,7 @@ class TestUsageScoreOrdering:
 
         # Compute twice with the same explicit 'now' by calling _decayed_weight directly
         import math
+
         recency_sum = sum(_decayed_weight(ts, reference_now) for ts in timestamps)
         connection_bonus = math.log1p(2) * 0.5
 

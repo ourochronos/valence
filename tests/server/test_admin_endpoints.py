@@ -87,7 +87,7 @@ class TestAdminAuth:
 
 
 class TestMigrateStatus:
-    @patch("our_db.get_cursor")
+    @patch("valence.lib.our_db.get_cursor")
     def test_happy_path(self, mock_gc, client):
         mock_cm, mock_cur = _mock_cursor()
         mock_gc.return_value = mock_cm
@@ -102,7 +102,7 @@ class TestMigrateStatus:
         assert data["success"] is True
         assert data["count"] == 2
 
-    @patch("our_db.get_cursor")
+    @patch("valence.lib.our_db.get_cursor")
     def test_text_output(self, mock_gc, client):
         mock_cm, mock_cur = _mock_cursor()
         mock_gc.return_value = mock_cm
@@ -204,7 +204,7 @@ class TestMaintenance:
 
 
 class TestEmbeddingsStatus:
-    @patch("our_db.get_cursor")
+    @patch("valence.lib.our_db.get_cursor")
     def test_happy_path(self, mock_gc, client):
         mock_cm, mock_cur = _mock_cursor()
         mock_gc.return_value = mock_cm
@@ -218,13 +218,13 @@ class TestEmbeddingsStatus:
         assert resp.status_code == 200
         data = resp.json()
         assert data["success"] is True
-        assert data["stats"]["total_beliefs"] == 100
+        assert data["stats"]["total_articles"] == 100
         assert data["stats"]["with_embeddings"] == 80
 
 
 class TestEmbeddingsBackfill:
-    @patch("our_embeddings.service.generate_embedding")
-    @patch("our_db.get_cursor")
+    @patch("valence.lib.our_embeddings.service.generate_embedding")
+    @patch("valence.lib.our_db.get_cursor")
     def test_dry_run(self, mock_gc, mock_embed, client):
         mock_cm, mock_cur = _mock_cursor()
         mock_gc.return_value = mock_cm
@@ -241,7 +241,7 @@ class TestEmbeddingsMigrate:
         resp = client.post("/api/v1/admin/embeddings/migrate", json={})
         assert resp.status_code == 400
 
-    @patch("our_db.get_cursor")
+    @patch("valence.lib.our_db.get_cursor")
     def test_dry_run(self, mock_gc, client):
         mock_cm, mock_cur = _mock_cursor()
         mock_gc.return_value = mock_cm
@@ -258,7 +258,7 @@ class TestEmbeddingsMigrate:
 
 
 class TestVerifyChains:
-    @patch("our_db.get_cursor")
+    @patch("valence.lib.our_db.get_cursor")
     def test_healthy(self, mock_gc, client):
         mock_cm, mock_cur = _mock_cursor()
         mock_gc.return_value = mock_cm
@@ -271,7 +271,7 @@ class TestVerifyChains:
         assert data["status"] == "healthy"
         assert data["count"] == 0
 
-    @patch("our_db.get_cursor")
+    @patch("valence.lib.our_db.get_cursor")
     def test_issues_found(self, mock_gc, client):
         mock_cm, mock_cur = _mock_cursor()
         mock_gc.return_value = mock_cm

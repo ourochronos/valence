@@ -17,7 +17,7 @@ Implements WU-14 (C12, DR-10).
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
@@ -77,7 +77,7 @@ class ConfigRegistry:
     # -----------------------------------------------------------------------
 
     @classmethod
-    def from_env(cls) -> "ConfigRegistry":
+    def from_env(cls) -> ConfigRegistry:
         """Load configuration from environment variables.
 
         Variable priority (first match wins):
@@ -148,9 +148,7 @@ class ConfigRegistry:
             db_pool_min=_get_int("VALENCE_DB_POOL_MIN", default=5),
             db_pool_max=_get_int("VALENCE_DB_POOL_MAX", default=20),
             embedding_provider=_get("VALENCE_EMBEDDING_PROVIDER", default="local"),
-            embedding_model_path=_get(
-                "VALENCE_EMBEDDING_MODEL_PATH", default="BAAI/bge-small-en-v1.5"
-            ),
+            embedding_model_path=_get("VALENCE_EMBEDDING_MODEL_PATH", default="BAAI/bge-small-en-v1.5"),
             embedding_dims=_get_int("VALENCE_EMBEDDING_DIMS", default=384),
             embedding_device=_get("VALENCE_EMBEDDING_DEVICE", default="cpu"),
             openai_api_key=_get("OPENAI_API_KEY", default=""),
@@ -166,10 +164,7 @@ class ConfigRegistry:
     @property
     def database_url(self) -> str:
         """PostgreSQL DSN string."""
-        return (
-            f"postgresql://{self.db_user}:{self.db_password}"
-            f"@{self.db_host}:{self.db_port}/{self.db_name}"
-        )
+        return f"postgresql://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
 
     @property
     def connection_params(self) -> dict:

@@ -124,9 +124,9 @@ class TestLinkSource:
         mock_cur.__enter__ = MagicMock(return_value=mock_cur)
         mock_cur.__exit__ = MagicMock(return_value=False)
         mock_cur.fetchone.side_effect = [
-            {"id": ARTICLE_ID},   # article lookup
-            {"id": SOURCE_ID},    # source lookup
-            link_row,             # INSERT RETURNING
+            {"id": ARTICLE_ID},  # article lookup
+            {"id": SOURCE_ID},  # source lookup
+            link_row,  # INSERT RETURNING
         ]
 
         with patch("valence.core.provenance.get_cursor", return_value=mock_cur):
@@ -238,12 +238,22 @@ class TestGetProvenance:
         from valence.core.provenance import get_provenance
 
         rows = [
-            {**_make_article_source_row(source_id=str(uuid4()), relationship="originates"),
-             "source_type": "document", "source_title": "Doc A", "source_url": None,
-             "reliability": 0.8, "source_created_at": datetime.now()},
-            {**_make_article_source_row(source_id=str(uuid4()), relationship="confirms"),
-             "source_type": "web", "source_title": "Web B", "source_url": "https://example.com",
-             "reliability": 0.6, "source_created_at": datetime.now()},
+            {
+                **_make_article_source_row(source_id=str(uuid4()), relationship="originates"),
+                "source_type": "document",
+                "source_title": "Doc A",
+                "source_url": None,
+                "reliability": 0.8,
+                "source_created_at": datetime.now(),
+            },
+            {
+                **_make_article_source_row(source_id=str(uuid4()), relationship="confirms"),
+                "source_type": "web",
+                "source_title": "Web B",
+                "source_url": "https://example.com",
+                "reliability": 0.6,
+                "source_created_at": datetime.now(),
+            },
         ]
         mock_cur = _make_cursor_mock(fetchall=rows)
 

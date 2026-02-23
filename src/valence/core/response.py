@@ -22,7 +22,7 @@ Implements WU-14 (C12, DR-10).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 

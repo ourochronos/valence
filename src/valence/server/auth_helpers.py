@@ -13,7 +13,6 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from .auth import verify_token
-from .config import get_settings
 from .errors import AUTH_MISSING_TOKEN, FORBIDDEN_INSUFFICIENT_PERMISSION, auth_error, forbidden_error
 
 logger = logging.getLogger(__name__)
@@ -41,7 +40,6 @@ def authenticate(request: Request) -> AuthenticatedClient | JSONResponse:
             return client
         # client is AuthenticatedClient
     """
-    settings = get_settings()
     auth_header = request.headers.get("Authorization", "")
 
     if not auth_header.startswith("Bearer "):

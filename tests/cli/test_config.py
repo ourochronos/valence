@@ -37,12 +37,7 @@ class TestCLIConfigDefaults:
 class TestCLIConfigFile:
     def test_load_from_toml(self, tmp_path):
         config_file = tmp_path / "cli.toml"
-        config_file.write_text(
-            'server_url = "http://remote:9000"\n'
-            'token = "vt_file_token"\n'
-            'output = "json"\n'
-            "timeout = 60.0\n"
-        )
+        config_file.write_text('server_url = "http://remote:9000"\ntoken = "vt_file_token"\noutput = "json"\ntimeout = 60.0\n')
         config = CLIConfig.load(config_path=config_file)
         assert config.server_url == "http://remote:9000"
         assert config.token == "vt_file_token"

@@ -93,8 +93,7 @@ class TestCreateArticle:
         article_row = _make_article_row()
         mock_cur = _make_cursor_mock(fetchone=article_row)
 
-        with patch("valence.core.articles.get_cursor", return_value=mock_cur), \
-             patch("valence.core.articles._compute_embedding", return_value=None):
+        with patch("valence.core.articles.get_cursor", return_value=mock_cur), patch("valence.core.articles._compute_embedding", return_value=None):
             result = await create_article(content="Test article content about Python.")
 
         assert result.success is True
@@ -108,8 +107,7 @@ class TestCreateArticle:
         article_row = _make_article_row()
         mock_cur = _make_cursor_mock(fetchone=article_row)
 
-        with patch("valence.core.articles.get_cursor", return_value=mock_cur), \
-             patch("valence.core.articles._compute_embedding", return_value=None):
+        with patch("valence.core.articles.get_cursor", return_value=mock_cur), patch("valence.core.articles._compute_embedding", return_value=None):
             result = await create_article(
                 content="Test article content.",
                 source_ids=[SOURCE_ID],
@@ -129,8 +127,7 @@ class TestCreateArticle:
         article_row = _make_article_row()
         mock_cur = _make_cursor_mock(fetchone=article_row)
 
-        with patch("valence.core.articles.get_cursor", return_value=mock_cur), \
-             patch("valence.core.articles._compute_embedding", return_value=None):
+        with patch("valence.core.articles.get_cursor", return_value=mock_cur), patch("valence.core.articles._compute_embedding", return_value=None):
             await create_article(content="Content here.")
 
         calls_str = str(mock_cur.execute.call_args_list)
@@ -144,8 +141,7 @@ class TestCreateArticle:
         article_row = _make_article_row(title="My Title")
         mock_cur = _make_cursor_mock(fetchone=article_row)
 
-        with patch("valence.core.articles.get_cursor", return_value=mock_cur), \
-             patch("valence.core.articles._compute_embedding", return_value=None):
+        with patch("valence.core.articles.get_cursor", return_value=mock_cur), patch("valence.core.articles._compute_embedding", return_value=None):
             result = await create_article(content="Content here.", title="My Title")
 
         assert result.success is True
@@ -242,8 +238,7 @@ class TestUpdateArticle:
 
         mock_cur = _make_cursor_mock(fetchone=None)
 
-        with patch("valence.core.articles.get_cursor", return_value=mock_cur), \
-             patch("valence.core.articles._compute_embedding", return_value=None):
+        with patch("valence.core.articles.get_cursor", return_value=mock_cur), patch("valence.core.articles._compute_embedding", return_value=None):
             result = await update_article(article_id=str(uuid4()), content="New content.")
 
         assert result.success is False
@@ -256,8 +251,7 @@ class TestUpdateArticle:
         updated_row = _make_article_row(version=2, content="New content.")
         mock_cur = _make_cursor_mock(fetchone=updated_row)
 
-        with patch("valence.core.articles.get_cursor", return_value=mock_cur), \
-             patch("valence.core.articles._compute_embedding", return_value=None):
+        with patch("valence.core.articles.get_cursor", return_value=mock_cur), patch("valence.core.articles._compute_embedding", return_value=None):
             result = await update_article(article_id=ARTICLE_ID, content="New content.")
 
         assert result.success is True
@@ -270,8 +264,7 @@ class TestUpdateArticle:
         updated_row = _make_article_row(version=2, content="New content.")
         mock_cur = _make_cursor_mock(fetchone=updated_row)
 
-        with patch("valence.core.articles.get_cursor", return_value=mock_cur), \
-             patch("valence.core.articles._compute_embedding", return_value=None):
+        with patch("valence.core.articles.get_cursor", return_value=mock_cur), patch("valence.core.articles._compute_embedding", return_value=None):
             await update_article(article_id=ARTICLE_ID, content="New content.")
 
         calls_str = str(mock_cur.execute.call_args_list)
@@ -285,8 +278,7 @@ class TestUpdateArticle:
         updated_row = _make_article_row(version=2)
         mock_cur = _make_cursor_mock(fetchone=updated_row)
 
-        with patch("valence.core.articles.get_cursor", return_value=mock_cur), \
-             patch("valence.core.articles._compute_embedding", return_value=None):
+        with patch("valence.core.articles.get_cursor", return_value=mock_cur), patch("valence.core.articles._compute_embedding", return_value=None):
             await update_article(article_id=ARTICLE_ID, content="Updated.", source_id=SOURCE_ID)
 
         calls_str = str(mock_cur.execute.call_args_list)
@@ -318,8 +310,7 @@ class TestSearchArticles:
         mock_cur.__exit__ = MagicMock(return_value=False)
         mock_cur.fetchall.return_value = [article_row]
 
-        with patch("valence.core.articles.get_cursor", return_value=mock_cur), \
-             patch("valence.core.articles._compute_embedding", return_value=None):
+        with patch("valence.core.articles.get_cursor", return_value=mock_cur), patch("valence.core.articles._compute_embedding", return_value=None):
             result = await search_articles(query="python")
 
         assert result.success is True
@@ -335,8 +326,7 @@ class TestSearchArticles:
         mock_cur.__exit__ = MagicMock(return_value=False)
         mock_cur.fetchall.return_value = []
 
-        with patch("valence.core.articles.get_cursor", return_value=mock_cur), \
-             patch("valence.core.articles._compute_embedding", return_value=None):
+        with patch("valence.core.articles.get_cursor", return_value=mock_cur), patch("valence.core.articles._compute_embedding", return_value=None):
             result = await search_articles(query="totally obscure xyz")
 
         assert result.success is True

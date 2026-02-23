@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, date
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -21,6 +21,10 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from ..auth_helpers import authenticate, require_scope
+from ..endpoint_utils import _parse_int
+from ..errors import conflict_error, internal_error, invalid_json_error, missing_field_error, not_found_error
+
+logger = logging.getLogger(__name__)
 
 
 class _Encoder(json.JSONEncoder):
@@ -37,10 +41,6 @@ class _Encoder(json.JSONEncoder):
 def _json_response(data, **kw):
     body = json.dumps(data, cls=_Encoder)
     return JSONResponse(content=json.loads(body), **kw)
-from ..endpoint_utils import _parse_int, parse_output_format
-from ..errors import internal_error, invalid_json_error, missing_field_error, not_found_error, conflict_error
-
-logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -81,8 +81,8 @@ async def sources_create_endpoint(request: Request) -> JSONResponse:
         return missing_field_error("source_type")
 
     try:
-        from ...core.sources import ingest_source
         from ...core.exceptions import ConflictError, ValidationException
+        from ...core.sources import ingest_source
 
         source = await ingest_source(
             content=content,
@@ -97,6 +97,7 @@ async def sources_create_endpoint(request: Request) -> JSONResponse:
         return conflict_error(e.message)
     except ValidationException as e:
         from ..errors import validation_error
+
         return validation_error(e.message)
     except Exception:
         logger.exception("Error ingesting source")
@@ -121,8 +122,8 @@ async def sources_get_endpoint(request: Request) -> JSONResponse:
         return missing_field_error("source_id")
 
     try:
-        from ...core.sources import get_source
         from ...core.exceptions import NotFoundError
+        from ...core.sources import get_source
 
         source = await get_source(source_id)
         return _json_response({"success": True, "source": source})
@@ -154,17 +155,18 @@ async def sources_list_endpoint(request: Request) -> JSONResponse:
         return err
 
     source_type = request.query_params.get("source_type")
-    limit = _parse_int(request.query_params.get("limit"), default=50, max_val=200)
-    offset = _parse_int(request.query_params.get("offset"), default=0, max_val=100_000)
+    limit = _parse_int(request.query_params.get("limit"), default=50, maximum=200)
+    offset = _parse_int(request.query_params.get("offset"), default=0, maximum=100_000)
 
     try:
         from ...core.sources import list_sources
 
-        sources = await list_sources(
+        result = await list_sources(
             source_type=source_type,
             limit=limit,
             offset=offset,
         )
+        sources = result.data if result.success else []
         return _json_response({"success": True, "sources": sources, "total_count": len(sources)})
 
     except Exception:

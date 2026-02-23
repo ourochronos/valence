@@ -162,10 +162,6 @@ class MetricsCollector:
         db_metrics = self._collect_database_metrics()
         lines.extend(db_metrics)
 
-        # Federation metrics
-        fed_metrics = self._collect_federation_metrics()
-        lines.extend(fed_metrics)
-
         lines.append("")
         return "\n".join(lines)
 
@@ -216,56 +212,6 @@ class MetricsCollector:
             lines.append("# HELP valence_beliefs_total Total beliefs in database")
             lines.append("# TYPE valence_beliefs_total gauge")
             lines.append("# valence_beliefs_total unavailable (database error)")
-
-        return lines
-
-    def _collect_federation_metrics(self) -> list[str]:
-        """Collect federation-related metrics."""
-        lines: list[str] = []
-
-        try:
-            from our_federation.peer_sync import get_trust_registry
-
-            registry = get_trust_registry()
-            peers = registry.list_peers()
-
-            lines.append("")
-            lines.append("# HELP valence_federation_peers_total Trusted federation peers")
-            lines.append("# TYPE valence_federation_peers_total gauge")
-            lines.append(f"valence_federation_peers_total {len(peers)}")
-
-            # Breakdown by trust level ranges
-            high_trust = sum(1 for p in peers if p.trust_level >= 0.8)
-            medium_trust = sum(1 for p in peers if 0.5 <= p.trust_level < 0.8)
-            low_trust = sum(1 for p in peers if p.trust_level < 0.5)
-
-            lines.append("")
-            lines.append("# HELP valence_federation_peers_by_trust Peers by trust level")
-            lines.append("# TYPE valence_federation_peers_by_trust gauge")
-            lines.append(f'valence_federation_peers_by_trust{{level="high"}} {high_trust}')
-            lines.append(f'valence_federation_peers_by_trust{{level="medium"}} {medium_trust}')
-            lines.append(f'valence_federation_peers_by_trust{{level="low"}} {low_trust}')
-
-            # Total beliefs exchanged with peers
-            total_received = sum(p.beliefs_received for p in peers)
-            total_sent = sum(p.beliefs_sent for p in peers)
-
-            lines.append("")
-            lines.append("# HELP valence_federation_beliefs_received_total Beliefs from peers")
-            lines.append("# TYPE valence_federation_beliefs_received_total counter")
-            lines.append(f"valence_federation_beliefs_received_total {total_received}")
-
-            lines.append("")
-            lines.append("# HELP valence_federation_beliefs_sent_total Beliefs sent to peers")
-            lines.append("# TYPE valence_federation_beliefs_sent_total counter")
-            lines.append(f"valence_federation_beliefs_sent_total {total_sent}")
-
-        except Exception as e:
-            logger.debug(f"Could not collect federation metrics: {e}")
-            lines.append("")
-            lines.append("# HELP valence_federation_peers_total Trusted federation peers")
-            lines.append("# TYPE valence_federation_peers_total gauge")
-            lines.append("valence_federation_peers_total 0")
 
         return lines
 

@@ -23,10 +23,10 @@ Security note:
     ``inference.validate_output()``.
 """
 
-from .gemini_cli import create_gemini_backend
-from .openai_compat import create_openai_backend
 from .cerebras import create_cerebras_backend
+from .gemini_cli import create_gemini_backend
 from .ollama import create_ollama_backend
+from .openai_compat import create_openai_backend
 
 __all__ = [
     "create_gemini_backend",

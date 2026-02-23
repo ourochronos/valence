@@ -12,6 +12,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import shutil
+from collections.abc import Callable, Coroutine
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +22,7 @@ def create_gemini_backend(
     model: str = "gemini-2.5-flash",
     timeout: float = 60.0,
     gemini_bin: str = "gemini",
-) -> callable:
+) -> Callable[[str], Coroutine[Any, Any, str]]:
     """Return an async callable suitable for ``InferenceProvider.configure()``.
 
     The returned backend sends prompts via **stdin** to the ``gemini`` CLI,
@@ -48,8 +50,7 @@ def create_gemini_backend(
     # mysterious RuntimeErrors at inference time.
     if shutil.which(gemini_bin) is None:
         logger.warning(
-            "Gemini backend: binary %r not found on PATH. "
-            "Install the Gemini CLI and ensure it is accessible.",
+            "Gemini backend: binary %r not found on PATH. Install the Gemini CLI and ensure it is accessible.",
             gemini_bin,
         )
 
@@ -58,7 +59,8 @@ def create_gemini_backend(
         try:
             proc = await asyncio.create_subprocess_exec(
                 gemini_bin,
-                "-m", model,
+                "-m",
+                model,
                 # No prompt arg — prevent shell injection.  The CLI reads from
                 # stdin when no positional argument is provided.
                 stdin=asyncio.subprocess.PIPE,
@@ -66,38 +68,28 @@ def create_gemini_backend(
                 stderr=asyncio.subprocess.PIPE,
             )
         except FileNotFoundError as exc:
-            raise FileNotFoundError(
-                f"Gemini CLI binary {gemini_bin!r} not found. "
-                "Install it with: pip install google-generativeai-cli"
-            ) from exc
+            raise FileNotFoundError(f"Gemini CLI binary {gemini_bin!r} not found. Install it with: pip install google-generativeai-cli") from exc
 
         try:
             stdout, stderr = await asyncio.wait_for(
                 proc.communicate(input=prompt.encode("utf-8")),
                 timeout=timeout,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             proc.kill()
             await proc.wait()
-            raise asyncio.TimeoutError(
-                f"Gemini CLI timed out after {timeout}s "
-                f"(model={model!r}, prompt_len={len(prompt)})"
-            )
+            raise TimeoutError(f"Gemini CLI timed out after {timeout}s (model={model!r}, prompt_len={len(prompt)})")
 
         if proc.returncode != 0:
             err_msg = stderr.decode("utf-8", errors="replace")[:500]
-            raise RuntimeError(
-                f"Gemini CLI failed (exit {proc.returncode}): {err_msg}"
-            )
+            raise RuntimeError(f"Gemini CLI failed (exit {proc.returncode}): {err_msg}")
 
         response = stdout.decode("utf-8", errors="replace")
-        logger.debug(
-            "Gemini backend: received %d chars (model=%s)", len(response), model
-        )
+        logger.debug("Gemini backend: received %d chars (model=%s)", len(response), model)
         return response
 
     # Attach metadata for introspection / repr
-    backend.__name__ = f"gemini_backend({model})"
-    backend._model = model
-    backend._gemini_bin = gemini_bin
+    backend.__name__ = f"gemini_backend({model})"  # type: ignore[attr-defined]
+    backend._model = model  # type: ignore[attr-defined]
+    backend._gemini_bin = gemini_bin  # type: ignore[attr-defined]
     return backend

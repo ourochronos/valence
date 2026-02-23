@@ -38,7 +38,7 @@ from psycopg2.extras import RealDictCursor, execute_values
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from our_embeddings.providers.local import generate_embeddings_batch
+from valence.lib.our_embeddings.providers.local import generate_embeddings_batch
 
 # Default database URL (can be overridden via --database-url or env)
 DEFAULT_DATABASE_URL = os.environ.get(

@@ -50,50 +50,36 @@ class TestMCPToolList:
         """SUBSTRATE_TOOLS should have exactly 16 entries."""
         from valence.substrate.tools.definitions import SUBSTRATE_TOOLS
 
-        assert len(SUBSTRATE_TOOLS) == 16, (
-            f"Expected 16 tools, got {len(SUBSTRATE_TOOLS)}. "
-            f"Tools: {[t.name for t in SUBSTRATE_TOOLS]}"
-        )
+        assert len(SUBSTRATE_TOOLS) == 16, f"Expected 16 tools, got {len(SUBSTRATE_TOOLS)}. Tools: {[t.name for t in SUBSTRATE_TOOLS]}"
 
     def test_substrate_tools_names_exact(self):
         """SUBSTRATE_TOOLS names must exactly match EXPECTED_TOOLS."""
         from valence.substrate.tools.definitions import SUBSTRATE_TOOLS
 
         actual = {t.name for t in SUBSTRATE_TOOLS}
-        assert actual == EXPECTED_TOOLS, (
-            f"Extra tools: {actual - EXPECTED_TOOLS}\n"
-            f"Missing tools: {EXPECTED_TOOLS - actual}"
-        )
+        assert actual == EXPECTED_TOOLS, f"Extra tools: {actual - EXPECTED_TOOLS}\nMissing tools: {EXPECTED_TOOLS - actual}"
 
     def test_all_tools_have_descriptions(self):
         """Every tool must have a non-empty description."""
         from valence.substrate.tools.definitions import SUBSTRATE_TOOLS
 
         for tool in SUBSTRATE_TOOLS:
-            assert tool.description and tool.description.strip(), (
-                f"Tool '{tool.name}' has no description"
-            )
+            assert tool.description and tool.description.strip(), f"Tool '{tool.name}' has no description"
 
     def test_all_tools_have_input_schema(self):
         """Every tool must have an inputSchema dict."""
         from valence.substrate.tools.definitions import SUBSTRATE_TOOLS
 
         for tool in SUBSTRATE_TOOLS:
-            assert isinstance(tool.inputSchema, dict), (
-                f"Tool '{tool.name}' has no inputSchema"
-            )
-            assert tool.inputSchema.get("type") == "object", (
-                f"Tool '{tool.name}' inputSchema type is not 'object'"
-            )
+            assert isinstance(tool.inputSchema, dict), f"Tool '{tool.name}' has no inputSchema"
+            assert tool.inputSchema.get("type") == "object", f"Tool '{tool.name}' inputSchema type is not 'object'"
 
     def test_handlers_registered_for_all_tools(self):
         """Every spec tool should be registered in SUBSTRATE_HANDLERS."""
         from valence.substrate.tools.handlers import SUBSTRATE_HANDLERS
 
         for tool_name in EXPECTED_TOOLS:
-            assert tool_name in SUBSTRATE_HANDLERS, (
-                f"Tool '{tool_name}' missing from SUBSTRATE_HANDLERS"
-            )
+            assert tool_name in SUBSTRATE_HANDLERS, f"Tool '{tool_name}' missing from SUBSTRATE_HANDLERS"
 
 
 # =============================================================================
@@ -190,9 +176,7 @@ class TestHandlerDispatch:
         """admin_forget with bad target_type returns validation error."""
         from valence.substrate.tools.handlers import handle_substrate_tool
 
-        result = handle_substrate_tool(
-            "admin_forget", {"target_type": "belief", "target_id": "some-uuid"}
-        )
+        result = handle_substrate_tool("admin_forget", {"target_type": "belief", "target_id": "some-uuid"})
         assert result["success"] is False
         assert "target_type" in result["error"].lower() or "source" in result["error"]
 
@@ -200,9 +184,7 @@ class TestHandlerDispatch:
         """admin_forget with empty target_id returns validation error."""
         from valence.substrate.tools.handlers import handle_substrate_tool
 
-        result = handle_substrate_tool(
-            "admin_forget", {"target_type": "source", "target_id": ""}
-        )
+        result = handle_substrate_tool("admin_forget", {"target_type": "source", "target_id": ""})
         assert result["success"] is False
 
     def test_admin_maintenance_no_operations(self):
@@ -267,9 +249,7 @@ class TestRESTAppMountability:
         app = create_app()
         route_paths = [str(r.path) for r in app.routes]
 
-        assert any("/sources" in p for p in route_paths), (
-            f"No /sources routes found. Paths: {route_paths}"
-        )
+        assert any("/sources" in p for p in route_paths), f"No /sources routes found. Paths: {route_paths}"
 
     def test_v2_articles_routes_present(self):
         """The app should have article routes mounted."""
@@ -278,9 +258,7 @@ class TestRESTAppMountability:
         app = create_app()
         route_paths = [str(r.path) for r in app.routes]
 
-        assert any("/articles" in p for p in route_paths), (
-            f"No /articles routes found. Paths: {route_paths}"
-        )
+        assert any("/articles" in p for p in route_paths), f"No /articles routes found. Paths: {route_paths}"
 
     def test_v2_provenance_routes_present(self):
         """The app should have provenance routes mounted."""
@@ -289,9 +267,7 @@ class TestRESTAppMountability:
         app = create_app()
         route_paths = [str(r.path) for r in app.routes]
 
-        assert any("provenance" in p for p in route_paths), (
-            f"No provenance routes found. Paths: {route_paths}"
-        )
+        assert any("provenance" in p for p in route_paths), f"No provenance routes found. Paths: {route_paths}"
 
     def test_mcp_route_present(self):
         """The MCP endpoint route should exist."""
@@ -300,9 +276,7 @@ class TestRESTAppMountability:
         app = create_app()
         route_paths = [str(r.path) for r in app.routes]
 
-        assert any("/mcp" in p for p in route_paths), (
-            f"No /mcp route found. Paths: {route_paths}"
-        )
+        assert any("/mcp" in p for p in route_paths), f"No /mcp route found. Paths: {route_paths}"
 
 
 # =============================================================================
@@ -336,9 +310,7 @@ class TestCLIRegistration:
                 break
 
         assert subparsers_action is not None
-        assert "sources" in subparsers_action.choices, (
-            f"'sources' not registered. Available: {list(subparsers_action.choices.keys())}"
-        )
+        assert "sources" in subparsers_action.choices, f"'sources' not registered. Available: {list(subparsers_action.choices.keys())}"
 
     def test_articles_command_registered(self):
         """'articles' subcommand should be registered."""

@@ -139,8 +139,7 @@ class TestMetricsCollector:
         assert "valence_active_connections 2" in output
 
     @patch("valence.server.metrics.MetricsCollector._collect_database_metrics")
-    @patch("valence.server.metrics.MetricsCollector._collect_federation_metrics")
-    def test_format_prometheus_includes_db_metrics(self, mock_fed, mock_db):
+    def test_format_prometheus_includes_db_metrics(self, mock_db):
         """Prometheus output includes database metrics."""
         mock_db.return_value = [
             "",
@@ -148,29 +147,11 @@ class TestMetricsCollector:
             "# TYPE valence_beliefs_total gauge",
             "valence_beliefs_total 42",
         ]
-        mock_fed.return_value = []
 
         collector = MetricsCollector()
         output = collector.format_prometheus()
 
         assert "valence_beliefs_total 42" in output
-
-    @patch("valence.server.metrics.MetricsCollector._collect_database_metrics")
-    @patch("valence.server.metrics.MetricsCollector._collect_federation_metrics")
-    def test_format_prometheus_includes_federation_metrics(self, mock_fed, mock_db):
-        """Prometheus output includes federation metrics."""
-        mock_db.return_value = []
-        mock_fed.return_value = [
-            "",
-            "# HELP valence_federation_peers_total Number of peers",
-            "# TYPE valence_federation_peers_total gauge",
-            "valence_federation_peers_total 5",
-        ]
-
-        collector = MetricsCollector()
-        output = collector.format_prometheus()
-
-        assert "valence_federation_peers_total 5" in output
 
 
 class TestDatabaseMetrics:
@@ -206,48 +187,6 @@ class TestDatabaseMetrics:
 
         # Should return something (either metrics or error comment)
         assert len(lines) > 0
-
-
-class TestFederationMetrics:
-    """Tests for federation metrics collection."""
-
-    @patch("our_federation.peer_sync.get_trust_registry")
-    def test_collect_federation_metrics_success(self, mock_get_registry):
-        """Federation metrics are collected when available."""
-        mock_peer1 = MagicMock()
-        mock_peer1.trust_level = 0.9
-        mock_peer1.beliefs_received = 10
-        mock_peer1.beliefs_sent = 5
-
-        mock_peer2 = MagicMock()
-        mock_peer2.trust_level = 0.6
-        mock_peer2.beliefs_received = 20
-        mock_peer2.beliefs_sent = 15
-
-        mock_registry = MagicMock()
-        mock_registry.list_peers.return_value = [mock_peer1, mock_peer2]
-        mock_get_registry.return_value = mock_registry
-
-        collector = MetricsCollector()
-        lines = collector._collect_federation_metrics()
-
-        assert any("valence_federation_peers_total 2" in line for line in lines)
-        assert any('level="high"' in line and "1" in line for line in lines)
-        assert any('level="medium"' in line and "1" in line for line in lines)
-        assert any("valence_federation_beliefs_received_total 30" in line for line in lines)
-        assert any("valence_federation_beliefs_sent_total 20" in line for line in lines)
-
-    @patch("our_federation.peer_sync.get_trust_registry")
-    def test_collect_federation_metrics_no_peers(self, mock_get_registry):
-        """Empty registry returns zero metrics."""
-        mock_registry = MagicMock()
-        mock_registry.list_peers.return_value = []
-        mock_get_registry.return_value = mock_registry
-
-        collector = MetricsCollector()
-        lines = collector._collect_federation_metrics()
-
-        assert any("valence_federation_peers_total 0" in line for line in lines)
 
 
 @pytest.mark.asyncio

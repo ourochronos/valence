@@ -150,7 +150,7 @@ async def health_endpoint(request: Request) -> JSONResponse:
 
     # Optionally check database connectivity
     try:
-        from our_db import get_cursor
+        from valence.lib.our_db import get_cursor
 
         with get_cursor() as cur:
             cur.execute("SELECT 1")
@@ -171,7 +171,6 @@ def _authenticate_request(request: Request) -> AuthenticatedClient | None:
     Returns:
         AuthenticatedClient if valid, None otherwise
     """
-    settings = get_settings()
     auth_header = request.headers.get("Authorization", "")
 
     if not auth_header.startswith("Bearer "):
@@ -848,13 +847,11 @@ async def _embedding_backfill_loop(interval_seconds: int = 300) -> None:
 
     while True:
         try:
-            from our_db import get_cursor
-            from our_embeddings.service import generate_embedding, vector_to_pgvector
+            from valence.lib.our_db import get_cursor
+            from valence.lib.our_embeddings.service import generate_embedding, vector_to_pgvector
 
             with get_cursor() as cur:
-                cur.execute(
-                    "SELECT id, content FROM articles WHERE embedding IS NULL AND status = 'active' LIMIT 50"
-                )
+                cur.execute("SELECT id, content FROM articles WHERE embedding IS NULL AND status = 'active' LIMIT 50")
                 rows = cur.fetchall()
 
             if rows:

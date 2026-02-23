@@ -11,24 +11,24 @@ Updated WU-13: routes through unified InferenceProvider (C11, DR-8, DR-9).
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
+from collections.abc import Callable
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any
 from uuid import UUID
-
-from our_db import get_cursor
-
-from valence.core.response import ValenceResponse, ok, err
 
 from valence.core.inference import (
     TASK_CONTENTION,
     TASK_OUTPUT_SCHEMAS,
     InferenceSchemaError,
-    provider as _inference_provider,
     validate_output,
 )
+from valence.core.inference import (
+    provider as _inference_provider,
+)
+from valence.core.response import ValenceResponse, err, ok
+from valence.lib.our_db import get_cursor
 
 logger = logging.getLogger(__name__)
 
@@ -69,9 +69,7 @@ async def _call_llm(prompt: str) -> str:
     result = await _inference_provider.infer(TASK_CONTENTION, prompt)
     if result.degraded:
         raise NotImplementedError(
-            result.error
-            or "No LLM backend configured for contention detection. "
-            "Call valence.core.contention.set_llm_backend(fn)."
+            result.error or "No LLM backend configured for contention detection. Call valence.core.contention.set_llm_backend(fn)."
         )
     return result.content
 
@@ -119,10 +117,7 @@ def _ensure_contention_schema() -> None:
     # WU-13 / DR-9: degraded flag for heuristic-detected contentions
     try:
         with get_cursor() as cur:
-            cur.execute(
-                "ALTER TABLE contentions "
-                "ADD COLUMN IF NOT EXISTS degraded BOOLEAN DEFAULT FALSE"
-            )
+            cur.execute("ALTER TABLE contentions ADD COLUMN IF NOT EXISTS degraded BOOLEAN DEFAULT FALSE")
     except Exception:
         pass  # Column already exists; ignore.
 
@@ -140,9 +135,7 @@ def _get_materiality_threshold() -> float:
     """Read ``contention.materiality_threshold`` from system_config."""
     try:
         with get_cursor() as cur:
-            cur.execute(
-                "SELECT value FROM system_config WHERE key = 'contention' LIMIT 1"
-            )
+            cur.execute("SELECT value FROM system_config WHERE key = 'contention' LIMIT 1")
             row = cur.fetchone()
             if row:
                 val = row["value"]
@@ -235,9 +228,7 @@ def _parse_llm_json(response: str, required_keys: list[str]) -> dict:
     parsed = json.loads(text)
     missing = [k for k in required_keys if k not in parsed]
     if missing:
-        raise ValueError(
-            f"LLM response missing required keys: {missing!r}. Got: {list(parsed.keys())!r}"
-        )
+        raise ValueError(f"LLM response missing required keys: {missing!r}. Got: {list(parsed.keys())!r}")
     return parsed
 
 
@@ -288,7 +279,8 @@ async def detect_contention(article_id: str, source_id: str) -> ValenceResponse:
     if not article_content or not source_content:
         logger.debug(
             "detect_contention: empty content for article %s or source %s, skipping",
-            article_id, source_id,
+            article_id,
+            source_id,
         )
         return ok(data=None)
 
@@ -305,7 +297,9 @@ async def detect_contention(article_id: str, source_id: str) -> ValenceResponse:
     except (NotImplementedError, InferenceSchemaError, ValueError, json.JSONDecodeError) as exc:
         logger.info(
             "LLM contention detection unavailable (%s); using heuristic for article=%s source=%s",
-            exc, article_id, source_id,
+            exc,
+            article_id,
+            source_id,
         )
         is_degraded = True
         materiality = _heuristic_materiality(article_content, source_content)
@@ -317,7 +311,10 @@ async def detect_contention(article_id: str, source_id: str) -> ValenceResponse:
     if not contends or materiality < threshold:
         logger.debug(
             "detect_contention: materiality=%.2f below threshold=%.2f for article=%s source=%s; skipping",
-            materiality, threshold, article_id, source_id,
+            materiality,
+            threshold,
+            article_id,
+            source_id,
         )
         return ok(data=None)
 
@@ -341,12 +338,14 @@ async def detect_contention(article_id: str, source_id: str) -> ValenceResponse:
             RETURNING *
             """,
             (
-                article_id, source_id,
+                article_id,
+                source_id,
                 contention_type,
                 description,
-                materiality, materiality,  # two references for the CASE
                 materiality,
-                is_degraded,              # DR-9: mark heuristic-detected contentions
+                materiality,  # two references for the CASE
+                materiality,
+                is_degraded,  # DR-9: mark heuristic-detected contentions
             ),
         )
         row = cur.fetchone()
@@ -357,7 +356,11 @@ async def detect_contention(article_id: str, source_id: str) -> ValenceResponse:
 
     logger.info(
         "Contention created: id=%s article=%s source=%s materiality=%.2f type=%s",
-        contention["id"], article_id, source_id, materiality, contention_type,
+        contention["id"],
+        article_id,
+        source_id,
+        materiality,
+        contention_type,
     )
     return ok(data=contention)
 
@@ -466,10 +469,12 @@ async def resolve_contention(
                 RETURNING id
                 """,
                 (
-                    json.dumps({
-                        "contention_note": rationale,
-                        "contention_id": contention_id,
-                    }),
+                    json.dumps(
+                        {
+                            "contention_note": rationale,
+                            "contention_id": contention_id,
+                        }
+                    ),
                     article_id,
                 ),
             )

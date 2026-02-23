@@ -244,7 +244,7 @@ def _build_compaction_summary(exchanges: list[dict]) -> dict[str, Any]:
     Returns:
         Dict with exchange_count, roles, topics, total_tokens, tool_uses
     """
-    roles = Counter()
+    roles: Counter = Counter()
     tool_names: Counter = Counter()
     total_tokens = 0
 

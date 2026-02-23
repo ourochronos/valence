@@ -10,9 +10,6 @@ import asyncio
 import logging
 from typing import Any
 
-from . import _common
-from ._common import get_cursor
-
 logger = logging.getLogger(__name__)
 
 
@@ -95,7 +92,7 @@ def contention_list(
     from ...core.contention import list_contentions
 
     # Allow callers to pass empty string to mean "no filter"
-    effective_status = status if status else None
+    effective_status = status if status else "detected"
 
     try:
         result = _run(list_contentions(article_id=article_id, status=effective_status))

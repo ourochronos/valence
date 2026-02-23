@@ -121,7 +121,7 @@ class TestInitSchemaExceptionHandling:
         content = source.read_text()
 
         assert "OurDatabaseError" in content
-        assert "from our_db.exceptions import DatabaseError as OurDatabaseError" in content
+        assert "from valence.lib.our_db.exceptions import DatabaseError as OurDatabaseError" in content
         assert "(DatabaseException, OurDatabaseError)" in content
 
     def test_vkb_catches_our_db_error(self):
@@ -130,12 +130,12 @@ class TestInitSchemaExceptionHandling:
         content = source.read_text()
 
         assert "OurDatabaseError" in content
-        assert "from our_db.exceptions import DatabaseError as OurDatabaseError" in content
+        assert "from valence.lib.our_db.exceptions import DatabaseError as OurDatabaseError" in content
         assert "(DatabaseException, OurDatabaseError)" in content
 
     def test_init_schema_error_does_not_crash_server(self):
         """init_schema raising DatabaseError should be caught, not crash the server."""
-        from our_db.exceptions import DatabaseError
+        from valence.lib.our_db.exceptions import DatabaseError
 
         with patch("valence.substrate.mcp_server.init_schema") as mock_init:
             mock_init.side_effect = DatabaseError("constraint already exists")
@@ -146,6 +146,7 @@ class TestInitSchemaExceptionHandling:
 
             # Verify the except clause structure by checking source
             import valence.substrate.mcp_server as mod
+
             source = Path(mod.__file__).read_text()
             assert "except (DatabaseException, OurDatabaseError)" in source
 

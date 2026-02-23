@@ -399,8 +399,10 @@ class TestRankingOrder:
 
         fetch_all_responses = [[high, low]]
         fetch_one_responses = [
-            _make_prov_row(), None,  # high article
-            _make_prov_row(), None,  # low article
+            _make_prov_row(),
+            None,  # high article
+            _make_prov_row(),
+            None,  # low article
         ]
 
         cur = MagicMock()
@@ -428,8 +430,10 @@ class TestRankingOrder:
 
         fetch_all_responses = [[high_conf, low_conf]]
         fetch_one_responses = [
-            _make_prov_row(), None,
-            _make_prov_row(), None,
+            _make_prov_row(),
+            None,
+            _make_prov_row(),
+            None,
         ]
         cur = MagicMock()
         fetchall_iter = iter(fetch_all_responses)
@@ -455,8 +459,10 @@ class TestRankingOrder:
 
         fetch_all_responses = [[fresh, stale]]
         fetch_one_responses = [
-            _make_prov_row(), None,
-            _make_prov_row(), None,
+            _make_prov_row(),
+            None,
+            _make_prov_row(),
+            None,
         ]
         cur = MagicMock()
         fetchall_iter = iter(fetch_all_responses)
@@ -687,10 +693,7 @@ class TestLimitEnforcement:
     @pytest.mark.asyncio
     async def test_limit_respected(self):
         """Only 'limit' results should be returned even if more match."""
-        rows = [
-            _make_article_row(article_id=str(uuid.uuid4()), text_rank=float(i) / 10)
-            for i in range(8, 0, -1)
-        ]
+        rows = [_make_article_row(article_id=str(uuid.uuid4()), text_rank=float(i) / 10) for i in range(8, 0, -1)]
 
         fetch_all_responses = [rows]
         # Each article needs provenance + contention fetchone

@@ -80,14 +80,10 @@ def knowledge_search(
                     )
                     results = future.result(timeout=30)
             else:
-                results = loop.run_until_complete(
-                    retrieve(query, limit=limit, include_sources=include_sources, session_id=session_id)
-                )
+                results = loop.run_until_complete(retrieve(query, limit=limit, include_sources=include_sources, session_id=session_id))
         except RuntimeError:
             # No current event loop
-            results = asyncio.run(
-                retrieve(query, limit=limit, include_sources=include_sources, session_id=session_id)
-            )
+            results = asyncio.run(retrieve(query, limit=limit, include_sources=include_sources, session_id=session_id))
 
     except Exception as exc:
         logger.exception("knowledge_search failed for query %r: %s", query, exc)
@@ -95,6 +91,7 @@ def knowledge_search(
 
     # retrieve() now returns ValenceResponse — unwrap to MCP dict format
     from ...core.response import ValenceResponse
+
     if isinstance(results, ValenceResponse):
         if not results.success:
             return {"success": False, "error": results.error}

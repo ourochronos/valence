@@ -20,9 +20,9 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from our_db import get_cursor
+from valence.lib.our_db import get_cursor
 
-from .ranking import compute_confidence_score, multi_signal_rank
+from .ranking import multi_signal_rank
 from .response import ValenceResponse, ok
 
 logger = logging.getLogger(__name__)
@@ -207,11 +207,18 @@ def _search_articles_sync(query: str, limit: int) -> list[dict[str, Any]]:
         # Attach provenance summary, freshness, contention flags
         for d in results:
             article_id = d.get("id") or d.get("article_id")
-            d["provenance_summary"] = _build_provenance_summary(article_id, cur)
-            freshness_days = _compute_freshness_days(d)
-            d["freshness"] = freshness_days
-            d["freshness_score"] = _freshness_score(freshness_days)
-            d["active_contentions"] = _has_active_contentions(article_id, cur)
+            if article_id:
+                article_id = str(article_id)
+                d["provenance_summary"] = _build_provenance_summary(article_id, cur)
+                freshness_days = _compute_freshness_days(d)
+                d["freshness"] = freshness_days
+                d["freshness_score"] = _freshness_score(freshness_days)
+                d["active_contentions"] = _has_active_contentions(article_id, cur)
+            else:
+                d["provenance_summary"] = {}
+                d["freshness"] = None
+                d["freshness_score"] = 0.0
+                d["active_contentions"] = False
 
         return results
 

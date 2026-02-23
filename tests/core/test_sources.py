@@ -80,7 +80,7 @@ def _make_source_row(
         "metadata": metadata or {},
         "created_at": datetime(2026, 2, 21, 12, 0, 0),
         "content_tsv": None,  # should be stripped by _row_to_dict
-        "embedding": None,   # should be stripped by _row_to_dict
+        "embedding": None,  # should be stripped by _row_to_dict
     }
 
 
@@ -237,7 +237,7 @@ class TestIngestSource:
         insert_params = calls[1][0][1]
         assert insert_params[0] == "code"  # type
         assert insert_params[1] == "snippet"  # title
-        assert insert_params[3] == content    # content
+        assert insert_params[3] == content  # content
 
 
 # ---------------------------------------------------------------------------

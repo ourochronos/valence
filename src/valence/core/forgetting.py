@@ -27,9 +27,9 @@ import json
 import logging
 from typing import Any
 
-from our_db import get_cursor
+from valence.lib.our_db import get_cursor
 
-from .response import ValenceResponse, ok, err
+from .response import ValenceResponse, err, ok
 
 logger = logging.getLogger(__name__)
 
@@ -154,13 +154,15 @@ async def remove_source(source_id: str) -> ValenceResponse:
         len(affected_article_ids),
     )
 
-    return ok(data={
-        "source_id": source_id,
-        "affected_articles": len(affected_article_ids),
-        "recompile_queued": len(affected_article_ids),
-        "tombstone_created": True,
-        "ghost_references": ghost_count,
-    })
+    return ok(
+        data={
+            "source_id": source_id,
+            "affected_articles": len(affected_article_ids),
+            "recompile_queued": len(affected_article_ids),
+            "tombstone_created": True,
+            "ghost_references": ghost_count,
+        }
+    )
 
 
 async def remove_article(article_id: str) -> ValenceResponse:

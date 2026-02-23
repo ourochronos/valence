@@ -11,7 +11,7 @@ import json
 import logging
 
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 
 from .auth_helpers import authenticate, require_scope
 from .endpoint_utils import _parse_bool, _parse_float, _parse_int, format_response, parse_output_format
@@ -335,7 +335,7 @@ async def tensions_resolve_endpoint(request: Request) -> JSONResponse:
 # =============================================================================
 
 
-async def stats_endpoint(request: Request) -> JSONResponse:
+async def stats_endpoint(request: Request) -> Response:
     """GET /api/v1/stats — Aggregate database statistics."""
     client = authenticate(request)
     if isinstance(client, JSONResponse):
@@ -346,7 +346,7 @@ async def stats_endpoint(request: Request) -> JSONResponse:
     output_format = parse_output_format(request)
 
     try:
-        from our_db import get_cursor
+        from valence.lib.our_db import get_cursor
 
         with get_cursor() as cur:
             cur.execute("SELECT COUNT(*) as total FROM articles")
@@ -392,7 +392,7 @@ async def stats_endpoint(request: Request) -> JSONResponse:
 # =============================================================================
 
 
-async def conflicts_endpoint(request: Request) -> JSONResponse:
+async def conflicts_endpoint(request: Request) -> Response:
     """GET /api/v1/beliefs/conflicts — Detect potential contradictions."""
     client = authenticate(request)
     if isinstance(client, JSONResponse):
@@ -405,7 +405,7 @@ async def conflicts_endpoint(request: Request) -> JSONResponse:
     output_format = parse_output_format(request)
 
     try:
-        from our_db import get_cursor
+        from valence.lib.our_db import get_cursor
 
         with get_cursor() as cur:
             cur.execute(
@@ -437,14 +437,36 @@ async def conflicts_endpoint(request: Request) -> JSONResponse:
             pairs = cur.fetchall()
 
             negation_words = {
-                "not", "never", "no", "n't", "cannot", "without", "neither", "none",
-                "nobody", "nothing", "nowhere", "false", "incorrect", "wrong", "fail",
-                "reject", "deny", "refuse", "avoid",
+                "not",
+                "never",
+                "no",
+                "n't",
+                "cannot",
+                "without",
+                "neither",
+                "none",
+                "nobody",
+                "nothing",
+                "nowhere",
+                "false",
+                "incorrect",
+                "wrong",
+                "fail",
+                "reject",
+                "deny",
+                "refuse",
+                "avoid",
             }
             opposites = [
-                ("good", "bad"), ("right", "wrong"), ("true", "false"),
-                ("should", "should not"), ("always", "never"), ("prefer", "avoid"),
-                ("like", "dislike"), ("works", "fails"), ("correct", "incorrect"),
+                ("good", "bad"),
+                ("right", "wrong"),
+                ("true", "false"),
+                ("should", "should not"),
+                ("always", "never"),
+                ("prefer", "avoid"),
+                ("like", "dislike"),
+                ("works", "fails"),
+                ("correct", "incorrect"),
             ]
 
             conflicts = []
@@ -471,15 +493,17 @@ async def conflicts_endpoint(request: Request) -> JSONResponse:
                         break
 
                 if conflict_signal > 0.2 or pair["similarity"] > 0.92:
-                    conflicts.append({
-                        "id_a": str(pair["id_a"]),
-                        "content_a": pair["content_a"],
-                        "id_b": str(pair["id_b"]),
-                        "content_b": pair["content_b"],
-                        "similarity": float(pair["similarity"]),
-                        "conflict_score": conflict_signal + (float(pair["similarity"]) - threshold) * 0.5,
-                        "reason": ", ".join(reason) if reason else "high similarity",
-                    })
+                    conflicts.append(
+                        {
+                            "id_a": str(pair["id_a"]),
+                            "content_a": pair["content_a"],
+                            "id_b": str(pair["id_b"]),
+                            "content_b": pair["content_b"],
+                            "similarity": float(pair["similarity"]),
+                            "conflict_score": conflict_signal + (float(pair["similarity"]) - threshold) * 0.5,
+                            "reason": ", ".join(reason) if reason else "high similarity",
+                        }
+                    )
 
             conflicts.sort(key=lambda x: x["conflict_score"], reverse=True)
 

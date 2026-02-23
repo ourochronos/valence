@@ -43,25 +43,17 @@ class TestToolList:
 
     def test_substrate_tools_count(self):
         """SUBSTRATE_TOOLS should have exactly 16 v2 entries."""
-        assert len(SUBSTRATE_TOOLS) == 16, (
-            f"Expected 16 substrate tools, got {len(SUBSTRATE_TOOLS)}: "
-            f"{[t.name for t in SUBSTRATE_TOOLS]}"
-        )
+        assert len(SUBSTRATE_TOOLS) == 16, f"Expected 16 substrate tools, got {len(SUBSTRATE_TOOLS)}: {[t.name for t in SUBSTRATE_TOOLS]}"
 
     def test_substrate_tools_names(self):
         """SUBSTRATE_TOOLS names should match the v2 spec."""
         actual = {t.name for t in SUBSTRATE_TOOLS}
-        assert actual == EXPECTED_SUBSTRATE_TOOLS, (
-            f"Extra: {actual - EXPECTED_SUBSTRATE_TOOLS}\n"
-            f"Missing: {EXPECTED_SUBSTRATE_TOOLS - actual}"
-        )
+        assert actual == EXPECTED_SUBSTRATE_TOOLS, f"Extra: {actual - EXPECTED_SUBSTRATE_TOOLS}\nMissing: {EXPECTED_SUBSTRATE_TOOLS - actual}"
 
     def test_all_tools_contains_expected_count(self):
         """ALL_TOOLS should contain substrate (16) + VKB tools."""
         expected = len(SUBSTRATE_TOOLS) + len(VKB_HANDLERS)
-        assert len(ALL_TOOLS) == expected, (
-            f"Expected {expected} tools, got {len(ALL_TOOLS)}"
-        )
+        assert len(ALL_TOOLS) == expected, f"Expected {expected} tools, got {len(ALL_TOOLS)}"
 
     def test_no_duplicate_tool_names(self):
         """Tool names must be unique across both servers."""
@@ -152,6 +144,4 @@ class TestResources:
 
         resources = await list_resources()
         uris = {str(r.uri) for r in resources}
-        assert "valence://beliefs/recent" not in uris, (
-            "beliefs/recent resource should have been removed in v2"
-        )
+        assert "valence://beliefs/recent" not in uris, "beliefs/recent resource should have been removed in v2"
