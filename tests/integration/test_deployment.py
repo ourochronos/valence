@@ -5,7 +5,7 @@ These tests verify that a deployed pod is functioning correctly.
 They can be run against a local development database or a remote pod.
 
 Requirements:
-    - PostgreSQL database available (VKB_DB_HOST, VKB_DB_NAME, etc.)
+    - PostgreSQL database available (VALENCE_DB_HOST, VALENCE_DB_NAME, etc.)
     - For remote tests: VALENCE_DOMAIN environment variable
 
 These tests are automatically skipped when PostgreSQL is unavailable.
@@ -33,11 +33,11 @@ import pytest
 # Configuration from environment
 VALENCE_POD_IP = os.environ.get("VALENCE_POD_IP")
 VALENCE_DOMAIN = os.environ.get("VALENCE_DOMAIN")
-DB_HOST = os.environ.get("VKB_DB_HOST", "localhost")
-DB_PORT = int(os.environ.get("VKB_DB_PORT", "5432"))
-DB_NAME = os.environ.get("VKB_DB_NAME", "valence")
-DB_USER = os.environ.get("VKB_DB_USER", "valence")
-DB_PASS = os.environ.get("VKB_DB_PASSWORD", os.environ.get("VALENCE_DB_PASSWORD", ""))
+DB_HOST = os.environ.get("VALENCE_DB_HOST", "localhost")
+DB_PORT = int(os.environ.get("VALENCE_DB_PORT", "5432"))
+DB_NAME = os.environ.get("VALENCE_DB_NAME", "valence")
+DB_USER = os.environ.get("VALENCE_DB_USER", "valence")
+DB_PASS = os.environ.get("VALENCE_DB_PASSWORD", os.environ.get("VALENCE_DB_PASSWORD", ""))
 
 
 def _check_db_available():

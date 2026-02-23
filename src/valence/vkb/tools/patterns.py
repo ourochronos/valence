@@ -9,7 +9,7 @@ import logging
 from typing import Any
 from uuid import UUID
 
-from valence.lib.our_db import get_cursor
+from valence.core.db import get_cursor
 from valence.lib.our_models import Pattern
 
 from ...core.utils import escape_ilike

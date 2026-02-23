@@ -139,7 +139,7 @@ def admin_stats() -> dict[str, Any]:
         #    }}
     """
     try:
-        from valence.lib.our_db import get_cursor
+        from valence.core.db import get_cursor
 
         with get_cursor() as cur:
             # Articles

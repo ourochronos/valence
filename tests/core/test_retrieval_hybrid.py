@@ -6,9 +6,8 @@ vector KNN and full-text search via Reciprocal Rank Fusion (RRF).
 
 from __future__ import annotations
 
-import asyncio
 from datetime import UTC, datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -38,7 +37,7 @@ class MockCursor:
         pass
 
 
-@patch("valence.lib.our_embeddings.service.generate_embedding")
+@patch("valence.core.embeddings.generate_embedding")
 @patch("valence.core.retrieval._has_active_contentions")
 @patch("valence.core.retrieval._build_provenance_summary")
 @patch("valence.core.retrieval.get_cursor")
@@ -88,7 +87,7 @@ def test_hybrid_retrieval_vector_only_match(
     assert results[0]["text_rank"] == 1000
 
 
-@patch("valence.lib.our_embeddings.service.generate_embedding")
+@patch("valence.core.embeddings.generate_embedding")
 @patch("valence.core.retrieval._has_active_contentions")
 @patch("valence.core.retrieval._build_provenance_summary")
 @patch("valence.core.retrieval.get_cursor")
@@ -138,7 +137,7 @@ def test_hybrid_retrieval_text_only_match(
     assert results[0]["text_rank"] == 1
 
 
-@patch("valence.lib.our_embeddings.service.generate_embedding")
+@patch("valence.core.embeddings.generate_embedding")
 @patch("valence.core.retrieval._has_active_contentions")
 @patch("valence.core.retrieval._build_provenance_summary")
 @patch("valence.core.retrieval.get_cursor")
@@ -209,7 +208,7 @@ def test_hybrid_retrieval_rrf_combination(
     assert 0 <= results[1]["similarity"] <= 1
 
 
-@patch("valence.lib.our_embeddings.service.generate_embedding")
+@patch("valence.core.embeddings.generate_embedding")
 @patch("valence.core.retrieval._has_active_contentions")
 @patch("valence.core.retrieval._build_provenance_summary")
 @patch("valence.core.retrieval.get_cursor")
@@ -257,7 +256,7 @@ def test_hybrid_retrieval_embedding_fallback(
     assert results[0]["text_score"] > 0.7
 
 
-@patch("valence.lib.our_embeddings.service.generate_embedding")
+@patch("valence.core.embeddings.generate_embedding")
 @patch("valence.core.retrieval.get_cursor")
 def test_sources_hybrid_retrieval(mock_get_cursor, mock_gen_embed):
     """Test hybrid retrieval for ungrouped sources."""

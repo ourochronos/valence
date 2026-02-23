@@ -33,7 +33,6 @@ import pytest
 
 from valence.substrate.tools import _content_hash, _reinforce_belief, belief_create
 
-
 # =============================================================================
 # FIXTURES
 # =============================================================================
@@ -113,7 +112,7 @@ class TestContentHash:
 
     def test_content_hash_is_sha256(self):
         """Hash uses SHA-256."""
-        expected = hashlib.sha256("hello world".encode()).hexdigest()
+        expected = hashlib.sha256(b"hello world").hexdigest()
         assert _content_hash("Hello World") == expected
 
     def test_content_hash_different_for_different_content(self):

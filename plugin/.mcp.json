@@ -4,13 +4,13 @@
       "command": "python",
       "args": ["-m", "valence.mcp_server"],
       "env": {
-        "VKB_DB_HOST": "${VKB_DB_HOST:-localhost}",
-        "VKB_DB_PORT": "${VKB_DB_PORT:-5433}",
-        "VKB_DB_NAME": "${VKB_DB_NAME:-valence}",
-        "VKB_DB_USER": "${VKB_DB_USER:-valence}",
-        "VKB_DB_PASSWORD": "${VKB_DB_PASSWORD:-}"
+        "VALENCE_DB_HOST": "${VALENCE_DB_HOST:-localhost}",
+        "VALENCE_DB_PORT": "${VALENCE_DB_PORT:-5433}",
+        "VALENCE_DB_NAME": "${VALENCE_DB_NAME:-valence}",
+        "VALENCE_DB_USER": "${VALENCE_DB_USER:-valence}",
+        "VALENCE_DB_PASSWORD": "${VALENCE_DB_PASSWORD:-}"
       },
-      "description": "Valence knowledge substrate - beliefs, entities, tensions, sessions, patterns"
+      "description": "Valence knowledge system - sources, articles, retrieval, provenance"
     }
   }
 }

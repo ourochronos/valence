@@ -9,10 +9,8 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
-
-import pytest
 
 # ---------------------------------------------------------------------------
 # Helpers

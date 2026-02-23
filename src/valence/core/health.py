@@ -11,8 +11,7 @@ import sys
 from dataclasses import dataclass, field
 from typing import Any
 
-from valence.lib.our_db import count_rows, table_exists
-from valence.lib.our_db.db import get_connection_params
+from valence.core.db import count_rows, get_connection_params, table_exists
 
 from .exceptions import ConfigException, DatabaseException
 
@@ -64,14 +63,14 @@ class DatabaseStats:
 
 # Required environment variables for operation
 REQUIRED_ENV_VARS = [
-    "VKB_DB_HOST",
-    "VKB_DB_NAME",
-    "VKB_DB_USER",
+    "VALENCE_DB_HOST",
+    "VALENCE_DB_NAME",
+    "VALENCE_DB_USER",
 ]
 
 # Optional but recommended environment variables
 OPTIONAL_ENV_VARS = [
-    "VKB_DB_PASSWORD",
+    "VALENCE_DB_PASSWORD",
     "OPENAI_API_KEY",  # For embeddings
 ]
 

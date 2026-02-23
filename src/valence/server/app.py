@@ -31,9 +31,6 @@ from .admin_endpoints import (
     admin_embeddings_migrate,
     admin_embeddings_status,
     admin_maintenance,
-    admin_migrate_down,
-    admin_migrate_status,
-    admin_migrate_up,
     admin_verify_chains,
 )
 from .auth import get_token_store, verify_token
@@ -150,7 +147,7 @@ async def health_endpoint(request: Request) -> JSONResponse:
 
     # Optionally check database connectivity
     try:
-        from valence.lib.our_db import get_cursor
+        from valence.core.db import get_cursor
 
         with get_cursor() as cur:
             cur.execute("SELECT 1")
@@ -847,8 +844,8 @@ async def _embedding_backfill_loop(interval_seconds: int = 300) -> None:
 
     while True:
         try:
-            from valence.lib.our_db import get_cursor
-            from valence.lib.our_embeddings.service import generate_embedding, vector_to_pgvector
+            from valence.core.db import get_cursor
+            from valence.core.embeddings import generate_embedding, vector_to_pgvector
 
             with get_cursor() as cur:
                 cur.execute("SELECT id, content FROM articles WHERE embedding IS NULL AND status = 'active' LIMIT 50")
@@ -965,9 +962,6 @@ def create_app() -> Starlette:
         # Stats (Issue #396)
         Route(f"{API_V1}/stats", stats_endpoint, methods=["GET"]),
         # Admin endpoints (Issue #396)
-        Route(f"{API_V1}/admin/migrate/status", admin_migrate_status, methods=["GET"]),
-        Route(f"{API_V1}/admin/migrate/up", admin_migrate_up, methods=["POST"]),
-        Route(f"{API_V1}/admin/migrate/down", admin_migrate_down, methods=["POST"]),
         Route(f"{API_V1}/admin/maintenance", admin_maintenance, methods=["POST"]),
         Route(f"{API_V1}/admin/embeddings/status", admin_embeddings_status, methods=["GET"]),
         Route(f"{API_V1}/admin/embeddings/backfill", admin_embeddings_backfill, methods=["POST"]),
@@ -1003,9 +997,7 @@ app = create_app()
 
 def run() -> None:
     """Run the server using uvicorn."""
-    from ..core.config import bridge_db_env
 
-    bridge_db_env()
 
     import uvicorn
 

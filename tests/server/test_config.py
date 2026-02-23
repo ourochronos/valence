@@ -110,10 +110,10 @@ class TestServerSettings:
         """Test database_url construction."""
         from valence.server.config import ServerSettings
 
-        monkeypatch.setenv("VKB_DB_HOST", "db.example.com")
-        monkeypatch.setenv("VKB_DB_NAME", "mydb")
-        monkeypatch.setenv("VKB_DB_USER", "myuser")
-        monkeypatch.setenv("VKB_DB_PASSWORD", "secret")
+        monkeypatch.setenv("VALENCE_DB_HOST", "db.example.com")
+        monkeypatch.setenv("VALENCE_DB_NAME", "mydb")
+        monkeypatch.setenv("VALENCE_DB_USER", "myuser")
+        monkeypatch.setenv("VALENCE_DB_PASSWORD", "secret")
 
         settings = ServerSettings()
 

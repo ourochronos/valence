@@ -33,7 +33,7 @@ _EMBEDDABLE_TABLES: dict[str, str] = {
 
 # Module-level import for patchability in tests.
 # our_db is required; our_embeddings is optional (graceful degradation).
-from valence.lib.our_db import get_cursor  # noqa: E402
+from valence.core.db import get_cursor  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Internal sync helpers (run in thread pool via asyncio.to_thread)
@@ -93,7 +93,7 @@ def _compute_embedding_sync(table: str, row_id: str) -> bool:
 
     # Generate embedding (may be slow — runs in thread pool)
     try:
-        from valence.lib.our_embeddings.service import generate_embedding, vector_to_pgvector
+        from valence.core.embeddings import generate_embedding, vector_to_pgvector
 
         vector = generate_embedding(text)
         embedding_str = vector_to_pgvector(vector)
@@ -147,7 +147,7 @@ def _batch_fill_sync(table: str, batch_size: int) -> int:
         return 0
 
     try:
-        from valence.lib.our_embeddings.service import generate_embedding, vector_to_pgvector
+        from valence.core.embeddings import generate_embedding, vector_to_pgvector
     except Exception as exc:
         logger.warning("Embedding service unavailable for batch fill: %s", exc)
         return 0

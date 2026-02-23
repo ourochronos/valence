@@ -9,7 +9,7 @@ import json
 import logging
 from typing import Any
 
-from valence.lib.our_db import get_cursor
+from valence.core.db import get_cursor
 from valence.lib.our_models import Exchange
 
 logger = logging.getLogger(__name__)

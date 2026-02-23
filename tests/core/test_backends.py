@@ -11,7 +11,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Gemini CLI backend tests
 # ---------------------------------------------------------------------------
@@ -147,7 +146,7 @@ class TestGeminiBackend:
         with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
             await backend("こんにちは世界")  # Japanese: "Hello World"
 
-        assert received_input[0] == "こんにちは世界".encode("utf-8")
+        assert received_input[0] == "こんにちは世界".encode()
 
 
 # ---------------------------------------------------------------------------
@@ -199,8 +198,9 @@ class TestOpenAICompatBackend:
             mock_client.chat.completions.create = AsyncMock(return_value=fake_response)
 
             # Re-import to pick up patched AsyncOpenAI
-            from valence.core.backends import openai_compat as _oc
             import importlib
+
+            from valence.core.backends import openai_compat as _oc
 
             importlib.reload(_oc)
 
@@ -216,8 +216,9 @@ class TestOpenAICompatBackend:
 
     @pytest.mark.asyncio
     async def test_empty_content_raises_runtime_error(self):
-        from valence.core.backends import openai_compat as _oc
         import importlib
+
+        from valence.core.backends import openai_compat as _oc
 
         fake_response = MagicMock()
         fake_response.choices = [MagicMock()]
@@ -310,7 +311,7 @@ class TestBackendWithInferenceProvider:
     @pytest.mark.asyncio
     async def test_gemini_backend_integrates_with_provider(self):
         from valence.core.backends.gemini_cli import create_gemini_backend
-        from valence.core.inference import InferenceProvider, TASK_CLASSIFY
+        from valence.core.inference import TASK_CLASSIFY, InferenceProvider
 
         provider = InferenceProvider()
         backend = create_gemini_backend()
@@ -338,7 +339,7 @@ class TestBackendWithInferenceProvider:
     @pytest.mark.asyncio
     async def test_backend_error_sets_degraded(self):
         from valence.core.backends.gemini_cli import create_gemini_backend
-        from valence.core.inference import InferenceProvider, TASK_CLASSIFY
+        from valence.core.inference import TASK_CLASSIFY, InferenceProvider
 
         provider = InferenceProvider()
         backend = create_gemini_backend()

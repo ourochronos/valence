@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from valence.lib.our_db import get_cursor
+from valence.core.db import get_cursor
 
 from .embedding_interop import text_similarity
 from .response import ValenceResponse, err, ok

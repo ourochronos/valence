@@ -4,13 +4,10 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from valence.cli.commands.compile import cmd_compile
 from valence.cli.commands.ingest import cmd_ingest
 from valence.cli.commands.status import cmd_status
 from valence.cli.commands.unified_search import cmd_search
-
 
 # ==============================================================================
 # Unified Search Tests

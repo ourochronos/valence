@@ -137,7 +137,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 def cmd_config_show_all(args: argparse.Namespace) -> int:
     """Display all system configuration."""
     try:
-        from valence.lib.our_db import get_cursor  # type: ignore[import]
+        from valence.core.db import get_cursor  # type: ignore[import]
 
         with get_cursor() as cur:
             cur.execute("SELECT key, value, updated_at FROM system_config ORDER BY key")
@@ -177,7 +177,7 @@ def cmd_config_set(args: argparse.Namespace) -> int:
         except json.JSONDecodeError:
             value = args.value
 
-        from valence.lib.our_db import get_cursor  # type: ignore[import]
+        from valence.core.db import get_cursor  # type: ignore[import]
 
         with get_cursor() as cur:
             cur.execute(
@@ -274,7 +274,7 @@ def _write_inference_config(config_value: dict) -> int:
 def _show_config_direct() -> int:
     """Read inference config directly from the database (no server required)."""
     try:
-        from valence.lib.our_db import get_cursor  # type: ignore[import]
+        from valence.core.db import get_cursor  # type: ignore[import]
 
         with get_cursor() as cur:
             cur.execute("SELECT value, updated_at FROM system_config WHERE key = 'inference' LIMIT 1")
@@ -298,7 +298,7 @@ def _show_config_direct() -> int:
 def _write_config_direct(key: str, value: dict, display_value: dict) -> int:
     """Write a system_config entry directly to the database (no server required)."""
     try:
-        from valence.lib.our_db import get_cursor  # type: ignore[import]
+        from valence.core.db import get_cursor  # type: ignore[import]
 
         with get_cursor() as cur:
             cur.execute(

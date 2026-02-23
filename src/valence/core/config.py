@@ -35,32 +35,31 @@ class CoreSettings(BaseSettings):
     # ==========================================================================
     # DATABASE SETTINGS
     # ==========================================================================
-    # Support both VKB_ (legacy) and VALENCE_ prefixes, plus PG* fallbacks
 
     db_host: str = Field(
         default="localhost",
         description="Database host",
-        validation_alias="VKB_DB_HOST",
+        validation_alias="VALENCE_DB_HOST",
     )
     db_port: int = Field(
         default=5432,
         description="Database port",
-        validation_alias="VKB_DB_PORT",
+        validation_alias="VALENCE_DB_PORT",
     )
     db_name: str = Field(
         default="valence",
         description="Database name",
-        validation_alias="VKB_DB_NAME",
+        validation_alias="VALENCE_DB_NAME",
     )
     db_user: str = Field(
         default="valence",
         description="Database user",
-        validation_alias="VKB_DB_USER",
+        validation_alias="VALENCE_DB_USER",
     )
     db_password: str = Field(
         default="",
         description="Database password",
-        validation_alias="VKB_DB_PASSWORD",
+        validation_alias="VALENCE_DB_PASSWORD",
     )
 
     # Connection pool settings
@@ -260,25 +259,3 @@ def clear_config_cache() -> None:
     """Clear the config cache. Useful for testing."""
     global _config
     _config = None
-
-
-def bridge_db_env() -> None:
-    """Bridge VKB_DB_* env vars to ORO_DB_* for our_db compatibility.
-
-    Valence uses VKB_DB_* env vars. The our_db brick reads ORO_DB_*.
-    This function copies VKB_DB_* values to ORO_DB_* so our_db picks
-    them up. Only sets ORO_DB_* if not already set (user override wins).
-    """
-    import os
-
-    mapping = {
-        "VKB_DB_HOST": "ORO_DB_HOST",
-        "VKB_DB_PORT": "ORO_DB_PORT",
-        "VKB_DB_NAME": "ORO_DB_NAME",
-        "VKB_DB_USER": "ORO_DB_USER",
-        "VKB_DB_PASSWORD": "ORO_DB_PASSWORD",
-    }
-    for vkb_key, oro_key in mapping.items():
-        val = os.environ.get(vkb_key)
-        if val is not None and not os.environ.get(oro_key):
-            os.environ[oro_key] = val

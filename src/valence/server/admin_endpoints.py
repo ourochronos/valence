@@ -14,112 +14,11 @@ from starlette.responses import JSONResponse, Response
 from .auth_helpers import authenticate, require_scope
 from .endpoint_utils import format_response, parse_output_format
 from .errors import internal_error, invalid_json_error, missing_field_error
-from .formatters import format_embeddings_status_text, format_maintenance_text, format_migration_status_text
+from .formatters import format_embeddings_status_text, format_maintenance_text
 
 logger = logging.getLogger(__name__)
 
 ADMIN_SCOPE = "admin:write"
-
-
-# =============================================================================
-# MIGRATIONS
-# =============================================================================
-
-
-async def admin_migrate_status(request: Request) -> Response:
-    """GET /api/v1/admin/migrate/status — Show migration status."""
-    client = authenticate(request)
-    if isinstance(client, JSONResponse):
-        return client
-    if err := require_scope(client, ADMIN_SCOPE):
-        return err
-
-    output_format = parse_output_format(request)
-
-    try:
-        from valence.lib.our_db import get_cursor
-
-        with get_cursor() as cur:
-            cur.execute("""
-                SELECT name, applied_at
-                FROM schema_migrations
-                ORDER BY applied_at
-            """)
-            applied = cur.fetchall()
-
-        migrations = [{"name": m["name"], "status": "applied", "applied_at": str(m["applied_at"])} for m in applied]
-
-        result = {"success": True, "migrations": migrations, "count": len(migrations)}
-        return format_response(result, output_format, text_formatter=format_migration_status_text)
-    except Exception:
-        logger.exception("Error getting migration status")
-        return internal_error()
-
-
-async def admin_migrate_up(request: Request) -> JSONResponse:
-    """POST /api/v1/admin/migrate/up — Apply pending migrations."""
-    client = authenticate(request)
-    if isinstance(client, JSONResponse):
-        return client
-    if err := require_scope(client, ADMIN_SCOPE):
-        return err
-
-    try:
-        body = await request.json()
-    except json.JSONDecodeError:
-        body = {}
-
-    dry_run = body.get("dry_run", False)
-
-    try:
-        from ..core.migrations import MigrationRunner
-
-        runner = MigrationRunner()
-        applied = runner.up(dry_run=dry_run)
-
-        return JSONResponse(
-            {
-                "success": True,
-                "applied": applied,
-                "dry_run": dry_run,
-            }
-        )
-    except Exception:
-        logger.exception("Migration up failed")
-        return internal_error()
-
-
-async def admin_migrate_down(request: Request) -> JSONResponse:
-    """POST /api/v1/admin/migrate/down — Rollback the last migration."""
-    client = authenticate(request)
-    if isinstance(client, JSONResponse):
-        return client
-    if err := require_scope(client, ADMIN_SCOPE):
-        return err
-
-    try:
-        body = await request.json()
-    except json.JSONDecodeError:
-        body = {}
-
-    dry_run = body.get("dry_run", False)
-
-    try:
-        from ..core.migrations import MigrationRunner
-
-        runner = MigrationRunner()
-        rolled_back = runner.down(dry_run=dry_run)
-
-        return JSONResponse(
-            {
-                "success": True,
-                "rolled_back": rolled_back,
-                "dry_run": dry_run,
-            }
-        )
-    except Exception:
-        logger.exception("Migration down failed")
-        return internal_error()
 
 
 # =============================================================================
@@ -231,7 +130,7 @@ async def admin_embeddings_status(request: Request) -> Response:
     output_format = parse_output_format(request)
 
     try:
-        from valence.lib.our_db import get_cursor
+        from valence.core.db import get_cursor
 
         with get_cursor() as cur:
             cur.execute("SELECT COUNT(*) as total FROM articles")
@@ -274,8 +173,8 @@ async def admin_embeddings_backfill(request: Request) -> JSONResponse:
     dry_run = body.get("dry_run", False)
 
     try:
-        from valence.lib.our_db import get_cursor
-        from valence.lib.our_embeddings.service import generate_embedding
+        from valence.core.db import get_cursor
+        from valence.core.embeddings import generate_embedding
 
         with get_cursor() as cur:
             cur.execute(
@@ -339,7 +238,7 @@ async def admin_embeddings_migrate(request: Request) -> JSONResponse:
     dry_run = body.get("dry_run", False)
 
     try:
-        from valence.lib.our_db import get_cursor
+        from valence.core.db import get_cursor
 
         if dry_run:
             with get_cursor() as cur:
@@ -388,7 +287,7 @@ async def admin_verify_chains(request: Request) -> JSONResponse:
         return err
 
     try:
-        from valence.lib.our_db import get_cursor
+        from valence.core.db import get_cursor
 
         issues = []
         with get_cursor() as cur:

@@ -18,10 +18,10 @@ class TestCheckEnvVars:
         """Should return True when all required vars are present."""
         from valence.core.health import check_env_vars
 
-        monkeypatch.setenv("VKB_DB_HOST", "localhost")
-        monkeypatch.setenv("VKB_DB_NAME", "valence")
-        monkeypatch.setenv("VKB_DB_USER", "valence")
-        monkeypatch.setenv("VKB_DB_PASSWORD", "secret")
+        monkeypatch.setenv("VALENCE_DB_HOST", "localhost")
+        monkeypatch.setenv("VALENCE_DB_NAME", "valence")
+        monkeypatch.setenv("VALENCE_DB_USER", "valence")
+        monkeypatch.setenv("VALENCE_DB_PASSWORD", "secret")
         monkeypatch.setenv("OPENAI_API_KEY", "sk-xxx")
 
         ok, missing_required, missing_optional = check_env_vars()
@@ -34,21 +34,21 @@ class TestCheckEnvVars:
 
         ok, missing_required, missing_optional = check_env_vars()
         assert ok is False
-        assert "VKB_DB_HOST" in missing_required
-        assert "VKB_DB_NAME" in missing_required
-        assert "VKB_DB_USER" in missing_required
+        assert "VALENCE_DB_HOST" in missing_required
+        assert "VALENCE_DB_NAME" in missing_required
+        assert "VALENCE_DB_USER" in missing_required
 
     def test_missing_optional(self, monkeypatch):
         """Should detect missing optional vars."""
         from valence.core.health import check_env_vars
 
         # Set required vars
-        monkeypatch.setenv("VKB_DB_HOST", "localhost")
-        monkeypatch.setenv("VKB_DB_NAME", "valence")
-        monkeypatch.setenv("VKB_DB_USER", "valence")
+        monkeypatch.setenv("VALENCE_DB_HOST", "localhost")
+        monkeypatch.setenv("VALENCE_DB_NAME", "valence")
+        monkeypatch.setenv("VALENCE_DB_USER", "valence")
         # Don't set optional vars
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.delenv("VKB_DB_PASSWORD", raising=False)
+        monkeypatch.delenv("VALENCE_DB_PASSWORD", raising=False)
 
         ok, missing_required, missing_optional = check_env_vars()
         assert ok is True  # Required are present
@@ -58,13 +58,13 @@ class TestCheckEnvVars:
         """Should fail if only some required vars are set."""
         from valence.core.health import check_env_vars
 
-        monkeypatch.setenv("VKB_DB_HOST", "localhost")
-        # Missing VKB_DB_NAME and VKB_DB_USER
+        monkeypatch.setenv("VALENCE_DB_HOST", "localhost")
+        # Missing VALENCE_DB_NAME and VALENCE_DB_USER
 
         ok, missing_required, missing_optional = check_env_vars()
         assert ok is False
-        assert "VKB_DB_HOST" not in missing_required
-        assert "VKB_DB_NAME" in missing_required
+        assert "VALENCE_DB_HOST" not in missing_required
+        assert "VALENCE_DB_NAME" in missing_required
 
 
 # ============================================================================
@@ -287,9 +287,9 @@ class TestRunHealthCheck:
         from valence.core.health import run_health_check
 
         # Set all required env vars
-        monkeypatch.setenv("VKB_DB_HOST", "localhost")
-        monkeypatch.setenv("VKB_DB_NAME", "valence")
-        monkeypatch.setenv("VKB_DB_USER", "valence")
+        monkeypatch.setenv("VALENCE_DB_HOST", "localhost")
+        monkeypatch.setenv("VALENCE_DB_NAME", "valence")
+        monkeypatch.setenv("VALENCE_DB_USER", "valence")
         monkeypatch.setenv("OPENAI_API_KEY", "sk-xxx")
 
         with patch("valence.core.health.check_database_connection", return_value=(True, None)):
@@ -317,9 +317,9 @@ class TestRunHealthCheck:
         """Should return early on database failure."""
         from valence.core.health import run_health_check
 
-        monkeypatch.setenv("VKB_DB_HOST", "localhost")
-        monkeypatch.setenv("VKB_DB_NAME", "valence")
-        monkeypatch.setenv("VKB_DB_USER", "valence")
+        monkeypatch.setenv("VALENCE_DB_HOST", "localhost")
+        monkeypatch.setenv("VALENCE_DB_NAME", "valence")
+        monkeypatch.setenv("VALENCE_DB_USER", "valence")
 
         with patch(
             "valence.core.health.check_database_connection",
@@ -334,9 +334,9 @@ class TestRunHealthCheck:
         """Should return unhealthy on schema failure."""
         from valence.core.health import run_health_check
 
-        monkeypatch.setenv("VKB_DB_HOST", "localhost")
-        monkeypatch.setenv("VKB_DB_NAME", "valence")
-        monkeypatch.setenv("VKB_DB_USER", "valence")
+        monkeypatch.setenv("VALENCE_DB_HOST", "localhost")
+        monkeypatch.setenv("VALENCE_DB_NAME", "valence")
+        monkeypatch.setenv("VALENCE_DB_USER", "valence")
 
         with patch("valence.core.health.check_database_connection", return_value=(True, None)):
             with patch("valence.core.health.check_pgvector", return_value=(True, None)):
@@ -353,9 +353,9 @@ class TestRunHealthCheck:
         """pgvector unavailable should be a warning, not failure."""
         from valence.core.health import run_health_check
 
-        monkeypatch.setenv("VKB_DB_HOST", "localhost")
-        monkeypatch.setenv("VKB_DB_NAME", "valence")
-        monkeypatch.setenv("VKB_DB_USER", "valence")
+        monkeypatch.setenv("VALENCE_DB_HOST", "localhost")
+        monkeypatch.setenv("VALENCE_DB_NAME", "valence")
+        monkeypatch.setenv("VALENCE_DB_USER", "valence")
 
         with patch("valence.core.health.check_database_connection", return_value=(True, None)):
             with patch(
@@ -439,9 +439,9 @@ class TestValidateEnvironment:
         """Should pass when all required vars present."""
         from valence.core.health import validate_environment
 
-        monkeypatch.setenv("VKB_DB_HOST", "localhost")
-        monkeypatch.setenv("VKB_DB_NAME", "valence")
-        monkeypatch.setenv("VKB_DB_USER", "valence")
+        monkeypatch.setenv("VALENCE_DB_HOST", "localhost")
+        monkeypatch.setenv("VALENCE_DB_NAME", "valence")
+        monkeypatch.setenv("VALENCE_DB_USER", "valence")
 
         # Should not raise
         validate_environment()
@@ -460,9 +460,9 @@ class TestValidateDatabase:
         from valence.core.exceptions import DatabaseException
         from valence.core.health import validate_database
 
-        monkeypatch.setenv("VKB_DB_HOST", "localhost")
-        monkeypatch.setenv("VKB_DB_NAME", "valence")
-        monkeypatch.setenv("VKB_DB_USER", "valence")
+        monkeypatch.setenv("VALENCE_DB_HOST", "localhost")
+        monkeypatch.setenv("VALENCE_DB_NAME", "valence")
+        monkeypatch.setenv("VALENCE_DB_USER", "valence")
 
         with patch(
             "valence.core.health.check_database_connection",
@@ -476,9 +476,9 @@ class TestValidateDatabase:
         from valence.core.exceptions import DatabaseException
         from valence.core.health import validate_database
 
-        monkeypatch.setenv("VKB_DB_HOST", "localhost")
-        monkeypatch.setenv("VKB_DB_NAME", "valence")
-        monkeypatch.setenv("VKB_DB_USER", "valence")
+        monkeypatch.setenv("VALENCE_DB_HOST", "localhost")
+        monkeypatch.setenv("VALENCE_DB_NAME", "valence")
+        monkeypatch.setenv("VALENCE_DB_USER", "valence")
 
         with patch("valence.core.health.check_database_connection", return_value=(True, None)):
             with patch("valence.core.health.check_schema", return_value=(False, ["beliefs"])):
@@ -498,9 +498,9 @@ class TestCliHealthCheck:
         """Should return 0 when healthy."""
         from valence.core.health import cli_health_check
 
-        monkeypatch.setenv("VKB_DB_HOST", "localhost")
-        monkeypatch.setenv("VKB_DB_NAME", "valence")
-        monkeypatch.setenv("VKB_DB_USER", "valence")
+        monkeypatch.setenv("VALENCE_DB_HOST", "localhost")
+        monkeypatch.setenv("VALENCE_DB_NAME", "valence")
+        monkeypatch.setenv("VALENCE_DB_USER", "valence")
 
         with patch("valence.core.health.run_health_check") as mock_check:
             from valence.core.health import HealthStatus
@@ -534,7 +534,7 @@ class TestCliHealthCheck:
 
             mock_check.return_value = HealthStatus(
                 healthy=False,
-                missing_env_vars=["VKB_DB_HOST"],
+                missing_env_vars=["VALENCE_DB_HOST"],
                 missing_tables=["beliefs"],
                 error="Test error",
                 warnings=["Warning 1"],
@@ -543,7 +543,7 @@ class TestCliHealthCheck:
             cli_health_check()
 
         captured = capsys.readouterr()
-        assert "VKB_DB_HOST" in captured.out
+        assert "VALENCE_DB_HOST" in captured.out
         assert "beliefs" in captured.out
         assert "Test error" in captured.out
         assert "Warning 1" in captured.out

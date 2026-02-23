@@ -12,10 +12,9 @@ All tests use mocked DB cursors — no real PostgreSQL required.
 from __future__ import annotations
 
 import math
-from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -77,7 +76,7 @@ class TestComputeScore:
         """Article A with 5 recent retrievals should score higher than B with 0."""
         from valence.core.usage import _compute_score
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         timestamps_a = [now] * 5  # 5 very recent retrievals
         timestamps_b: list = []
 
@@ -90,7 +89,7 @@ class TestComputeScore:
         """A retrieval from today should weigh more than one from a year ago."""
         from valence.core.usage import _compute_score
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         recent = [now]
         old = [now - timedelta(days=365)]
 
@@ -116,7 +115,7 @@ class TestComputeScore:
         """Score is always non-negative."""
         from valence.core.usage import _compute_score
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         assert _compute_score([], 0) >= 0
         assert _compute_score([now] * 100, 0) >= 0
         assert _compute_score([now - timedelta(days=9999)], 100) >= 0
@@ -125,7 +124,7 @@ class TestComputeScore:
         """_decayed_weight should be 1.0 for just-now, < 1.0 for the past."""
         from valence.core.usage import _decayed_weight
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         weight_now = _decayed_weight(now, now)
         weight_past = _decayed_weight(now - timedelta(days=30), now)
 
@@ -154,7 +153,7 @@ class TestRecordUsage:
         from valence.core.usage import record_usage
 
         mock_cur = _make_cursor_mock(
-            fetchall=[{"retrieved_at": datetime.now(timezone.utc)}],
+            fetchall=[{"retrieved_at": datetime.now(UTC)}],
             fetchone={"cnt": 0},
         )
 
@@ -168,7 +167,7 @@ class TestRecordUsage:
         """record_usage updates the usage_score column on the article."""
         from valence.core.usage import record_usage
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         mock_cur = _make_cursor_mock(
             fetchall=[{"retrieved_at": now}],
             fetchone={"cnt": 2},
@@ -186,7 +185,7 @@ class TestRecordUsage:
         from valence.core.usage import _compute_score
 
         # Simulate 5 retrievals in the very recent past
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         score_after_5 = _compute_score([now] * 5, source_count=0)
         score_after_0 = _compute_score([], source_count=0)
 
@@ -197,7 +196,7 @@ class TestRecordUsage:
         from valence.core.usage import record_usage
 
         mock_cur = _make_cursor_mock(
-            fetchall=[{"retrieved_at": datetime.now(timezone.utc)}],
+            fetchall=[{"retrieved_at": datetime.now(UTC)}],
             fetchone={"cnt": 0},
         )
 
@@ -460,7 +459,7 @@ class TestUsageScoreOrdering:
         """After 5 retrievals for A and 0 for B: A.usage_score > B.usage_score."""
         from valence.core.usage import _compute_score
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Article A: retrieved 5 times in the last hour
         timestamps_a = [now - timedelta(minutes=i) for i in range(5)]
@@ -475,7 +474,7 @@ class TestUsageScoreOrdering:
         """get_decay_candidates ordering: B (score=0) appears before A (score=4.9)."""
         from valence.core.usage import _compute_score
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         timestamps_a = [now] * 5
         score_a = _compute_score(timestamps_a, source_count=0)
         score_b = _compute_score([], source_count=0)
@@ -511,10 +510,10 @@ class TestUsageScoreOrdering:
 
     def test_compute_scores_idempotency_contract(self):
         """Running compute_usage_scores twice with the same data returns the same scores."""
-        from valence.core.usage import _compute_score, _decayed_weight
+        from valence.core.usage import _decayed_weight
 
         # Use a fixed reference time to avoid floating-point drift between two datetime.now() calls
-        reference_now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        reference_now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
         timestamps = [reference_now - timedelta(hours=1)] * 3
 
         # Compute twice with the same explicit 'now' by calling _decayed_weight directly

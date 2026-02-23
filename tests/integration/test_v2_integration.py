@@ -11,9 +11,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-
 # =============================================================================
 # Constants
 # =============================================================================
@@ -314,9 +311,9 @@ class TestCLIRegistration:
 
     def test_articles_command_registered(self):
         """'articles' subcommand should be registered."""
-        from valence.cli.main import app
-
         import argparse
+
+        from valence.cli.main import app
 
         parser = app()
         subparsers_action = next(
@@ -328,9 +325,9 @@ class TestCLIRegistration:
 
     def test_provenance_command_registered(self):
         """'provenance' subcommand should be registered."""
-        from valence.cli.main import app
-
         import argparse
+
+        from valence.cli.main import app
 
         parser = app()
         subparsers_action = next(

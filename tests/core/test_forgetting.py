@@ -12,11 +12,11 @@ from __future__ import annotations
 
 import json
 from contextlib import contextmanager
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+
 from valence.core.response import ok
 
 # ---------------------------------------------------------------------------
@@ -261,7 +261,6 @@ class TestRemoveArticle:
     @pytest.mark.asyncio
     async def test_deletes_article_and_creates_tombstone(self):
         """remove_article should DELETE the article and insert a tombstone."""
-        from valence.core.response import ok
         from valence.core.forgetting import remove_article
 
         cur = _make_cursor_mock(
@@ -282,7 +281,6 @@ class TestRemoveArticle:
     @pytest.mark.asyncio
     async def test_sources_untouched_after_article_removal(self):
         """remove_article must NOT issue any DELETE against sources."""
-        from valence.core.response import ok
         from valence.core.forgetting import remove_article
 
         cur = _make_cursor_mock(
@@ -298,7 +296,6 @@ class TestRemoveArticle:
     @pytest.mark.asyncio
     async def test_returns_error_for_missing_article(self):
         """remove_article should return an error when article ID doesn't exist."""
-        from valence.core.response import ok
         from valence.core.forgetting import remove_article
 
         cur = _make_cursor_mock(fetchone=None)
@@ -312,7 +309,6 @@ class TestRemoveArticle:
     @pytest.mark.asyncio
     async def test_returns_error_for_empty_article_id(self):
         """remove_article should reject an empty article_id."""
-        from valence.core.response import ok
         from valence.core.forgetting import remove_article
 
         cur = _make_cursor_mock()
@@ -325,7 +321,6 @@ class TestRemoveArticle:
     @pytest.mark.asyncio
     async def test_tombstone_records_article_title(self):
         """Tombstone metadata should include the article's title."""
-        from valence.core.response import ok
         from valence.core.forgetting import remove_article
 
         article_title = "My Important Article"
@@ -346,7 +341,6 @@ class TestRemoveArticle:
     @pytest.mark.asyncio
     async def test_tombstone_content_type_is_article(self):
         """Tombstone content_type must be 'article' (not 'source')."""
-        from valence.core.response import ok
         from valence.core.forgetting import remove_article
 
         cur = _make_cursor_mock(
@@ -373,7 +367,6 @@ class TestEvictLowest:
     @pytest.mark.asyncio
     async def test_does_not_evict_when_below_capacity(self):
         """evict_lowest should return [] when article count <= max_articles."""
-        from valence.core.response import ok
         from valence.core.forgetting import evict_lowest
 
         cur = _make_cursor_mock()
@@ -400,7 +393,6 @@ class TestEvictLowest:
     @pytest.mark.asyncio
     async def test_evicts_when_over_capacity(self):
         """evict_lowest fires when article count > max_articles."""
-        from valence.core.response import ok
         from valence.core.forgetting import evict_lowest
 
         # We'll mock remove_article to track calls
@@ -439,7 +431,6 @@ class TestEvictLowest:
     @pytest.mark.asyncio
     async def test_evicts_only_overflow_amount(self):
         """evict_lowest caps eviction to the overflow, not the requested count."""
-        from valence.core.response import ok
         from valence.core.forgetting import evict_lowest
 
         with patch("valence.core.forgetting.remove_article", new_callable=AsyncMock) as mock_remove:
@@ -476,7 +467,6 @@ class TestEvictLowest:
     @pytest.mark.asyncio
     async def test_pinned_articles_excluded_from_candidates(self):
         """The SQL passed to get candidates must exclude pinned articles."""
-        from valence.core.response import ok
         from valence.core.forgetting import evict_lowest
 
         cur = _make_cursor_mock()
@@ -506,7 +496,6 @@ class TestEvictLowest:
     @pytest.mark.asyncio
     async def test_uses_system_config_for_max_articles(self):
         """evict_lowest must read max_articles from system_config, not a hardcoded value."""
-        from valence.core.response import ok
         from valence.core.forgetting import evict_lowest
 
         cur = _make_cursor_mock()
@@ -538,7 +527,6 @@ class TestEvictLowest:
     @pytest.mark.asyncio
     async def test_defaults_to_10000_when_no_config(self):
         """evict_lowest defaults to max_articles=10000 if system_config is missing."""
-        from valence.core.response import ok
         from valence.core.forgetting import evict_lowest
 
         cur = _make_cursor_mock()
@@ -565,7 +553,6 @@ class TestEvictLowest:
     @pytest.mark.asyncio
     async def test_evicted_articles_returned_as_list_of_ids(self):
         """Return value must be a list of evicted article ID strings."""
-        from valence.core.response import ok
         from valence.core.forgetting import evict_lowest
 
         with patch("valence.core.forgetting.remove_article", new_callable=AsyncMock) as mock_remove:

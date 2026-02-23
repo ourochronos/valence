@@ -89,11 +89,11 @@ class TestCoreSettingsEnvOverrides:
 
     def test_database_env_overrides(self, monkeypatch, clean_env):
         """Test database settings from VKB_ prefixed env vars."""
-        monkeypatch.setenv("VKB_DB_HOST", "db.example.com")
-        monkeypatch.setenv("VKB_DB_PORT", "5433")
-        monkeypatch.setenv("VKB_DB_NAME", "test_db")
-        monkeypatch.setenv("VKB_DB_USER", "test_user")
-        monkeypatch.setenv("VKB_DB_PASSWORD", "secret123")
+        monkeypatch.setenv("VALENCE_DB_HOST", "db.example.com")
+        monkeypatch.setenv("VALENCE_DB_PORT", "5433")
+        monkeypatch.setenv("VALENCE_DB_NAME", "test_db")
+        monkeypatch.setenv("VALENCE_DB_USER", "test_user")
+        monkeypatch.setenv("VALENCE_DB_PASSWORD", "secret123")
 
         clear_config_cache()
         settings = CoreSettings()
@@ -193,18 +193,18 @@ class TestCoreSettingsComputedProperties:
 
     def test_database_url_with_password(self, monkeypatch, clean_env):
         """Test database_url includes password when set."""
-        monkeypatch.setenv("VKB_DB_PASSWORD", "secret")
+        monkeypatch.setenv("VALENCE_DB_PASSWORD", "secret")
         settings = CoreSettings()
         expected = "postgresql://valence:secret@localhost:5432/valence"
         assert settings.database_url == expected
 
     def test_database_url_custom_values(self, monkeypatch, clean_env):
         """Test database_url with fully custom settings."""
-        monkeypatch.setenv("VKB_DB_HOST", "db.prod.example.com")
-        monkeypatch.setenv("VKB_DB_PORT", "5433")
-        monkeypatch.setenv("VKB_DB_NAME", "prod_db")
-        monkeypatch.setenv("VKB_DB_USER", "prod_user")
-        monkeypatch.setenv("VKB_DB_PASSWORD", "prod_pass")
+        monkeypatch.setenv("VALENCE_DB_HOST", "db.prod.example.com")
+        monkeypatch.setenv("VALENCE_DB_PORT", "5433")
+        monkeypatch.setenv("VALENCE_DB_NAME", "prod_db")
+        monkeypatch.setenv("VALENCE_DB_USER", "prod_user")
+        monkeypatch.setenv("VALENCE_DB_PASSWORD", "prod_pass")
 
         settings = CoreSettings()
         expected = "postgresql://prod_user:prod_pass@db.prod.example.com:5433/prod_db"
@@ -225,11 +225,11 @@ class TestCoreSettingsComputedProperties:
 
     def test_connection_params_custom(self, monkeypatch, clean_env):
         """Test connection_params with custom values."""
-        monkeypatch.setenv("VKB_DB_HOST", "custom.host")
-        monkeypatch.setenv("VKB_DB_PORT", "6543")
-        monkeypatch.setenv("VKB_DB_NAME", "custom_db")
-        monkeypatch.setenv("VKB_DB_USER", "custom_user")
-        monkeypatch.setenv("VKB_DB_PASSWORD", "custom_pass")
+        monkeypatch.setenv("VALENCE_DB_HOST", "custom.host")
+        monkeypatch.setenv("VALENCE_DB_PORT", "6543")
+        monkeypatch.setenv("VALENCE_DB_NAME", "custom_db")
+        monkeypatch.setenv("VALENCE_DB_USER", "custom_user")
+        monkeypatch.setenv("VALENCE_DB_PASSWORD", "custom_pass")
 
         settings = CoreSettings()
         params = settings.connection_params
@@ -354,7 +354,7 @@ class TestCoreSettingsTypeCoercion:
 
     def test_int_coercion_db_port(self, monkeypatch, clean_env):
         """Test that db_port string is coerced to int."""
-        monkeypatch.setenv("VKB_DB_PORT", "5433")
+        monkeypatch.setenv("VALENCE_DB_PORT", "5433")
         settings = CoreSettings()
         assert settings.db_port == 5433
         assert isinstance(settings.db_port, int)

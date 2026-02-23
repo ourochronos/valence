@@ -12,8 +12,6 @@ Tests cover:
 
 from __future__ import annotations
 
-from unittest.mock import patch
-
 import pytest
 
 from valence.core.embedding_interop import (
@@ -51,7 +49,7 @@ class TestGetEmbeddingCapability:
         cap = get_embedding_capability()
         assert cap.dimensions == 384
         assert cap.model == "BAAI/bge-small-en-v1.5"
-    
+
     def test_openai_provider_default(self, clean_env, monkeypatch):
         """Test default dimensions when provider is set to openai."""
         monkeypatch.setenv("VALENCE_EMBEDDING_PROVIDER", "openai")

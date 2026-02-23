@@ -11,13 +11,10 @@ Tests cover:
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call
-
-import pytest
+from unittest.mock import MagicMock
 
 from valence.core.maintenance import (
     ArchivalConfig,
-    MaintenanceConfig,
     MaintenanceResult,
     RetentionConfig,
     apply_retention,
@@ -25,7 +22,6 @@ from valence.core.maintenance import (
     cleanup_tombstones,
     run_full_maintenance,
 )
-
 
 # ============================================================================
 # Config Tests

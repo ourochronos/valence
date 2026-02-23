@@ -17,6 +17,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
+from valence.core.db import get_cursor
 from valence.core.inference import (
     RELATIONSHIP_ENUM,
     TASK_COMPILE,
@@ -29,7 +30,6 @@ from valence.core.inference import (
     provider as _inference_provider,
 )
 from valence.core.response import ValenceResponse, err, ok
-from valence.lib.our_db import get_cursor
 
 logger = logging.getLogger(__name__)
 

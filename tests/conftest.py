@@ -32,11 +32,11 @@ def _check_postgres_available() -> tuple[bool, str | None]:
         return False, "psycopg2 not installed"
 
     # Get connection params from environment
-    host = os.environ.get("VKB_DB_HOST", "localhost")
-    port = int(os.environ.get("VKB_DB_PORT", "5432"))
-    dbname = os.environ.get("VKB_DB_NAME", "valence")
-    user = os.environ.get("VKB_DB_USER", "valence")
-    password = os.environ.get("VKB_DB_PASSWORD", "")
+    host = os.environ.get("VALENCE_DB_HOST", "localhost")
+    port = int(os.environ.get("VALENCE_DB_PORT", "5432"))
+    dbname = os.environ.get("VALENCE_DB_NAME", "valence")
+    user = os.environ.get("VALENCE_DB_USER", "valence")
+    password = os.environ.get("VALENCE_DB_PASSWORD", "")
 
     try:
         conn = psycopg2.connect(
@@ -99,8 +99,9 @@ def clean_env(monkeypatch):
             monkeypatch.delenv(key, raising=False)
 
     # Prevent pydantic-settings from reading .env file by patching model_config
-    from valence.core.config import CoreSettings
     from pydantic_settings import SettingsConfigDict
+
+    from valence.core.config import CoreSettings
 
     # Store originals
     original_core_config = CoreSettings.model_config
@@ -151,11 +152,11 @@ def clean_env(monkeypatch):
 @pytest.fixture
 def env_with_db_vars(monkeypatch):
     """Set up database environment variables."""
-    monkeypatch.setenv("VKB_DB_HOST", "localhost")
-    monkeypatch.setenv("VKB_DB_PORT", "5432")
-    monkeypatch.setenv("VKB_DB_NAME", "valence_test")
-    monkeypatch.setenv("VKB_DB_USER", "valence")
-    monkeypatch.setenv("VKB_DB_PASSWORD", "testpass")
+    monkeypatch.setenv("VALENCE_DB_HOST", "localhost")
+    monkeypatch.setenv("VALENCE_DB_PORT", "5432")
+    monkeypatch.setenv("VALENCE_DB_NAME", "valence_test")
+    monkeypatch.setenv("VALENCE_DB_USER", "valence")
+    monkeypatch.setenv("VALENCE_DB_PASSWORD", "testpass")
     clear_config_cache()
     yield
     clear_config_cache()
@@ -164,7 +165,7 @@ def env_with_db_vars(monkeypatch):
 @pytest.fixture
 def env_without_db_vars(monkeypatch):
     """Remove database environment variables."""
-    for var in ["VKB_DB_HOST", "VKB_DB_NAME", "VKB_DB_USER", "VKB_DB_PASSWORD"]:
+    for var in ["VALENCE_DB_HOST", "VALENCE_DB_NAME", "VALENCE_DB_USER", "VALENCE_DB_PASSWORD"]:
         monkeypatch.delenv(var, raising=False)
     clear_config_cache()
     yield
@@ -237,7 +238,7 @@ def mock_get_cursor():
     async def fake_get_cursor(dict_cursor: bool = True) -> AsyncGenerator:
         yield mock_conn
 
-    with patch("valence.lib.our_db.get_cursor", fake_get_cursor):
+    with patch("valence.core.db.get_cursor", fake_get_cursor):
         yield mock_conn
 
 
@@ -249,18 +250,18 @@ def mock_get_cursor():
 @pytest.fixture(autouse=True)
 def reset_db_pool():
     """Reset the connection pool singleton before each test."""
-    import valence.lib.our_db.db as db_mod
+    import valence.core.db as db_mod
 
-    # Reset the pool singleton
-    db_mod.ConnectionPool._instance = None
-    db_mod._pool = db_mod.ConnectionPool.get_instance()
+    # Reset the module-level pool
+    db_mod._pool = None
     yield
     # Cleanup after test
     try:
-        db_mod._pool.close_all()
+        if db_mod._pool is not None:
+            db_mod._pool.closeall()
     except Exception:
         pass
-    db_mod.ConnectionPool._instance = None
+    db_mod._pool = None
 
 
 @pytest.fixture
@@ -279,7 +280,7 @@ def mock_psycopg2_pool():
     mock_pool.putconn = MagicMock()
     mock_pool.closeall = MagicMock()
 
-    with patch("valence.lib.our_db.db.psycopg2_pool.ThreadedConnectionPool") as mock_pool_class:
+    with patch("valence.core.db.psycopg2_pool.ThreadedConnectionPool") as mock_pool_class:
         mock_pool_class.return_value = mock_pool
         yield {
             "pool_class": mock_pool_class,
@@ -517,7 +518,7 @@ def source_row_factory():
 @pytest.fixture
 def mock_openai():
     """Mock OpenAI client for embedding generation."""
-    with patch("valence.lib.our_embeddings.service.OpenAI") as mock_class:
+    with patch("valence.core.embeddings.service.OpenAI") as mock_class:
         mock_client = MagicMock()
         mock_class.return_value = mock_client
 

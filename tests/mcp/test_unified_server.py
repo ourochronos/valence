@@ -11,7 +11,7 @@ import json
 import pytest
 
 from valence.mcp_server import ALL_TOOLS, call_tool, list_tools, server
-from valence.substrate.tools import SUBSTRATE_HANDLERS, SUBSTRATE_TOOLS
+from valence.substrate.tools import SUBSTRATE_TOOLS
 from valence.vkb.tools import VKB_HANDLERS
 
 # ============================================================================

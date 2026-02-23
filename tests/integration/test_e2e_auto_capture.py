@@ -14,11 +14,10 @@ import json
 from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import datetime
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
-
 
 # =============================================================================
 # FIXTURES
@@ -159,7 +158,7 @@ class TestAutoCapturePipeline:
                 "superseded_by_id": None,
                 "status": "active",
                 "opt_out_federation": False,
-                "content_hash": hashlib.sha256("test insight".encode()).hexdigest(),
+                "content_hash": hashlib.sha256(b"test insight").hexdigest(),
                 "holder_id": None,
                 "version": 1,
                 "visibility": "private",

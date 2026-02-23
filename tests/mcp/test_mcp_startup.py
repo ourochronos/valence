@@ -7,16 +7,13 @@ Issues fixed:
 1. init_schema() called without required schema_dir argument
 2. except clause catching wrong exception type (DatabaseException vs DatabaseError)
 3. DatabaseStats missing to_dict() method
-4. MCP env config using VKB_DB_* but our_db reading ORO_DB_*
+4. MCP env config using VALENCE_DB_* but our_db reading VALENCE_DB_*
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
-
+from unittest.mock import patch
 
 # ============================================================================
 # DatabaseStats.to_dict() regression
@@ -121,7 +118,7 @@ class TestInitSchemaExceptionHandling:
         content = source.read_text()
 
         assert "OurDatabaseError" in content
-        assert "from valence.lib.our_db.exceptions import DatabaseError as OurDatabaseError" in content
+        assert "from valence.core.db import DatabaseError as OurDatabaseError" in content
         assert "(DatabaseException, OurDatabaseError)" in content
 
     def test_vkb_catches_our_db_error(self):
@@ -130,12 +127,12 @@ class TestInitSchemaExceptionHandling:
         content = source.read_text()
 
         assert "OurDatabaseError" in content
-        assert "from valence.lib.our_db.exceptions import DatabaseError as OurDatabaseError" in content
+        assert "from valence.core.db import DatabaseError as OurDatabaseError" in content
         assert "(DatabaseException, OurDatabaseError)" in content
 
     def test_init_schema_error_does_not_crash_server(self):
         """init_schema raising DatabaseError should be caught, not crash the server."""
-        from valence.lib.our_db.exceptions import DatabaseError
+        from valence.core.db import DatabaseError
 
         with patch("valence.substrate.mcp_server.init_schema") as mock_init:
             mock_init.side_effect = DatabaseError("constraint already exists")
@@ -157,10 +154,10 @@ class TestInitSchemaExceptionHandling:
 
 
 class TestMCPPluginConfig:
-    """Plugin .mcp.json must include VKB_DB_* env vars (bridge_db_env handles ORO_DB_*)."""
+    """Plugin .mcp.json must include VALENCE_DB_* env vars (bridge_db_env handles VALENCE_DB_*)."""
 
     def test_plugin_config_has_vkb_vars(self):
-        """Plugin config must pass VKB_DB_* vars for valence.core.config."""
+        """Plugin config must pass VALENCE_DB_* vars for valence.core.config."""
         import json
 
         config_path = Path(__file__).parent.parent.parent / "plugin" / ".mcp.json"
@@ -169,23 +166,11 @@ class TestMCPPluginConfig:
         server_names = list(config["mcpServers"].keys())
         for server_name in server_names:
             env = config["mcpServers"][server_name]["env"]
-            assert "VKB_DB_HOST" in env, f"{server_name} missing VKB_DB_HOST"
-            assert "VKB_DB_PORT" in env, f"{server_name} missing VKB_DB_PORT"
-            assert "VKB_DB_NAME" in env, f"{server_name} missing VKB_DB_NAME"
-            assert "VKB_DB_USER" in env, f"{server_name} missing VKB_DB_USER"
-            assert "VKB_DB_PASSWORD" in env, f"{server_name} missing VKB_DB_PASSWORD"
-
-    def test_plugin_config_no_oro_vars(self):
-        """Plugin config should NOT duplicate ORO_DB_* — bridge_db_env() handles it."""
-        import json
-
-        config_path = Path(__file__).parent.parent.parent / "plugin" / ".mcp.json"
-        config = json.loads(config_path.read_text())
-
-        server_names = list(config["mcpServers"].keys())
-        for server_name in server_names:
-            env = config["mcpServers"][server_name]["env"]
-            assert "ORO_DB_HOST" not in env, f"{server_name} has ORO_DB_HOST (should use bridge_db_env)"
+            assert "VALENCE_DB_HOST" in env, f"{server_name} missing VALENCE_DB_HOST"
+            assert "VALENCE_DB_PORT" in env, f"{server_name} missing VALENCE_DB_PORT"
+            assert "VALENCE_DB_NAME" in env, f"{server_name} missing VALENCE_DB_NAME"
+            assert "VALENCE_DB_USER" in env, f"{server_name} missing VALENCE_DB_USER"
+            assert "VALENCE_DB_PASSWORD" in env, f"{server_name} missing VALENCE_DB_PASSWORD"
 
     def test_plugin_config_default_port_is_5433(self):
         """Default port should be 5433 (Docker container port)."""
@@ -197,4 +182,4 @@ class TestMCPPluginConfig:
         server_names = list(config["mcpServers"].keys())
         for server_name in server_names:
             env = config["mcpServers"][server_name]["env"]
-            assert "5433" in env.get("VKB_DB_PORT", "")
+            assert "5433" in env.get("VALENCE_DB_PORT", "")

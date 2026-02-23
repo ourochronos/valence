@@ -32,8 +32,8 @@ from mcp.server.stdio import stdio_server
 from mcp.types import Resource, TextContent, TextResourceContents
 from pydantic import AnyUrl
 
-from valence.lib.our_db import get_cursor, init_schema
-from valence.lib.our_db.exceptions import DatabaseError as OurDatabaseError
+from valence.core.db import DatabaseError as OurDatabaseError
+from valence.core.db import get_cursor, init_schema
 
 from ..core.exceptions import DatabaseException, ValidationException
 from ..core.health import DatabaseStats, cli_health_check, startup_checks
@@ -265,9 +265,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
 def run() -> None:
     """Run the MCP server."""
-    from ..core.config import bridge_db_env
 
-    bridge_db_env()
 
     parser = argparse.ArgumentParser(description="Valence Substrate MCP Server")
     parser.add_argument("--health-check", action="store_true", help="Run health check and exit")

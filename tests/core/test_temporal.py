@@ -4,15 +4,12 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-import pytest
-
 from valence.core.temporal import (
     SupersessionChain,
     TemporalValidity,
     calculate_freshness,
     freshness_label,
 )
-
 
 # =============================================================================
 # TEMPORAL VALIDITY TESTS

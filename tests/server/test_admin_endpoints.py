@@ -15,9 +15,6 @@ from valence.server.admin_endpoints import (
     admin_embeddings_migrate,
     admin_embeddings_status,
     admin_maintenance,
-    admin_migrate_down,
-    admin_migrate_status,
-    admin_migrate_up,
     admin_verify_chains,
 )
 from valence.server.auth_helpers import AuthenticatedClient
@@ -28,9 +25,6 @@ MOCK_CLIENT = AuthenticatedClient(client_id="test", auth_method="bearer")
 @pytest.fixture
 def app():
     routes = [
-        Route("/api/v1/admin/migrate/status", admin_migrate_status, methods=["GET"]),
-        Route("/api/v1/admin/migrate/up", admin_migrate_up, methods=["POST"]),
-        Route("/api/v1/admin/migrate/down", admin_migrate_down, methods=["POST"]),
         Route("/api/v1/admin/maintenance", admin_maintenance, methods=["POST"]),
         Route("/api/v1/admin/embeddings/status", admin_embeddings_status, methods=["GET"]),
         Route("/api/v1/admin/embeddings/backfill", admin_embeddings_backfill, methods=["POST"]),
@@ -71,70 +65,14 @@ class TestAdminAuth:
             "valence.server.admin_endpoints.authenticate",
             return_value=JSONResponse({"error": "unauthorized"}, status_code=401),
         ):
-            resp = client.get("/api/v1/admin/migrate/status")
+            resp = client.get("/api/v1/admin/embeddings/status")
             assert resp.status_code == 401
 
     def test_wrong_scope_returns_403(self, client):
         oauth_client = AuthenticatedClient(client_id="test", auth_method="oauth", scope="substrate:read")
         with patch("valence.server.admin_endpoints.authenticate", return_value=oauth_client):
-            resp = client.get("/api/v1/admin/migrate/status")
+            resp = client.get("/api/v1/admin/embeddings/status")
             assert resp.status_code == 403
-
-
-# =============================================================================
-# MIGRATION ENDPOINTS
-# =============================================================================
-
-
-class TestMigrateStatus:
-    @patch("valence.lib.our_db.get_cursor")
-    def test_happy_path(self, mock_gc, client):
-        mock_cm, mock_cur = _mock_cursor()
-        mock_gc.return_value = mock_cm
-        mock_cur.fetchall.return_value = [
-            {"name": "001_init", "applied_at": "2024-01-01 00:00:00"},
-            {"name": "002_add_embeddings", "applied_at": "2024-01-02 00:00:00"},
-        ]
-
-        resp = client.get("/api/v1/admin/migrate/status")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["success"] is True
-        assert data["count"] == 2
-
-    @patch("valence.lib.our_db.get_cursor")
-    def test_text_output(self, mock_gc, client):
-        mock_cm, mock_cur = _mock_cursor()
-        mock_gc.return_value = mock_cm
-        mock_cur.fetchall.return_value = [{"name": "001_init", "applied_at": "2024-01-01"}]
-
-        resp = client.get("/api/v1/admin/migrate/status", params={"output": "text"})
-        assert resp.status_code == 200
-        assert "Migration Status" in resp.text
-
-
-class TestMigrateUp:
-    @patch("valence.core.migrations.MigrationRunner")
-    def test_happy_path(self, mock_runner_cls, client):
-        mock_runner = MagicMock()
-        mock_runner.up.return_value = ["001_init", "002_embeddings"]
-        mock_runner_cls.return_value = mock_runner
-
-        resp = client.post("/api/v1/admin/migrate/up", json={})
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["success"] is True
-        assert len(data["applied"]) == 2
-
-    @patch("valence.core.migrations.MigrationRunner")
-    def test_dry_run(self, mock_runner_cls, client):
-        mock_runner = MagicMock()
-        mock_runner.up.return_value = ["001_init"]
-        mock_runner_cls.return_value = mock_runner
-
-        resp = client.post("/api/v1/admin/migrate/up", json={"dry_run": True})
-        assert resp.status_code == 200
-        assert resp.json()["dry_run"] is True
 
 
 # =============================================================================
@@ -204,7 +142,7 @@ class TestMaintenance:
 
 
 class TestEmbeddingsStatus:
-    @patch("valence.lib.our_db.get_cursor")
+    @patch("valence.core.db.get_cursor")
     def test_happy_path(self, mock_gc, client):
         mock_cm, mock_cur = _mock_cursor()
         mock_gc.return_value = mock_cm
@@ -223,8 +161,8 @@ class TestEmbeddingsStatus:
 
 
 class TestEmbeddingsBackfill:
-    @patch("valence.lib.our_embeddings.service.generate_embedding")
-    @patch("valence.lib.our_db.get_cursor")
+    @patch("valence.core.embeddings.generate_embedding")
+    @patch("valence.core.db.get_cursor")
     def test_dry_run(self, mock_gc, mock_embed, client):
         mock_cm, mock_cur = _mock_cursor()
         mock_gc.return_value = mock_cm
@@ -241,7 +179,7 @@ class TestEmbeddingsMigrate:
         resp = client.post("/api/v1/admin/embeddings/migrate", json={})
         assert resp.status_code == 400
 
-    @patch("valence.lib.our_db.get_cursor")
+    @patch("valence.core.db.get_cursor")
     def test_dry_run(self, mock_gc, client):
         mock_cm, mock_cur = _mock_cursor()
         mock_gc.return_value = mock_cm
@@ -258,7 +196,7 @@ class TestEmbeddingsMigrate:
 
 
 class TestVerifyChains:
-    @patch("valence.lib.our_db.get_cursor")
+    @patch("valence.core.db.get_cursor")
     def test_healthy(self, mock_gc, client):
         mock_cm, mock_cur = _mock_cursor()
         mock_gc.return_value = mock_cm
@@ -271,7 +209,7 @@ class TestVerifyChains:
         assert data["status"] == "healthy"
         assert data["count"] == 0
 
-    @patch("valence.lib.our_db.get_cursor")
+    @patch("valence.core.db.get_cursor")
     def test_issues_found(self, mock_gc, client):
         mock_cm, mock_cur = _mock_cursor()
         mock_gc.return_value = mock_cm

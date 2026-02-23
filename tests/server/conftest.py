@@ -93,7 +93,7 @@ def mock_db_for_server():
 
         return CM()
 
-    with patch("valence.lib.our_db.get_cursor", mock_context):
+    with patch("valence.core.db.get_cursor", mock_context):
         with patch("valence.server.app.get_settings") as mock_get_settings:
             from valence.server.config import ServerSettings
 

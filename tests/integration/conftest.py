@@ -31,11 +31,11 @@ except ImportError:
 def _get_db_params() -> dict:
     """Get database connection parameters from environment."""
     return {
-        "host": os.environ.get("VKB_DB_HOST", "localhost"),
-        "port": int(os.environ.get("VKB_DB_PORT", "5432")),
-        "database": os.environ.get("VKB_DB_NAME", "valence"),
-        "user": os.environ.get("VKB_DB_USER", "valence"),
-        "password": os.environ.get("VKB_DB_PASSWORD", ""),
+        "host": os.environ.get("VALENCE_DB_HOST", "localhost"),
+        "port": int(os.environ.get("VALENCE_DB_PORT", "5432")),
+        "database": os.environ.get("VALENCE_DB_NAME", "valence"),
+        "user": os.environ.get("VALENCE_DB_USER", "valence"),
+        "password": os.environ.get("VALENCE_DB_PASSWORD", ""),
     }
 
 
@@ -72,7 +72,7 @@ def db_conn() -> Generator:
     Requires:
         - PostgreSQL database available
         - psycopg2 installed
-        - VKB_DB_* environment variables set (or defaults used)
+        - VALENCE_DB_* environment variables set (or defaults used)
 
     Yields:
         psycopg2 connection object
@@ -109,7 +109,7 @@ def db_conn_committed() -> Generator:
     Requires:
         - PostgreSQL database available
         - psycopg2 installed
-        - VKB_DB_* environment variables set (or defaults used)
+        - VALENCE_DB_* environment variables set (or defaults used)
 
     Yields:
         psycopg2 connection object with autocommit disabled

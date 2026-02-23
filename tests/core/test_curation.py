@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import os
-from unittest.mock import patch
-
 from valence.core.curation import (
     MAX_AUTO_BELIEFS_PER_SESSION,
     MIN_CAPTURE_CONFIDENCE,

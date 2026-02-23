@@ -8,7 +8,6 @@ asyncio_mode = auto (pyproject.toml), no @pytest.mark.asyncio needed.
 
 from __future__ import annotations
 
-import asyncio
 import pytest
 
 from valence.core.inference import (
@@ -21,7 +20,6 @@ from valence.core.inference import (
     InferenceResult,
     provider,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

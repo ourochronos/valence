@@ -24,15 +24,15 @@ class EmbeddingConfig:
     def from_env(cls) -> EmbeddingConfig:
         """Create config from environment variables."""
         provider = os.environ.get("VALENCE_EMBEDDING_PROVIDER", "local")
-        
+
         # Default model based on provider
         if provider == "openai":
             default_model = "text-embedding-3-small"
         else:
             default_model = "BAAI/bge-small-en-v1.5"
-        
+
         model = os.environ.get("VALENCE_EMBEDDING_MODEL", default_model)
-        
+
         return cls(
             embedding_provider=provider,
             embedding_model=model,

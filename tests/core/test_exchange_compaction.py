@@ -17,9 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from unittest.mock import MagicMock, call, patch
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from valence.core.maintenance import (
     CompactionConfig,
@@ -27,7 +25,6 @@ from valence.core.maintenance import (
     _build_compaction_summary,
     compact_exchanges,
 )
-
 
 # ============================================================================
 # Config Tests

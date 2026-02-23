@@ -346,7 +346,7 @@ async def stats_endpoint(request: Request) -> Response:
     output_format = parse_output_format(request)
 
     try:
-        from valence.lib.our_db import get_cursor
+        from valence.core.db import get_cursor
 
         with get_cursor() as cur:
             cur.execute("SELECT COUNT(*) as total FROM articles")
@@ -405,7 +405,7 @@ async def conflicts_endpoint(request: Request) -> Response:
     output_format = parse_output_format(request)
 
     try:
-        from valence.lib.our_db import get_cursor
+        from valence.core.db import get_cursor
 
         with get_cursor() as cur:
             cur.execute(

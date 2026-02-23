@@ -13,8 +13,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from valence.cli.main import app
 from valence.cli.commands.migration import cmd_migrate
+from valence.cli.main import app
 
 
 @pytest.fixture(autouse=True)

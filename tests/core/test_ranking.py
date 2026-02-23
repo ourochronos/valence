@@ -5,8 +5,6 @@ from __future__ import annotations
 import math
 from datetime import UTC, datetime, timedelta
 
-import pytest
-
 from valence.core.ranking import (
     RankingConfig,
     compute_confidence_score,

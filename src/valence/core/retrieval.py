@@ -23,8 +23,8 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from valence.lib.our_db import get_cursor
-from valence.lib.our_embeddings.service import generate_embedding
+from valence.core.db import get_cursor
+from valence.core.embeddings import generate_embedding
 
 from .ranking import multi_signal_rank
 from .response import ValenceResponse, ok

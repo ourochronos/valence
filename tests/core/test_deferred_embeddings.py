@@ -16,11 +16,10 @@ Tests cover:
 from __future__ import annotations
 
 from contextlib import contextmanager
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Helpers for constructing fake DB rows
@@ -191,8 +190,8 @@ class TestEnsureEmbedding:
             with patch.dict(
                 "sys.modules",
                 {
-                    "valence.lib.our_embeddings": MagicMock(),
-                    "valence.lib.our_embeddings.service": MagicMock(
+                    "valence.core.embeddings": MagicMock(),
+                    "valence.core.embeddings.service": MagicMock(
                         generate_embedding=MagicMock(return_value=fake_embedding),
                         vector_to_pgvector=MagicMock(return_value=fake_pgvector),
                     ),
@@ -222,8 +221,8 @@ class TestEnsureEmbedding:
             patch.dict(
                 "sys.modules",
                 {
-                    "valence.lib.our_embeddings": MagicMock(),
-                    "valence.lib.our_embeddings.service": MagicMock(
+                    "valence.core.embeddings": MagicMock(),
+                    "valence.core.embeddings.service": MagicMock(
                         generate_embedding=mock_generate,
                         vector_to_pgvector=MagicMock(return_value=fake_pgvector),
                     ),
@@ -272,8 +271,8 @@ class TestEnsureEmbedding:
             patch.dict(
                 "sys.modules",
                 {
-                    "valence.lib.our_embeddings": MagicMock(),
-                    "valence.lib.our_embeddings.service": broken_service,
+                    "valence.core.embeddings": MagicMock(),
+                    "valence.core.embeddings.service": broken_service,
                 },
             ),
         ):
@@ -365,8 +364,8 @@ class TestComputeMissingEmbeddings:
             patch.dict(
                 "sys.modules",
                 {
-                    "valence.lib.our_embeddings": MagicMock(),
-                    "valence.lib.our_embeddings.service": service_mock,
+                    "valence.core.embeddings": MagicMock(),
+                    "valence.core.embeddings.service": service_mock,
                 },
             ),
         ):
@@ -439,8 +438,8 @@ class TestComputeMissingEmbeddings:
             patch.dict(
                 "sys.modules",
                 {
-                    "valence.lib.our_embeddings": MagicMock(),
-                    "valence.lib.our_embeddings.service": service_mock,
+                    "valence.core.embeddings": MagicMock(),
+                    "valence.core.embeddings.service": service_mock,
                 },
             ),
         ):
@@ -477,8 +476,8 @@ class TestComputeMissingEmbeddings:
             patch.dict(
                 "sys.modules",
                 {
-                    "valence.lib.our_embeddings": MagicMock(),
-                    "valence.lib.our_embeddings.service": broken_service,
+                    "valence.core.embeddings": MagicMock(),
+                    "valence.core.embeddings.service": broken_service,
                 },
             ),
         ):

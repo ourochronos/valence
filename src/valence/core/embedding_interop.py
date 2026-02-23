@@ -46,18 +46,18 @@ def get_embedding_capability() -> EmbeddingCapability:
     import os
 
     provider = os.environ.get("VALENCE_EMBEDDING_PROVIDER", "local")
-    
+
     # Default dimensions based on provider
     if provider == "openai":
         default_dims = 1536
     else:
         default_dims = 384
-    
+
     dims = int(os.environ.get("VALENCE_EMBEDDING_DIMS", str(default_dims)))
-    
+
     # Get configured model or infer from dimensions
     model = os.environ.get("VALENCE_EMBEDDING_MODEL", "")
-    
+
     # Map common dimensions to known models
     dim_to_model = {
         384: ("BAAI/bge-small-en-v1.5", "bge_small_en_v15"),
@@ -81,7 +81,7 @@ def get_embedding_capability() -> EmbeddingCapability:
     else:
         # Infer from dimensions
         model, type_id = dim_to_model.get(dims, (f"unknown-{dims}d", f"custom_{dims}d"))
-    
+
     return EmbeddingCapability(model=model, dimensions=dims, type_id=type_id)
 
 

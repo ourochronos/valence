@@ -113,10 +113,10 @@ def generate_embedding(
         NotImplementedError: If local provider requested but not implemented
     """
     config = get_config()
-    
+
     if provider is None:
         provider = get_embedding_provider()
-    
+
     if model is None:
         model = config.embedding_model
 
