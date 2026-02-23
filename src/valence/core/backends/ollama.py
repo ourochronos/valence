@@ -9,7 +9,8 @@ Pull a model: ``ollama pull qwen3:30b``
 
 from __future__ import annotations
 
-from typing import Callable, Coroutine, Any
+from collections.abc import Callable, Coroutine
+from typing import Any
 
 
 def create_ollama_backend(

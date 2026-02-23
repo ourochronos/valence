@@ -9,7 +9,8 @@ Requires the ``openai`` Python package (already installed in the venv).
 from __future__ import annotations
 
 import logging
-from typing import Callable, Coroutine, Any
+from collections.abc import Callable, Coroutine
+from typing import Any
 
 logger = logging.getLogger(__name__)
 

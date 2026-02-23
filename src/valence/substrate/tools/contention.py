@@ -91,7 +91,7 @@ def contention_list(
     """
     from ...core.contention import list_contentions
 
-    # Allow callers to pass empty string to mean "no filter"  
+    # Allow callers to pass empty string to mean "no filter"
     effective_status = status if status else "detected"
 
     try:

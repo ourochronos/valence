@@ -8,7 +8,8 @@ Obtain an API key at https://cloud.cerebras.ai/.
 
 from __future__ import annotations
 
-from typing import Callable, Coroutine, Any
+from collections.abc import Callable, Coroutine
+from typing import Any
 
 
 def create_cerebras_backend(
