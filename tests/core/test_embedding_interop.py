@@ -46,12 +46,20 @@ class TestEmbeddingCapability:
 class TestGetEmbeddingCapability:
     """Test reading capability from config."""
 
-    def test_default_384(self):
+    def test_default_384(self, clean_env):
+        """Test default dimensions when no provider is set (local default)."""
         cap = get_embedding_capability()
         assert cap.dimensions == 384
         assert cap.model == "BAAI/bge-small-en-v1.5"
+    
+    def test_openai_provider_default(self, clean_env, monkeypatch):
+        """Test default dimensions when provider is set to openai."""
+        monkeypatch.setenv("VALENCE_EMBEDDING_PROVIDER", "openai")
+        cap = get_embedding_capability()
+        assert cap.dimensions == 1536
+        assert cap.model == "text-embedding-3-small"
 
-    def test_custom_dims(self, monkeypatch):
+    def test_custom_dims(self, clean_env, monkeypatch):
         monkeypatch.setenv("VALENCE_EMBEDDING_DIMS", "1536")
         cap = get_embedding_capability()
         assert cap.dimensions == 1536
