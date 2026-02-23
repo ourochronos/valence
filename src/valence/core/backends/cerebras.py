@@ -8,12 +8,14 @@ Obtain an API key at https://cloud.cerebras.ai/.
 
 from __future__ import annotations
 
+from typing import Callable, Coroutine, Any
+
 
 def create_cerebras_backend(
     api_key: str,
     model: str = "llama-4-scout-17b-16e-instruct",
     timeout: float = 30.0,
-) -> callable:
+) -> Callable[[str], Coroutine[Any, Any, str]]:
     """Return an async callable that routes inference through Cerebras Cloud.
 
     Args:
@@ -42,7 +44,7 @@ def create_cerebras_backend(
         model=model,
         timeout=timeout,
     )
-    backend.__name__ = f"cerebras_backend({model})"
+    backend.__name__ = f"cerebras_backend({model})"  # type: ignore[attr-defined]
     backend._model = model  # type: ignore[attr-defined]
     backend._provider = "cerebras"  # type: ignore[attr-defined]
     return backend

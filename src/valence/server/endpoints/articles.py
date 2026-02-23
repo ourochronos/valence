@@ -92,15 +92,15 @@ async def create_article_endpoint(request: Request) -> JSONResponse:
     try:
         from ...core.articles import create_article
 
-        result = create_article(
+        result = await create_article(
             content=content,
             title=body.get("title"),
             source_ids=body.get("source_ids"),
             author_type=body.get("author_type", "system"),
             domain_path=body.get("domain_path"),
         )
-        status = 201 if result.get("success") else 400
-        return JSONResponse(result, status_code=status)
+        status = 201 if result.to_dict().get("success") else 400
+        return JSONResponse(result.to_dict(), status_code=status)
     except Exception:
         logger.exception("Error creating article")
         return internal_error()
@@ -121,9 +121,9 @@ async def get_article_endpoint(request: Request) -> JSONResponse:
     try:
         from ...core.articles import get_article
 
-        result = get_article(article_id=article_id, include_provenance=include_provenance)
-        status = 200 if result.get("success") else 404
-        return JSONResponse(result, status_code=status)
+        result = await get_article(article_id=article_id, include_provenance=include_provenance)
+        status = 200 if result.to_dict().get("success") else 404
+        return JSONResponse(result.to_dict(), status_code=status)
     except Exception:
         logger.exception("Error fetching article %s", article_id)
         return internal_error()
@@ -151,13 +151,13 @@ async def update_article_endpoint(request: Request) -> JSONResponse:
     try:
         from ...core.articles import update_article
 
-        result = update_article(
+        result = await update_article(
             article_id=article_id,
             content=content,
             source_id=body.get("source_id"),
         )
-        status = 200 if result.get("success") else 404
-        return JSONResponse(result, status_code=status)
+        status = 200 if result.to_dict().get("success") else 404
+        return JSONResponse(result.to_dict(), status_code=status)
     except Exception:
         logger.exception("Error updating article %s", article_id)
         return internal_error()
@@ -231,14 +231,14 @@ async def link_provenance_endpoint(request: Request) -> JSONResponse:
     try:
         from ...core.provenance import link_source
 
-        result = link_source(
+        result = await link_source(
             article_id=article_id,
             source_id=source_id,
             relationship=relationship,
             notes=body.get("notes"),
         )
-        status = 201 if result.get("success") else 400
-        return JSONResponse(result, status_code=status)
+        status = 201 if result.to_dict().get("success") else 400
+        return JSONResponse(result.to_dict(), status_code=status)
     except Exception:
         logger.exception("Error linking provenance for article %s", article_id)
         return internal_error()
@@ -257,7 +257,8 @@ async def get_provenance_endpoint(request: Request) -> JSONResponse:
     try:
         from ...core.provenance import get_provenance
 
-        provenance = get_provenance(article_id=article_id)
+        result = await get_provenance(article_id=article_id)
+        provenance = result.data if result.success else []
         return _json_response(
             {
                 "success": True,
@@ -292,7 +293,8 @@ async def trace_claim_endpoint(request: Request) -> JSONResponse:
     try:
         from ...core.provenance import trace_claim
 
-        sources = trace_claim(article_id=article_id, claim_text=claim_text)
+        result = await trace_claim(article_id=article_id, claim_text=claim_text)
+        sources = result.data if result.success else []
         return _json_response(
             {
                 "success": True,

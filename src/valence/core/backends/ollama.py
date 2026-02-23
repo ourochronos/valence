@@ -9,12 +9,14 @@ Pull a model: ``ollama pull qwen3:30b``
 
 from __future__ import annotations
 
+from typing import Callable, Coroutine, Any
+
 
 def create_ollama_backend(
     host: str = "http://localhost:11434",
     model: str = "qwen3:30b",
     timeout: float = 120.0,
-) -> callable:
+) -> Callable[[str], Coroutine[Any, Any, str]]:
     """Return an async callable that routes inference through a local Ollama server.
 
     Args:
@@ -51,7 +53,7 @@ def create_ollama_backend(
         model=model,
         timeout=timeout,
     )
-    backend.__name__ = f"ollama_backend({model}@{host})"
+    backend.__name__ = f"ollama_backend({model}@{host})"  # type: ignore[attr-defined]
     backend._model = model  # type: ignore[attr-defined]
     backend._host = host  # type: ignore[attr-defined]
     backend._provider = "ollama"  # type: ignore[attr-defined]

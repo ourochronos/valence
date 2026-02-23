@@ -155,17 +155,18 @@ async def sources_list_endpoint(request: Request) -> JSONResponse:
         return err
 
     source_type = request.query_params.get("source_type")
-    limit = _parse_int(request.query_params.get("limit"), default=50, max_val=200)
-    offset = _parse_int(request.query_params.get("offset"), default=0, max_val=100_000)
+    limit = _parse_int(request.query_params.get("limit"), default=50, maximum=200)
+    offset = _parse_int(request.query_params.get("offset"), default=0, maximum=100_000)
 
     try:
         from ...core.sources import list_sources
 
-        sources = await list_sources(
+        result = await list_sources(
             source_type=source_type,
             limit=limit,
             offset=offset,
         )
+        sources = result.data if result.success else []
         return _json_response({"success": True, "sources": sources, "total_count": len(sources)})
 
     except Exception:

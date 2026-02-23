@@ -669,18 +669,16 @@ async def _process_mutation_item(operation: str, article_id: str, payload: dict)
         source_ids = [str(r["source_id"]) for r in rows]
         if source_ids:
             result = await compile_article(source_ids)
-            _success = result.success if hasattr(result, "success") else result.get("success")
-            _error = result.error if hasattr(result, "error") else result.get("error")
-            if not _success:
-                raise RuntimeError(f"recompile failed: {_error}")
+            if not result.success:
+                raise RuntimeError(f"recompile failed: {result.error}")
             # Clear degraded flag if this recompile succeeded without degradation
-            if not (result.degraded if hasattr(result, "degraded") else result.get("degraded")):
+            if not result.degraded:
                 with get_cursor() as cur:
                     cur.execute(
                         "UPDATE articles SET degraded = FALSE WHERE id = %s",
                         (article_id,),
                     )
-            _article = result.data if hasattr(result, "data") else result.get("article", {})
+            _article = result.data
             logger.info(
                 "Recompile queued for article %s → new article %s",
                 article_id,

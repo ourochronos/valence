@@ -9,7 +9,7 @@ import json
 import logging
 
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 
 from .auth_helpers import authenticate, require_scope
 from .endpoint_utils import format_response, parse_output_format
@@ -26,7 +26,7 @@ ADMIN_SCOPE = "admin:write"
 # =============================================================================
 
 
-async def admin_migrate_status(request: Request) -> JSONResponse:
+async def admin_migrate_status(request: Request) -> Response:
     """GET /api/v1/admin/migrate/status — Show migration status."""
     client = authenticate(request)
     if isinstance(client, JSONResponse):
@@ -127,7 +127,7 @@ async def admin_migrate_down(request: Request) -> JSONResponse:
 # =============================================================================
 
 
-async def admin_maintenance(request: Request) -> JSONResponse:
+async def admin_maintenance(request: Request) -> Response:
     """POST /api/v1/admin/maintenance — Run maintenance operations.
 
     JSON body fields (all optional booleans):
@@ -220,7 +220,7 @@ async def admin_maintenance(request: Request) -> JSONResponse:
 # =============================================================================
 
 
-async def admin_embeddings_status(request: Request) -> JSONResponse:
+async def admin_embeddings_status(request: Request) -> Response:
     """GET /api/v1/admin/embeddings/status — Embedding coverage status."""
     client = authenticate(request)
     if isinstance(client, JSONResponse):

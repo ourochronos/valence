@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import shutil
+from typing import Callable, Coroutine, Any
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,7 @@ def create_gemini_backend(
     model: str = "gemini-2.5-flash",
     timeout: float = 60.0,
     gemini_bin: str = "gemini",
-) -> callable:
+) -> Callable[[str], Coroutine[Any, Any, str]]:
     """Return an async callable suitable for ``InferenceProvider.configure()``.
 
     The returned backend sends prompts via **stdin** to the ``gemini`` CLI,
@@ -87,7 +88,7 @@ def create_gemini_backend(
         return response
 
     # Attach metadata for introspection / repr
-    backend.__name__ = f"gemini_backend({model})"
-    backend._model = model
-    backend._gemini_bin = gemini_bin
+    backend.__name__ = f"gemini_backend({model})"  # type: ignore[attr-defined]
+    backend._model = model  # type: ignore[attr-defined]
+    backend._gemini_bin = gemini_bin  # type: ignore[attr-defined]
     return backend

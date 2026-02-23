@@ -11,7 +11,7 @@ import json
 import logging
 
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 
 from .auth_helpers import authenticate, require_scope
 from .endpoint_utils import _parse_bool, _parse_float, _parse_int, format_response, parse_output_format
@@ -335,7 +335,7 @@ async def tensions_resolve_endpoint(request: Request) -> JSONResponse:
 # =============================================================================
 
 
-async def stats_endpoint(request: Request) -> JSONResponse:
+async def stats_endpoint(request: Request) -> Response:
     """GET /api/v1/stats — Aggregate database statistics."""
     client = authenticate(request)
     if isinstance(client, JSONResponse):
@@ -392,7 +392,7 @@ async def stats_endpoint(request: Request) -> JSONResponse:
 # =============================================================================
 
 
-async def conflicts_endpoint(request: Request) -> JSONResponse:
+async def conflicts_endpoint(request: Request) -> Response:
     """GET /api/v1/beliefs/conflicts — Detect potential contradictions."""
     client = authenticate(request)
     if isinstance(client, JSONResponse):

@@ -9,6 +9,7 @@ Requires the ``openai`` Python package (already installed in the venv).
 from __future__ import annotations
 
 import logging
+from typing import Callable, Coroutine, Any
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ def create_openai_backend(
     model: str,
     timeout: float = 60.0,
     system_prompt: str | None = None,
-) -> callable:
+) -> Callable[[str], Coroutine[Any, Any, str]]:
     """Return an async callable suitable for ``InferenceProvider.configure()``.
 
     Sends the prompt as the user message in a chat-completions request.  The
@@ -82,7 +83,7 @@ def create_openai_backend(
         )
         return content
 
-    backend.__name__ = f"openai_compat_backend({model}@{base_url})"
-    backend._model = model
-    backend._base_url = base_url
+    backend.__name__ = f"openai_compat_backend({model}@{base_url})"  # type: ignore[attr-defined]
+    backend._model = model  # type: ignore[attr-defined]
+    backend._base_url = base_url  # type: ignore[attr-defined]
     return backend
