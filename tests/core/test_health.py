@@ -212,11 +212,11 @@ class TestCheckSchema:
         from valence.core.health import check_schema
 
         with patch("valence.core.health.table_exists") as mock_exists:
-            mock_exists.side_effect = lambda t: t != "beliefs"  # beliefs missing
+            mock_exists.side_effect = lambda t: t != "articles"  # articles missing
 
             ok, missing = check_schema()
             assert ok is False
-            assert "beliefs" in missing
+            assert "articles" in missing
 
     def test_database_exception_treated_as_missing(self, env_with_db_vars):
         """Should treat DatabaseException as missing table."""

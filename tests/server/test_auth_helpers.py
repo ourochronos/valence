@@ -54,12 +54,10 @@ class TestAuthenticate:
     def test_invalid_token_returns_401(self, mock_verify, mock_request):
         mock_verify.return_value = None
 
-        with patch("valence.server.auth_helpers.get_settings") as mock_settings:
-            mock_settings.return_value.oauth_enabled = False
-            request = mock_request("Bearer invalid_token")
-            result = authenticate(request)
-            assert isinstance(result, JSONResponse)
-            assert result.status_code == 401
+        request = mock_request("Bearer invalid_token")
+        result = authenticate(request)
+        assert isinstance(result, JSONResponse)
+        assert result.status_code == 401
 
 
 class TestRequireScope:

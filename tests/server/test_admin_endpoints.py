@@ -218,7 +218,7 @@ class TestEmbeddingsStatus:
         assert resp.status_code == 200
         data = resp.json()
         assert data["success"] is True
-        assert data["stats"]["total_beliefs"] == 100
+        assert data["stats"]["total_articles"] == 100
         assert data["stats"]["with_embeddings"] == 80
 
 

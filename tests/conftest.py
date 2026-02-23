@@ -92,13 +92,55 @@ def pytest_collection_modifyitems(config, items):
 
 @pytest.fixture
 def clean_env(monkeypatch):
-    """Remove all VKB_ and VALENCE_ environment variables."""
+    """Remove all VKB_ and VALENCE_ environment variables and prevent .env file loading."""
     env_prefixes = ("VKB_", "VALENCE_", "OPENAI_")
     for key in list(os.environ.keys()):
         if any(key.startswith(prefix) for prefix in env_prefixes):
             monkeypatch.delenv(key, raising=False)
+    
+    # Prevent pydantic-settings from reading .env file by patching model_config
+    from valence.core.config import CoreSettings
+    from pydantic_settings import SettingsConfigDict
+    
+    # Store originals
+    original_core_config = CoreSettings.model_config
+    
+    # Patch CoreSettings
+    CoreSettings.model_config = SettingsConfigDict(
+        env_file=None,
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+    
+    # Also patch ServerSettings if it's already loaded
+    original_server_config = None
+    try:
+        import sys
+        if 'valence.server.config' in sys.modules:
+            from valence.server.config import ServerSettings
+            original_server_config = ServerSettings.model_config
+            ServerSettings.model_config = SettingsConfigDict(
+                env_prefix="VALENCE_",
+                env_file=None,
+                env_file_encoding="utf-8",
+                extra="ignore",
+            )
+    except Exception:
+        pass
+    
     clear_config_cache()
     yield
+    
+    # Restore original configs
+    CoreSettings.model_config = original_core_config
+    if original_server_config is not None:
+        try:
+            import sys
+            if 'valence.server.config' in sys.modules:
+                from valence.server.config import ServerSettings
+                ServerSettings.model_config = original_server_config
+        except Exception:
+            pass
     clear_config_cache()
 
 
