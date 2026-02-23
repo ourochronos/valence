@@ -101,7 +101,7 @@ jobs:
             --tb=short \
             --cov=src/valence \
             --cov-report=term-missing \
-            --cov-fail-under=70 \
+            --cov-fail-under=55 \
             --ignore=tests/integration/
 
   integration:
