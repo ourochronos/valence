@@ -49,6 +49,7 @@ class ConfigRegistry:
     # -----------------------------------------------------------------------
 
     embedding_provider: str = "local"
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
     embedding_model_path: str = "BAAI/bge-small-en-v1.5"
     embedding_dims: int = 384
     embedding_device: str = "cpu"
@@ -91,6 +92,7 @@ class ConfigRegistry:
 
         Embedding:
           - ``VALENCE_EMBEDDING_PROVIDER``
+          - ``VALENCE_EMBEDDING_MODEL``
           - ``VALENCE_EMBEDDING_MODEL_PATH``
           - ``VALENCE_EMBEDDING_DIMS``
           - ``VALENCE_EMBEDDING_DEVICE``
@@ -139,6 +141,16 @@ class ConfigRegistry:
                 return default
             return default
 
+        provider = _get("VALENCE_EMBEDDING_PROVIDER", default="local")
+        
+        # Default model and dims based on provider
+        if provider == "openai":
+            default_model = "text-embedding-3-small"
+            default_dims = 1536
+        else:
+            default_model = "BAAI/bge-small-en-v1.5"
+            default_dims = 384
+        
         return cls(
             db_host=_get("VKB_DB_HOST", "ORO_DB_HOST", default="localhost"),
             db_port=_get_int("VKB_DB_PORT", "ORO_DB_PORT", default=5432),
@@ -147,9 +159,10 @@ class ConfigRegistry:
             db_password=_get("VKB_DB_PASSWORD", "ORO_DB_PASSWORD", default=""),
             db_pool_min=_get_int("VALENCE_DB_POOL_MIN", default=5),
             db_pool_max=_get_int("VALENCE_DB_POOL_MAX", default=20),
-            embedding_provider=_get("VALENCE_EMBEDDING_PROVIDER", default="local"),
-            embedding_model_path=_get("VALENCE_EMBEDDING_MODEL_PATH", default="BAAI/bge-small-en-v1.5"),
-            embedding_dims=_get_int("VALENCE_EMBEDDING_DIMS", default=384),
+            embedding_provider=provider,
+            embedding_model=_get("VALENCE_EMBEDDING_MODEL", default=default_model),
+            embedding_model_path=_get("VALENCE_EMBEDDING_MODEL_PATH", default=default_model),
+            embedding_dims=_get_int("VALENCE_EMBEDDING_DIMS", default=default_dims),
             embedding_device=_get("VALENCE_EMBEDDING_DEVICE", default="cpu"),
             openai_api_key=_get("OPENAI_API_KEY", default=""),
             async_embeddings=_get_bool("VALENCE_ASYNC_EMBEDDINGS"),

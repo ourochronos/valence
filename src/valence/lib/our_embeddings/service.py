@@ -95,14 +95,14 @@ def generate_local_embedding(text: str) -> list[float]:
 
 def generate_embedding(
     text: str,
-    model: str = "text-embedding-3-small",
+    model: str | None = None,
     provider: EmbeddingProvider | None = None,
 ) -> list[float]:
     """Generate embedding for text.
 
     Args:
         text: Text to embed
-        model: Model name (for OpenAI provider)
+        model: Model name (defaults to config.embedding_model)
         provider: Embedding provider (defaults to env config)
 
     Returns:
@@ -112,8 +112,13 @@ def generate_embedding(
         ValueError: If provider not configured correctly
         NotImplementedError: If local provider requested but not implemented
     """
+    config = get_config()
+    
     if provider is None:
         provider = get_embedding_provider()
+    
+    if model is None:
+        model = config.embedding_model
 
     # Truncate very long text
     if len(text) > 8000:
