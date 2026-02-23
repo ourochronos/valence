@@ -10,9 +10,6 @@ import asyncio
 import logging
 from typing import Any
 
-from . import _common
-from ._common import get_cursor
-
 logger = logging.getLogger(__name__)
 
 

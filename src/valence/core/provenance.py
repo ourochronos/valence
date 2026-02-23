@@ -17,7 +17,7 @@ from uuid import UUID
 from our_db import get_cursor
 
 from .embedding_interop import text_similarity
-from .response import ValenceResponse, ok, err
+from .response import ValenceResponse, err, ok
 
 logger = logging.getLogger(__name__)
 

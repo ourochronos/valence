@@ -10,15 +10,13 @@ import json
 import logging
 from typing import Any
 
-from . import _common
-from ._common import get_cursor
-
 from ...core.sources import (
     RELIABILITY_DEFAULTS,
     VALID_SOURCE_TYPES,
     _compute_fingerprint,
     _row_to_dict,
 )
+from ._common import get_cursor
 
 logger = logging.getLogger(__name__)
 

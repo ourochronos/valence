@@ -14,12 +14,10 @@ import logging
 import os
 from datetime import datetime
 from typing import Any
-from uuid import UUID
 
 from our_db import get_cursor
 
-from .embedding_interop import text_similarity
-from .response import ValenceResponse, ok, err
+from .response import ValenceResponse, err, ok
 
 logger = logging.getLogger(__name__)
 
@@ -550,7 +548,7 @@ async def merge_articles(
         else:
             merged_title = None
 
-        separator = f"\n\n---\n\n"
+        separator = "\n\n---\n\n"
         merged_content = f"{content_a}{separator}{content_b}"
 
         token_count = _count_tokens(merged_content)

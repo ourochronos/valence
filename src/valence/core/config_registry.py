@@ -17,7 +17,7 @@ Implements WU-14 (C12, DR-10).
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
@@ -77,7 +77,7 @@ class ConfigRegistry:
     # -----------------------------------------------------------------------
 
     @classmethod
-    def from_env(cls) -> "ConfigRegistry":
+    def from_env(cls) -> ConfigRegistry:
         """Load configuration from environment variables.
 
         Variable priority (first match wins):

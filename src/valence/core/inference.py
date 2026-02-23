@@ -13,8 +13,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from dataclasses import dataclass, field
-from typing import Any, Callable
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -266,11 +267,11 @@ class InferenceResult:
     parsed: dict | None = None
 
     @classmethod
-    def success(cls, content: str, task_type: str, parsed: dict | None = None) -> "InferenceResult":
+    def success(cls, content: str, task_type: str, parsed: dict | None = None) -> InferenceResult:
         return cls(content=content, degraded=False, task_type=task_type, error=None, parsed=parsed)
 
     @classmethod
-    def degraded_result(cls, task_type: str, error: str) -> "InferenceResult":
+    def degraded_result(cls, task_type: str, error: str) -> InferenceResult:
         return cls(content="", degraded=True, task_type=task_type, error=error, parsed=None)
 
 

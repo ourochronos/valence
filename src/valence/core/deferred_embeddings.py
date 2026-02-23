@@ -35,7 +35,6 @@ _EMBEDDABLE_TABLES: dict[str, str] = {
 # our_db is required; our_embeddings is optional (graceful degradation).
 from our_db import get_cursor  # noqa: E402
 
-
 # ---------------------------------------------------------------------------
 # Internal sync helpers (run in thread pool via asyncio.to_thread)
 # ---------------------------------------------------------------------------

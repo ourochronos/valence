@@ -23,7 +23,6 @@ import sys
 from ..http_client import ValenceAPIError, ValenceConnectionError, get_client
 from ..output import output_error, output_result
 
-
 # ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------

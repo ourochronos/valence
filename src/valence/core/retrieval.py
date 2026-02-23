@@ -22,7 +22,7 @@ from typing import Any
 
 from our_db import get_cursor
 
-from .ranking import compute_confidence_score, multi_signal_rank
+from .ranking import multi_signal_rank
 from .response import ValenceResponse, ok
 
 logger = logging.getLogger(__name__)

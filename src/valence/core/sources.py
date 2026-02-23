@@ -18,7 +18,7 @@ from typing import Any
 
 from our_db import get_cursor
 
-from .response import ValenceResponse, ok, err
+from .response import ValenceResponse, err, ok
 
 logger = logging.getLogger(__name__)
 

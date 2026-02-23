@@ -76,10 +76,10 @@ def create_gemini_backend(
                 proc.communicate(input=prompt.encode("utf-8")),
                 timeout=timeout,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             proc.kill()
             await proc.wait()
-            raise asyncio.TimeoutError(
+            raise TimeoutError(
                 f"Gemini CLI timed out after {timeout}s "
                 f"(model={model!r}, prompt_len={len(prompt)})"
             )

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, date
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -38,8 +38,8 @@ class _Encoder(json.JSONEncoder):
 def _json_response(data, **kw):
     body = json.dumps(data, cls=_Encoder)
     return JSONResponse(content=json.loads(body), **kw)
-from ..endpoint_utils import _parse_bool, _parse_int
-from ..errors import internal_error, invalid_json_error, missing_field_error, validation_error
+from ..endpoint_utils import _parse_bool
+from ..errors import internal_error, invalid_json_error, missing_field_error
 
 logger = logging.getLogger(__name__)
 

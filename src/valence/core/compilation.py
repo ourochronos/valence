@@ -12,24 +12,25 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Callable
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any
 from uuid import UUID
 
 from our_db import get_cursor
 
-from valence.core.response import ValenceResponse, ok, err
-
 from valence.core.inference import (
-    TASK_CLASSIFY,
+    RELATIONSHIP_ENUM,
     TASK_COMPILE,
     TASK_OUTPUT_SCHEMAS,
     TASK_UPDATE,
     InferenceSchemaError,
-    RELATIONSHIP_ENUM,
-    provider as _inference_provider,
     validate_output,
 )
+from valence.core.inference import (
+    provider as _inference_provider,
+)
+from valence.core.response import ValenceResponse, err, ok
 
 logger = logging.getLogger(__name__)
 
