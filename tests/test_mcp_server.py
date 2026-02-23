@@ -45,7 +45,7 @@ class TestToolHandlers:
     def test_substrate_handlers_exist(self):
         """All substrate tool handlers should be registered."""
         from valence.mcp_server import SUBSTRATE_HANDLERS
-        from valence.substrate.tools import SUBSTRATE_TOOLS
+        from valence.mcp_server import SUBSTRATE_TOOLS
 
         substrate_tool_names = {t.name for t in SUBSTRATE_TOOLS}
         for tool_name in substrate_tool_names:
@@ -54,7 +54,7 @@ class TestToolHandlers:
     def test_vkb_handlers_exist(self):
         """All VKB tool handlers should be registered."""
         from valence.mcp_server import VKB_HANDLERS
-        from valence.vkb.tools import VKB_TOOLS
+        # VKB removed from valence.vkb.tools import VKB_TOOLS
 
         vkb_tool_names = {t.name for t in VKB_TOOLS}
         for tool_name in vkb_tool_names:
@@ -88,7 +88,7 @@ class TestKnowledgeSearchPath:
 
     def test_knowledge_search_imports_retrieve(self):
         """knowledge_search should import from valence.core.retrieval."""
-        from valence.substrate.tools.retrieval import knowledge_search
+        from valence.mcp_server.retrieval import knowledge_search
 
         # Verify the function exists
         assert callable(knowledge_search)
@@ -101,7 +101,7 @@ class TestKnowledgeSearchPath:
 
     def test_knowledge_search_uses_core_retrieval(self):
         """knowledge_search should use valence.core.retrieval.retrieve (not old search)."""
-        from valence.substrate.tools.retrieval import knowledge_search
+        from valence.mcp_server.retrieval import knowledge_search
 
         # Verify the function exists
         assert callable(knowledge_search)
@@ -115,7 +115,7 @@ class TestKnowledgeSearchPath:
 
     def test_knowledge_search_validates_query(self):
         """knowledge_search should reject empty queries."""
-        from valence.substrate.tools.retrieval import knowledge_search
+        from valence.mcp_server.retrieval import knowledge_search
 
         result = knowledge_search(query="", limit=10)
         assert result["success"] is False

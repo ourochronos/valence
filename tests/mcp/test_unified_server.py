@@ -1,6 +1,6 @@
 """Tests for the unified MCP server — updated for v2 (WU-11).
 
-The unified server combines v2 substrate tools (16) and VKB tools.
+The unified server combines v2 substrate tools.
 Resources are now valence://articles/recent and valence://stats.
 """
 
@@ -10,9 +10,7 @@ import json
 
 import pytest
 
-from valence.mcp_server import ALL_TOOLS, call_tool, list_tools, server
-from valence.substrate.tools import SUBSTRATE_TOOLS
-from valence.vkb.tools import VKB_HANDLERS
+from valence.mcp_server import SUBSTRATE_TOOLS, call_tool, list_tools, server, TOOL_HANDLERS
 
 # ============================================================================
 # Expected v2 tool names
@@ -50,34 +48,23 @@ class TestToolList:
         actual = {t.name for t in SUBSTRATE_TOOLS}
         assert actual == EXPECTED_SUBSTRATE_TOOLS, f"Extra: {actual - EXPECTED_SUBSTRATE_TOOLS}\nMissing: {EXPECTED_SUBSTRATE_TOOLS - actual}"
 
-    def test_all_tools_contains_expected_count(self):
-        """ALL_TOOLS should contain substrate (16) + VKB tools."""
-        expected = len(SUBSTRATE_TOOLS) + len(VKB_HANDLERS)
-        assert len(ALL_TOOLS) == expected, f"Expected {expected} tools, got {len(ALL_TOOLS)}"
-
     def test_no_duplicate_tool_names(self):
-        """Tool names must be unique across both servers."""
-        names = [t.name for t in ALL_TOOLS]
+        """Tool names must be unique."""
+        names = [t.name for t in SUBSTRATE_TOOLS]
         duplicates = [n for n in names if names.count(n) > 1]
         assert not duplicates, f"Duplicate tools: {duplicates}"
 
     def test_substrate_tools_present(self):
-        """All v2 substrate tool names should be in the combined list."""
-        tool_names = {t.name for t in ALL_TOOLS}
+        """All v2 substrate tool names should be in the list."""
+        tool_names = {t.name for t in SUBSTRATE_TOOLS}
         for name in EXPECTED_SUBSTRATE_TOOLS:
             assert name in tool_names, f"Missing substrate tool: {name}"
-
-    def test_vkb_tools_present(self):
-        """All VKB tool names should be in the combined list."""
-        tool_names = {t.name for t in ALL_TOOLS}
-        for name in VKB_HANDLERS:
-            assert name in tool_names, f"Missing VKB tool: {name}"
 
     @pytest.mark.asyncio
     async def test_list_tools_returns_all(self):
         """list_tools() handler should return all tools."""
         result = await list_tools()
-        assert len(result) == len(ALL_TOOLS)
+        assert len(result) == len(SUBSTRATE_TOOLS)
 
 
 class TestToolRouting:
@@ -85,7 +72,7 @@ class TestToolRouting:
 
     @pytest.mark.asyncio
     async def test_substrate_tool_routes_correctly(self, mock_get_cursor):
-        """Substrate tool names should route to substrate handler."""
+        """Substrate tool names should route to handler."""
         mock_cur = mock_get_cursor.__enter__.return_value
         mock_cur.fetchall.return_value = []
         mock_cur.fetchone.return_value = None
@@ -96,17 +83,6 @@ class TestToolRouting:
         data = json.loads(result[0].text)
         # Empty query returns an error
         assert "success" in data
-
-    @pytest.mark.asyncio
-    async def test_vkb_tool_routes_to_vkb(self, mock_get_cursor):
-        """VKB tool names should route to VKB handler."""
-        mock_cur = mock_get_cursor.__enter__.return_value
-        mock_cur.fetchall.return_value = []
-
-        result = await call_tool("session_list", {})
-        assert len(result) == 1
-        data = json.loads(result[0].text)
-        assert "sessions" in data or "error" in data or "success" in data
 
     @pytest.mark.asyncio
     async def test_unknown_tool_returns_error(self):

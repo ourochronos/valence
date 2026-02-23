@@ -25,8 +25,7 @@ from valence.server.unified_server import (
     _get_usage_instructions,
     create_server,
 )
-from valence.substrate.tools import SUBSTRATE_TOOLS, handle_substrate_tool
-from valence.vkb.tools import VKB_TOOLS, handle_vkb_tool
+from valence.mcp_server import SUBSTRATE_TOOLS, TOOL_HANDLERS
 
 # =============================================================================
 # FIXTURES

@@ -45,27 +45,27 @@ class TestMCPToolList:
 
     def test_substrate_tools_count(self):
         """SUBSTRATE_TOOLS should have exactly 16 entries."""
-        from valence.substrate.tools.definitions import SUBSTRATE_TOOLS
+        from valence.mcp_server.definitions import SUBSTRATE_TOOLS
 
         assert len(SUBSTRATE_TOOLS) == 16, f"Expected 16 tools, got {len(SUBSTRATE_TOOLS)}. Tools: {[t.name for t in SUBSTRATE_TOOLS]}"
 
     def test_substrate_tools_names_exact(self):
         """SUBSTRATE_TOOLS names must exactly match EXPECTED_TOOLS."""
-        from valence.substrate.tools.definitions import SUBSTRATE_TOOLS
+        from valence.mcp_server.definitions import SUBSTRATE_TOOLS
 
         actual = {t.name for t in SUBSTRATE_TOOLS}
         assert actual == EXPECTED_TOOLS, f"Extra tools: {actual - EXPECTED_TOOLS}\nMissing tools: {EXPECTED_TOOLS - actual}"
 
     def test_all_tools_have_descriptions(self):
         """Every tool must have a non-empty description."""
-        from valence.substrate.tools.definitions import SUBSTRATE_TOOLS
+        from valence.mcp_server.definitions import SUBSTRATE_TOOLS
 
         for tool in SUBSTRATE_TOOLS:
             assert tool.description and tool.description.strip(), f"Tool '{tool.name}' has no description"
 
     def test_all_tools_have_input_schema(self):
         """Every tool must have an inputSchema dict."""
-        from valence.substrate.tools.definitions import SUBSTRATE_TOOLS
+        from valence.mcp_server.definitions import SUBSTRATE_TOOLS
 
         for tool in SUBSTRATE_TOOLS:
             assert isinstance(tool.inputSchema, dict), f"Tool '{tool.name}' has no inputSchema"
@@ -73,7 +73,7 @@ class TestMCPToolList:
 
     def test_handlers_registered_for_all_tools(self):
         """Every spec tool should be registered in SUBSTRATE_HANDLERS."""
-        from valence.substrate.tools.handlers import SUBSTRATE_HANDLERS
+        from valence.mcp_server.handlers import SUBSTRATE_HANDLERS
 
         for tool_name in EXPECTED_TOOLS:
             assert tool_name in SUBSTRATE_HANDLERS, f"Tool '{tool_name}' missing from SUBSTRATE_HANDLERS"
@@ -93,7 +93,7 @@ class TestHandlerDispatch:
 
     def test_unknown_tool_returns_error(self):
         """Dispatching an unknown tool returns an error dict."""
-        from valence.substrate.tools.handlers import handle_substrate_tool
+        from valence.mcp_server.handlers import handle_substrate_tool
 
         result = handle_substrate_tool("nonexistent_tool", {})
         assert result["success"] is False
@@ -101,14 +101,14 @@ class TestHandlerDispatch:
 
     def test_source_ingest_missing_content(self):
         """source_ingest with empty content returns validation error (no DB needed)."""
-        from valence.substrate.tools.handlers import handle_substrate_tool
+        from valence.mcp_server.handlers import handle_substrate_tool
 
         result = handle_substrate_tool("source_ingest", {"content": "", "source_type": "document"})
         assert result["success"] is False
 
     def test_source_ingest_invalid_type(self):
         """source_ingest with unknown source_type returns validation error."""
-        from valence.substrate.tools.handlers import handle_substrate_tool
+        from valence.mcp_server.handlers import handle_substrate_tool
 
         result = handle_substrate_tool(
             "source_ingest",
@@ -119,7 +119,7 @@ class TestHandlerDispatch:
 
     def test_source_search_empty_query(self):
         """source_search with empty query returns empty results without DB error."""
-        from valence.substrate.tools.handlers import handle_substrate_tool
+        from valence.mcp_server.handlers import handle_substrate_tool
 
         # Mock the DB cursor so no real connection is needed
         mock_cursor = MagicMock()
@@ -135,14 +135,14 @@ class TestHandlerDispatch:
 
     def test_knowledge_search_empty_query(self):
         """knowledge_search with empty query returns validation error."""
-        from valence.substrate.tools.handlers import handle_substrate_tool
+        from valence.mcp_server.handlers import handle_substrate_tool
 
         result = handle_substrate_tool("knowledge_search", {"query": ""})
         assert result["success"] is False
 
     def test_article_create_missing_content(self):
         """article_create with no content returns error (validated before DB access)."""
-        from valence.substrate.tools.handlers import handle_substrate_tool
+        from valence.mcp_server.handlers import handle_substrate_tool
 
         # core.articles.create_article validates content before DB access
         result = handle_substrate_tool("article_create", {"content": ""})
@@ -150,28 +150,28 @@ class TestHandlerDispatch:
 
     def test_article_compile_empty_sources(self):
         """article_compile with empty source_ids returns validation error."""
-        from valence.substrate.tools.handlers import handle_substrate_tool
+        from valence.mcp_server.handlers import handle_substrate_tool
 
         result = handle_substrate_tool("article_compile", {"source_ids": []})
         assert result["success"] is False
 
     def test_article_split_missing_id(self):
         """article_split with empty article_id returns validation error."""
-        from valence.substrate.tools.handlers import handle_substrate_tool
+        from valence.mcp_server.handlers import handle_substrate_tool
 
         result = handle_substrate_tool("article_split", {"article_id": ""})
         assert result["success"] is False
 
     def test_article_merge_missing_ids(self):
         """article_merge with missing IDs returns validation error."""
-        from valence.substrate.tools.handlers import handle_substrate_tool
+        from valence.mcp_server.handlers import handle_substrate_tool
 
         result = handle_substrate_tool("article_merge", {"article_id_a": "", "article_id_b": ""})
         assert result["success"] is False
 
     def test_admin_forget_invalid_type(self):
         """admin_forget with bad target_type returns validation error."""
-        from valence.substrate.tools.handlers import handle_substrate_tool
+        from valence.mcp_server.handlers import handle_substrate_tool
 
         result = handle_substrate_tool("admin_forget", {"target_type": "belief", "target_id": "some-uuid"})
         assert result["success"] is False
@@ -179,14 +179,14 @@ class TestHandlerDispatch:
 
     def test_admin_forget_missing_id(self):
         """admin_forget with empty target_id returns validation error."""
-        from valence.substrate.tools.handlers import handle_substrate_tool
+        from valence.mcp_server.handlers import handle_substrate_tool
 
         result = handle_substrate_tool("admin_forget", {"target_type": "source", "target_id": ""})
         assert result["success"] is False
 
     def test_admin_maintenance_no_operations(self):
         """admin_maintenance with no operations selected returns error."""
-        from valence.substrate.tools.handlers import handle_substrate_tool
+        from valence.mcp_server.handlers import handle_substrate_tool
 
         result = handle_substrate_tool(
             "admin_maintenance",
@@ -200,7 +200,7 @@ class TestHandlerDispatch:
 
     def test_contention_list_callable(self):
         """contention_list handler exists and is callable."""
-        from valence.substrate.tools.handlers import SUBSTRATE_HANDLERS
+        from valence.mcp_server.handlers import SUBSTRATE_HANDLERS
 
         assert "contention_list" in SUBSTRATE_HANDLERS
         handler = SUBSTRATE_HANDLERS["contention_list"]
@@ -208,7 +208,7 @@ class TestHandlerDispatch:
 
     def test_contention_resolve_missing_id(self):
         """contention_resolve with empty contention_id returns error."""
-        from valence.substrate.tools.handlers import handle_substrate_tool
+        from valence.mcp_server.handlers import handle_substrate_tool
 
         result = handle_substrate_tool(
             "contention_resolve",
@@ -218,7 +218,7 @@ class TestHandlerDispatch:
 
     def test_provenance_trace_callable(self):
         """provenance_trace handler is registered and callable."""
-        from valence.substrate.tools.handlers import SUBSTRATE_HANDLERS
+        from valence.mcp_server.handlers import SUBSTRATE_HANDLERS
 
         assert "provenance_trace" in SUBSTRATE_HANDLERS
         assert callable(SUBSTRATE_HANDLERS["provenance_trace"])
@@ -376,31 +376,31 @@ class TestImports:
 
     def test_definitions_imports(self):
         """definitions.py should import without error."""
-        from valence.substrate.tools import definitions  # noqa: F401
+        from valence.mcp_server import definitions  # noqa: F401
 
     def test_handlers_imports(self):
         """handlers.py should import without error."""
-        from valence.substrate.tools import handlers  # noqa: F401
+        from valence.mcp_server import handlers  # noqa: F401
 
     def test_sources_tool_imports(self):
         """sources tool module should import without error."""
-        from valence.substrate.tools import sources  # noqa: F401
+        from valence.mcp_server import sources  # noqa: F401
 
     def test_articles_tool_imports(self):
         """articles tool module should import without error."""
-        from valence.substrate.tools import articles  # noqa: F401
+        from valence.mcp_server import articles  # noqa: F401
 
     def test_retrieval_tool_imports(self):
         """retrieval tool module should import without error."""
-        from valence.substrate.tools import retrieval  # noqa: F401
+        from valence.mcp_server import retrieval  # noqa: F401
 
     def test_contention_tool_imports(self):
         """contention tool module should import without error."""
-        from valence.substrate.tools import contention  # noqa: F401
+        from valence.mcp_server import contention  # noqa: F401
 
     def test_admin_tool_imports(self):
         """admin tool module should import without error."""
-        from valence.substrate.tools import admin  # noqa: F401
+        from valence.mcp_server import admin  # noqa: F401
 
     def test_mcp_server_imports(self):
         """mcp_server.py should import without error."""

@@ -363,8 +363,7 @@ async def _dispatch_method(method: str, params: dict[str, Any]) -> Any:
         MethodNotFoundError: If method is not found
         InvalidParamsError: If parameters are invalid
     """
-    from ..substrate.tools import SUBSTRATE_TOOLS, handle_substrate_tool
-    from ..vkb.tools import VKB_TOOLS, handle_vkb_tool
+    from ..mcp_server import SUBSTRATE_TOOLS, TOOL_HANDLERS
 
     settings = get_settings()
 
@@ -393,7 +392,7 @@ async def _dispatch_method(method: str, params: dict[str, Any]) -> Any:
 
     elif method == "tools/list":
         tools = []
-        for tool in SUBSTRATE_TOOLS + VKB_TOOLS:
+        for tool in SUBSTRATE_TOOLS:
             # Add version to inputSchema for tool versioning
             schema_with_version = {
                 **tool.inputSchema,
@@ -415,16 +414,12 @@ async def _dispatch_method(method: str, params: dict[str, Any]) -> Any:
         if not tool_name:
             raise InvalidParamsError("Missing tool name")
 
-        # Route to appropriate handler
-        substrate_tool_names = [t.name for t in SUBSTRATE_TOOLS]
-        vkb_tool_names = [t.name for t in VKB_TOOLS]
-
-        if tool_name in substrate_tool_names:
-            result = handle_substrate_tool(tool_name, arguments)
-        elif tool_name in vkb_tool_names:
-            result = handle_vkb_tool(tool_name, arguments)
-        else:
+        # Route to handler
+        handler = TOOL_HANDLERS.get(tool_name)
+        if not handler:
             raise MethodNotFoundError(f"Unknown tool: {tool_name}")
+
+        result = handler(**arguments)
 
         # Return in MCP format
         return {
@@ -636,19 +631,13 @@ use `pattern_record` to capture them.
 
 def _get_tool_reference() -> str:
     """Get the tool reference resource content."""
-    from ..substrate.tools import SUBSTRATE_TOOLS
-    from ..vkb.tools import VKB_TOOLS
+    from ..mcp_server import SUBSTRATE_TOOLS
 
     lines = ["# Valence Tool Reference\n"]
 
     lines.append("## Knowledge Substrate Tools\n")
     for tool in SUBSTRATE_TOOLS:
         # Just first line of description
-        desc = tool.description.split("\n")[0] if tool.description else ""
-        lines.append(f"- **{tool.name}**: {desc}")
-
-    lines.append("\n## Conversation Tracking Tools\n")
-    for tool in VKB_TOOLS:
         desc = tool.description.split("\n")[0] if tool.description else ""
         lines.append(f"- **{tool.name}**: {desc}")
 
@@ -663,8 +652,7 @@ def _get_context_prompt() -> str:
 1. **Query First**: Before answering questions about past context, decisions, or preferences,
    use `knowledge_search` to search the knowledge base.
 2. **Capture Proactively**: When valuable information emerges (decisions, preferences, insights),
-   use `source_ingest` or `insight_extract` to store it for future reference.
-3. **Track Sessions**: Use `session_start` and `session_end` to maintain conversation context.
+   use `source_ingest` to store it for future reference.
 
 This ensures your responses are grounded in accumulated knowledge and that new insights
 are preserved for future conversations.
@@ -781,8 +769,7 @@ async def info_endpoint(request: Request) -> JSONResponse:
     """Server info endpoint (no auth required)."""
     settings = get_settings()
 
-    from ..substrate.tools import SUBSTRATE_TOOLS
-    from ..vkb.tools import VKB_TOOLS
+    from ..mcp_server import SUBSTRATE_TOOLS
 
     response_data: dict[str, Any] = {
         "server": settings.server_name,
@@ -792,9 +779,7 @@ async def info_endpoint(request: Request) -> JSONResponse:
         "protocolVersion": "2024-11-05",
         "transport": "http",
         "tools": {
-            "substrate": len(SUBSTRATE_TOOLS),
-            "vkb": len(VKB_TOOLS),
-            "total": len(SUBSTRATE_TOOLS) + len(VKB_TOOLS),
+            "total": len(SUBSTRATE_TOOLS),
         },
         "endpoints": {
             "mcp": "/api/v1/mcp",

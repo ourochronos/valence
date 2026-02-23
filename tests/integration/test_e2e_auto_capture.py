@@ -61,7 +61,7 @@ class TestAutoCapturePipeline:
 
     def test_session_lifecycle_creates_beliefs(self, mock_get_cursor):
         """Full flow: session_start → exchange_add → session_end."""
-        from valence.vkb.tools import exchange_add, session_end, session_start
+        # VKB removed from valence.vkb.tools import exchange_add, session_end, session_start
 
         session_id = uuid4()
         now = datetime.now()
@@ -132,7 +132,7 @@ class TestAutoCapturePipeline:
 
     def test_insight_extract_creates_belief_with_session_link(self, mock_get_cursor):
         """insight_extract creates a belief and links it to the session."""
-        from valence.vkb.tools import insight_extract
+        # VKB removed from valence.vkb.tools import insight_extract
 
         session_id = uuid4()
         belief_id = uuid4()
@@ -181,7 +181,7 @@ class TestAutoCapturePipeline:
 
     def test_insight_extract_dedup_on_second_call(self, mock_get_cursor):
         """Second insight_extract with same content deduplicates."""
-        from valence.vkb.tools import insight_extract
+        # VKB removed from valence.vkb.tools import insight_extract
 
         session_id = uuid4()
         existing_id = uuid4()

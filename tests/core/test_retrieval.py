@@ -765,7 +765,7 @@ class TestKnowledgeSearchTool:
     """Tests for the synchronous MCP tool wrapper."""
 
     def test_empty_query_returns_error(self):
-        from valence.substrate.tools.retrieval import knowledge_search
+        from valence.mcp_server.retrieval import knowledge_search
 
         result = knowledge_search("")
         assert result["success"] is False
@@ -773,7 +773,7 @@ class TestKnowledgeSearchTool:
 
     def test_successful_search_returns_results(self):
         """knowledge_search should return {success, results, total_count}."""
-        from valence.substrate.tools.retrieval import knowledge_search
+        from valence.mcp_server.retrieval import knowledge_search
 
         mock_results = [
             {
@@ -805,7 +805,7 @@ class TestKnowledgeSearchTool:
 
     def test_exception_returns_error(self):
         """Any exception inside retrieve should be caught and returned as error."""
-        from valence.substrate.tools.retrieval import knowledge_search
+        from valence.mcp_server.retrieval import knowledge_search
 
         with patch("valence.substrate.tools.retrieval.asyncio") as mock_asyncio:
             mock_asyncio.get_event_loop.side_effect = RuntimeError("no loop")
