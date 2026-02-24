@@ -125,6 +125,31 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     )
     ollama_p.set_defaults(func=cmd_config_inference_ollama)
 
+    # valence config right-sizing ...
+    right_sizing_parser = config_sub.add_parser(
+        "right-sizing",
+        help="Configure article right-sizing (token limits)",
+    )
+    right_sizing_parser.add_argument(
+        "--target",
+        type=int,
+        metavar="N",
+        help="Target token count for compiled articles",
+    )
+    right_sizing_parser.add_argument(
+        "--max",
+        type=int,
+        metavar="N",
+        help="Maximum token count for compiled articles",
+    )
+    right_sizing_parser.add_argument(
+        "--min",
+        type=int,
+        metavar="N",
+        help="Minimum token count for compiled articles",
+    )
+    right_sizing_parser.set_defaults(func=cmd_config_right_sizing)
+
     # Root config fallback
     config_parser.set_defaults(func=lambda args: (config_parser.print_help(), 0)[1])
 
@@ -241,6 +266,68 @@ def cmd_config_inference_ollama(args: argparse.Namespace) -> int:
     return _write_inference_config(config_value)
 
 
+def cmd_config_right_sizing(args: argparse.Namespace) -> int:
+    """Display or update right-sizing configuration."""
+    # If no flags provided, show current config
+    if args.target is None and args.max is None and args.min is None:
+        return _show_right_sizing()
+
+    # Validate values if provided
+    if args.min is not None and args.min < 1:
+        output_error("Minimum token count must be at least 1")
+        return 1
+    if args.target is not None and args.target < 1:
+        output_error("Target token count must be at least 1")
+        return 1
+    if args.max is not None and args.max < 1:
+        output_error("Maximum token count must be at least 1")
+        return 1
+
+    # Get current config to merge with updates
+    current = _get_current_right_sizing()
+
+    # Update only the provided values
+    if args.target is not None:
+        current["target_tokens"] = args.target
+    if args.max is not None:
+        current["max_tokens"] = args.max
+    if args.min is not None:
+        current["min_tokens"] = args.min
+
+    # Validate logical constraints
+    if current["min_tokens"] > current["target_tokens"]:
+        output_error("Minimum token count cannot exceed target token count")
+        return 1
+    if current["target_tokens"] > current["max_tokens"]:
+        output_error("Target token count cannot exceed maximum token count")
+        return 1
+
+    # Write to database
+    try:
+        from valence.core.db import get_cursor  # type: ignore[import]
+
+        with get_cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO system_config (key, value)
+                VALUES (%s, %s::jsonb)
+                ON CONFLICT (key) DO UPDATE
+                    SET value = EXCLUDED.value,
+                        updated_at = NOW()
+                """,
+                ("right_sizing", json.dumps(current)),
+            )
+
+        print("✓ Right-sizing configured:")
+        print(f"  Target tokens: {current['target_tokens']}")
+        print(f"  Maximum tokens: {current['max_tokens']}")
+        print(f"  Minimum tokens: {current['min_tokens']}")
+        return 0
+    except Exception as exc:
+        output_error(f"Error writing right-sizing configuration: {exc}")
+        return 1
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -316,4 +403,59 @@ def _write_config_direct(key: str, value: dict, display_value: dict) -> int:
         return 0
     except Exception as exc:
         print(f"Error writing config to database: {exc}", file=sys.stderr)
+        return 1
+
+
+def _get_current_right_sizing() -> dict[str, int]:
+    """Read current right-sizing config from database, or return defaults."""
+    try:
+        from valence.core.db import get_cursor  # type: ignore[import]
+
+        with get_cursor() as cur:
+            cur.execute("SELECT value FROM system_config WHERE key = 'right_sizing' LIMIT 1")
+            row = cur.fetchone()
+            if row:
+                val = row["value"]
+                if isinstance(val, str):
+                    val = json.loads(val)
+                if isinstance(val, dict):
+                    return val
+    except Exception as exc:
+        output_error(f"Error reading right-sizing config: {exc}")
+
+    # Return defaults (matching compilation.py DEFAULT_RIGHT_SIZING)
+    return {
+        "target_tokens": 2000,
+        "max_tokens": 4000,
+        "min_tokens": 200,
+    }
+
+
+def _show_right_sizing() -> int:
+    """Display current right-sizing configuration."""
+    try:
+        from valence.core.db import get_cursor  # type: ignore[import]
+
+        with get_cursor() as cur:
+            cur.execute("SELECT value, updated_at FROM system_config WHERE key = 'right_sizing' LIMIT 1")
+            row = cur.fetchone()
+
+        if row is None:
+            # Show defaults
+            config = _get_current_right_sizing()
+            print("Right-sizing configuration (defaults):")
+        else:
+            val = row["value"]
+            if isinstance(val, str):
+                val = json.loads(val)
+            config = val if isinstance(val, dict) else _get_current_right_sizing()
+            updated = row.get("updated_at", "?")
+            print(f"Right-sizing configuration (last updated: {updated}):")
+
+        print(f"  Target tokens: {config.get('target_tokens', 2000)}")
+        print(f"  Maximum tokens: {config.get('max_tokens', 4000)}")
+        print(f"  Minimum tokens: {config.get('min_tokens', 200)}")
+        return 0
+    except Exception as exc:
+        output_error(f"Error reading right-sizing configuration: {exc}")
         return 1
