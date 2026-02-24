@@ -5,8 +5,6 @@ from __future__ import annotations
 import argparse
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from valence.cli.commands.maintenance import (
     cmd_maintenance_schedule,
 )

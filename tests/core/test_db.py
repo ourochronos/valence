@@ -99,7 +99,6 @@ class TestConnectionPool:
     def test_pool_thread_safe(self, mock_pool_class):
         """Test pool creation is thread-safe with double-check locking."""
         import threading
-        import time
 
         from valence.core import db
 
@@ -108,8 +107,6 @@ class TestConnectionPool:
         call_count = 0
         first_thread_entered = threading.Event()
         second_thread_can_proceed = threading.Event()
-
-        original_init = mock_pool_class
 
         def delayed_init(*args, **kwargs):
             nonlocal call_count
@@ -215,7 +212,7 @@ class TestGetCursor:
         mock_get_healthy_conn.return_value = mock_conn
 
         with pytest.raises(ValueError):
-            with get_cursor() as cur:
+            with get_cursor():
                 raise ValueError("test error")
 
         mock_conn.rollback.assert_called_once()
@@ -478,10 +475,10 @@ class TestInitSchema:
     @patch("valence.core.db.get_connection")
     def test_init_schema_explicit_path(self, mock_get_connection):
         """Test init_schema with explicit schema path."""
-        from valence.core.db import init_schema
-
         # Create a temp schema file
         import tempfile
+
+        from valence.core.db import init_schema
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".sql", delete=False) as f:
             f.write("CREATE TABLE test (id UUID PRIMARY KEY);")
@@ -515,12 +512,10 @@ class TestInitSchema:
     @patch("valence.core.db.get_connection")
     def test_init_schema_auto_detect(self, mock_get_connection):
         """Test init_schema with auto-detection of schema.sql."""
+        # Create a temporary schema file in cwd
         from pathlib import Path
 
         from valence.core.db import init_schema
-
-        # Create a temporary schema file in cwd
-        import tempfile
 
         cwd = Path.cwd()
         schema_file = cwd / "schema.sql"

@@ -5,8 +5,6 @@ from __future__ import annotations
 from unittest.mock import patch
 from uuid import uuid4
 
-import pytest
-
 from valence.core.response import ValenceResponse
 from valence.mcp.handlers.contention import contention_detect, contention_list, contention_resolve
 

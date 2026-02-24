@@ -19,6 +19,7 @@ Most agent memory systems are key-value stores with embeddings bolted on. Valenc
 - **Stigmergic refinement** — usage signals drive self-organization. Frequently-used articles stay well-maintained; unused ones decay organically.
 - **Graph-vector duality** — knowledge exists in both graph space (provenance links, relationships) and vector space (embeddings, similarity). Two views of the same knowledge.
 - **Supersession tracking** — sources can supersede previous versions with full provenance chains. Append-only architecture preserves history while surfacing current knowledge.
+- **Session ingestion** — conversations are captured as sources via platform hooks. Messages are buffered in the database and flushed at compaction boundaries. Each flush creates a markdown transcript source that is auto-compiled into knowledge articles. Supports subagent session trees for complex multi-agent workflows.
 
 ### Compared to alternatives
 
@@ -29,7 +30,7 @@ Most agent memory systems are key-value stores with embeddings bolted on. Valenc
 | **Hybrid retrieval (RRF)** | ✅ | Partial | Partial | ❌ |
 | **Contention detection** | ✅ | ❌ | ❌ | ❌ |
 | **Supersession chains** | ✅ | ❌ | ❌ | ❌ |
-| **MCP protocol** | ✅ (16 tools) | ❌ | ❌ | ❌ |
+| **MCP protocol** | ✅ (29 tools) | ❌ | ❌ | ❌ |
 | **Framework-agnostic** | ✅ | ✅ | ❌ | ❌ |
 | **Cost** | Free (self-hosted) | $249/mo+ | $99/mo+ | Free (LangGraph lock-in) |
 
@@ -195,6 +196,29 @@ valence sources get <source-id>
 valence sources search "query"
 ```
 
+### Sessions
+
+```bash
+valence sessions list                                    # list all sessions
+valence sessions search "query"                          # semantic search over sessions
+valence sessions show <session-id>                       # get session details and messages
+valence sessions start --platform discord --external-id <id>  # start new session
+valence sessions append <session-id> --role user --content "message"
+valence sessions flush <session-id>                      # flush buffered messages to source
+valence sessions flush-stale                             # find and flush abandoned sessions
+valence sessions finalize <session-id>                   # flush, mark complete, and compile
+valence sessions compile <session-id>                    # compile session sources into article
+```
+
+### Memory
+
+```bash
+valence memory list                                      # list all memories
+valence memory search "query"                            # search memories by relevance
+valence memory import <file-path>                        # import a single memory file
+valence memory import-dir <directory>                    # import all markdown files in directory
+```
+
 ### Provenance
 
 ```bash
@@ -236,7 +260,10 @@ valence --server http://remote:8420 stats       # remote server
 The `valence` command covers all operations. See above.
 
 ### REST API
-OpenAPI 3.1 spec at `docs/openapi.yaml`. Server runs on port 8420:
+OpenAPI 3.1 spec available at `/api/v1/openapi.json` when the server is running.
+Swagger UI available at `/api/v1/docs`.
+
+Server runs on port 8420:
 
 ```bash
 valence serve                    # start the API server
@@ -245,7 +272,7 @@ curl http://localhost:8420/health
 
 ### MCP (Model Context Protocol)
 
-Valence exposes **16 MCP tools** for AI agent integration. Perfect for Claude Desktop, OpenClaw, or any MCP-aware client.
+Valence exposes **29 MCP tools** for AI agent integration. Perfect for Claude Desktop, OpenClaw, or any MCP-aware client.
 
 ```bash
 valence mcp    # start MCP server on stdio
@@ -282,6 +309,23 @@ valence mcp    # start MCP server on stdio
 - `admin_forget` — Permanently remove a source or article (irreversible)
 - `admin_stats` — Health and capacity statistics
 - `admin_maintenance` — Trigger maintenance operations (recompute scores, process queue, evict if over capacity)
+
+**Session Management (9 tools):**
+- `session_start` — Start or resume a conversation session
+- `session_append` — Append message(s) to a session
+- `session_flush` — Flush buffered messages to a source with optional compilation
+- `session_finalize` — Flush, mark complete, and compile
+- `session_search` — Semantic search over conversation sources
+- `session_list` — List sessions with filters (status, platform, since)
+- `session_get` — Get session details and messages
+- `session_compile` — Compile session sources into article
+- `session_flush_stale` — Find and flush abandoned sessions
+
+**Memory (4 tools):**
+- `memory_store` — Store a memory for later recall (agent-friendly wrapper)
+- `memory_recall` — Search and recall memories by relevance
+- `memory_status` — Memory system statistics
+- `memory_forget` — Soft-delete a memory (filtered from future recalls)
 
 Source types carry different reliability scores: `document`/`code` (0.8), `tool_output` (0.7), `user_input` (0.75), `web` (0.6), `conversation` (0.5), `observation` (0.4).
 

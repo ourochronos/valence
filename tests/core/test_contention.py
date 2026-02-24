@@ -406,7 +406,7 @@ class TestListContentions:
         rows = [_contention_row()]
         cur = _make_cursor(fetchall_seq=[rows])
         with _patch_cursor(cur), _skip_schema_ensure():
-            result = await list_contentions(article_id=ARTICLE_ID, status="detected")
+            await list_contentions(article_id=ARTICLE_ID, status="detected")
 
         execute_calls = str(cur.execute.call_args_list)
         assert "article_id" in execute_calls or ARTICLE_ID in execute_calls
@@ -426,7 +426,7 @@ class TestListContentions:
         ]
         cur = _make_cursor(fetchall_seq=[rows])
         with _patch_cursor(cur), _skip_schema_ensure():
-            result = await list_contentions(status=None)
+            await list_contentions(status=None)
 
         execute_calls = str(cur.execute.call_args_list)
         # "status = %s" should NOT be in the SQL when status is None
@@ -574,7 +574,7 @@ class TestResolveContention:
         updated_row = _contention_row(status="dismissed", resolution="Not important")
         cur = _make_cursor(fetchone_seq=[_contention_row(), updated_row])
         with _patch_cursor(cur), _skip_schema_ensure():
-            result = await resolve_contention(CONTENTION_ID, "dismiss", "Not important")
+            await resolve_contention(CONTENTION_ID, "dismiss", "Not important")
 
         execute_calls = str(cur.execute.call_args_list)
         assert "Not important" in execute_calls or "resolved_at" in execute_calls

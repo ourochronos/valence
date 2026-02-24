@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
-
-import pytest
 
 from valence.core.response import ValenceResponse
 from valence.mcp.handlers.admin import admin_forget, admin_maintenance, admin_stats

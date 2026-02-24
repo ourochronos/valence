@@ -607,8 +607,8 @@ class TestProvenanceChainIntegrity:
             patch("valence.core.articles._compute_embedding", return_value=None),
         ):
             split_res = await split_article(ARTICLE_ID)
-            part_a_result = split_res.data["part_a"]
-            part_b_result = split_res.data["part_b"]
+            split_res.data["part_a"]
+            split_res.data["part_b"]
 
         # --- Verify provenance for part_a article ---
         prov_row_1 = {
@@ -640,13 +640,13 @@ class TestProvenanceChainIntegrity:
         from valence.core.articles import merge_articles
         from valence.core.provenance import get_provenance
 
-        MERGED_ID = str(uuid4())
+        merged_id = str(uuid4())
         sources_a = [_source_link_row(SOURCE_ID_1, "originates")]
         sources_b = [_source_link_row(SOURCE_ID_2, "confirms")]
 
         article_a = _article_row(article_id=ARTICLE_ID_A, content="A content.", title="A")
         article_b = _article_row(article_id=ARTICLE_ID_B, content="B content.", title="B")
-        merged_row = _article_row(article_id=MERGED_ID, content="A content.\n\n---\n\nB content.")
+        merged_row = _article_row(article_id=merged_id, content="A content.\n\n---\n\nB content.")
 
         merge_cur = _make_cursor(
             fetchone_seq=[article_a, article_b, merged_row],
@@ -657,13 +657,11 @@ class TestProvenanceChainIntegrity:
             patch("valence.core.articles._compute_embedding", return_value=None),
         ):
             _mr = await merge_articles(ARTICLE_ID_A, ARTICLE_ID_B)
-            merge_result = _mr.data
-            merged = merge_result
 
         # Simulate get_provenance returning both sources for merged article
         prov_row_1 = {
             "link_id": str(uuid4()),
-            "article_id": MERGED_ID,
+            "article_id": merged_id,
             "source_id": SOURCE_ID_1,
             "relationship": "originates",
             "added_at": NOW,
@@ -677,7 +675,7 @@ class TestProvenanceChainIntegrity:
         prov_row_2 = {**prov_row_1, "source_id": SOURCE_ID_2, "relationship": "confirms"}
         prov_cur = _make_cursor(fetchall_seq=[[prov_row_1, prov_row_2]])
         with patch("valence.core.provenance.get_cursor", return_value=prov_cur):
-            prov_result = await get_provenance(MERGED_ID)
+            prov_result = await get_provenance(merged_id)
             prov = prov_result.data
 
         assert len(prov) == 2
@@ -737,12 +735,12 @@ class TestMutationQueueSplitIntegration:
         import valence.core.compilation as comp_mod
         from valence.core.compilation import process_mutation_queue
 
-        CANDIDATE_ID = str(uuid4())
+        candidate_id = str(uuid4())
         queue_item = {
             "id": str(uuid4()),
             "operation": "merge_candidate",
             "article_id": ARTICLE_ID_A,
-            "payload": {"candidate_article_id": CANDIDATE_ID},
+            "payload": {"candidate_article_id": candidate_id},
         }
         queue_cur = MagicMock()
         queue_cur.fetchall.return_value = [queue_item]
@@ -761,7 +759,7 @@ class TestMutationQueueSplitIntegration:
         ):
             count = await process_mutation_queue(batch_size=1)
 
-        mock_merge.assert_called_once_with(ARTICLE_ID_A, CANDIDATE_ID)
+        mock_merge.assert_called_once_with(ARTICLE_ID_A, candidate_id)
         status_call_args = mock_status.call_args[0]
         assert status_call_args[1] == "completed"
         assert count.data == 1

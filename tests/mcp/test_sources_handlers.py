@@ -5,8 +5,6 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
-import pytest
-
 from valence.mcp.handlers.sources import source_get, source_ingest, source_list, source_search
 
 

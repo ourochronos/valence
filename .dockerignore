@@ -20,4 +20,6 @@ scripts/
 *.bak
 .env
 .env.*
+*.md
+AUDIT*
 node_modules/
