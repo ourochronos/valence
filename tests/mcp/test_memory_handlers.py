@@ -205,18 +205,21 @@ class TestMemoryRecall:
                 ],
             }
 
-            # Mock the cursor to return memory metadata
-            mock_get_cursor.fetchone.return_value = {
-                "type": "observation",
-                "metadata": json.dumps(
-                    {
-                        "memory": True,
-                        "importance": 0.8,
-                        "context": "test",
-                        "tags": ["test"],
-                    }
-                ),
-            }
+            # Mock the cursor to return memory metadata (batch fetch)
+            mock_get_cursor.fetchall.return_value = [
+                {
+                    "id": source_id,
+                    "type": "observation",
+                    "metadata": json.dumps(
+                        {
+                            "memory": True,
+                            "importance": 0.8,
+                            "context": "test",
+                            "tags": ["test"],
+                        }
+                    ),
+                }
+            ]
 
             result = memory_recall(query="test query", limit=5)
 
@@ -229,23 +232,27 @@ class TestMemoryRecall:
 
     def test_recall_filters_non_memory_sources(self, mock_get_cursor):
         """Non-memory sources should be filtered out."""
+        source_id = str(uuid4())
         with patch("valence.mcp.handlers.articles.knowledge_search") as mock_ks:
             mock_ks.return_value = {
                 "success": True,
                 "results": [
                     {
                         "type": "source",
-                        "id": str(uuid4()),
+                        "id": source_id,
                         "content": "Not a memory",
                     }
                 ],
             }
 
-            # Mock cursor to return non-memory metadata
-            mock_get_cursor.fetchone.return_value = {
-                "type": "document",
-                "metadata": json.dumps({}),
-            }
+            # Mock cursor to return non-memory metadata (batch fetch)
+            mock_get_cursor.fetchall.return_value = [
+                {
+                    "id": source_id,
+                    "type": "document",
+                    "metadata": json.dumps({}),
+                }
+            ]
 
             result = memory_recall(query="test", limit=5)
 
@@ -267,16 +274,19 @@ class TestMemoryRecall:
                 ],
             }
 
-            # Mock cursor to return memory with different tags
-            mock_get_cursor.fetchone.return_value = {
-                "type": "observation",
-                "metadata": json.dumps(
-                    {
-                        "memory": True,
-                        "tags": ["other"],
-                    }
-                ),
-            }
+            # Mock cursor to return memory with different tags (batch fetch)
+            mock_get_cursor.fetchall.return_value = [
+                {
+                    "id": source_id,
+                    "type": "observation",
+                    "metadata": json.dumps(
+                        {
+                            "memory": True,
+                            "tags": ["other"],
+                        }
+                    ),
+                }
+            ]
 
             result = memory_recall(query="test", tags=["wanted"])
 
@@ -300,10 +310,14 @@ class TestMemoryRecall:
                 ],
             }
 
-            mock_get_cursor.fetchone.return_value = {
-                "type": "observation",
-                "metadata": json.dumps({"memory": True}),
-            }
+            # Mock cursor for batch fetch
+            mock_get_cursor.fetchall.return_value = [
+                {
+                    "id": source_id,
+                    "type": "observation",
+                    "metadata": json.dumps({"memory": True}),
+                }
+            ]
 
             result = memory_recall(query="test", min_confidence=0.5)
 

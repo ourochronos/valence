@@ -19,6 +19,10 @@ from .sources import source_ingest
 
 logger = logging.getLogger(__name__)
 
+# Constants for memory recall
+RECALL_OVERFETCH_MULTIPLIER = 3  # Over-fetch to account for filtering
+SNIPPET_TRUNCATE_LENGTH = 200  # Max length before truncation
+
 
 def memory_store(
     content: str,
@@ -124,7 +128,7 @@ def memory_recall(
     # Future: could add metadata filter to knowledge_search
     result = knowledge_search(
         query=query,
-        limit=limit * 3,  # Over-fetch to account for filtering
+        limit=limit * RECALL_OVERFETCH_MULTIPLIER,
         include_sources=True,
         session_id=None,
     )
@@ -134,58 +138,75 @@ def memory_recall(
 
     results = result.get("results", [])
 
-    # Filter for memories (observation sources with memory metadata)
-    memories = []
+    # Collect source IDs to batch fetch metadata
+    source_ids = []
+    source_items = {}
     for item in results:
-        # Check if it's a source of type observation with memory metadata
         if item.get("type") == "source":
-            # Need to fetch full source to check metadata
             source_id = item.get("id")
             if source_id:
-                with get_cursor() as cur:
-                    cur.execute(
-                        "SELECT type, metadata FROM sources WHERE id = %s",
-                        (source_id,),
-                    )
-                    row = cur.fetchone()
-                    if row and row.get("type") == "observation":
-                        metadata = row.get("metadata", {})
-                        if isinstance(metadata, str):
-                            metadata = json.loads(metadata)
-                        if metadata.get("memory"):
-                            # Filter by tags if provided
-                            if tags:
-                                item_tags = metadata.get("tags", [])
-                                if not any(tag in item_tags for tag in tags):
-                                    continue
+                source_ids.append(source_id)
+                source_items[source_id] = item
 
-                            # Filter by confidence if provided
-                            if min_confidence is not None:
-                                confidence = item.get("confidence", {})
-                                if isinstance(confidence, dict):
-                                    overall = confidence.get("overall", 0)
-                                else:
-                                    overall = float(item.get("reliability", 0))
-                                if overall < min_confidence:
-                                    continue
+    # Batch fetch all source metadata to avoid N+1 queries
+    source_metadata = {}
+    if source_ids:
+        with get_cursor() as cur:
+            cur.execute(
+                "SELECT id, type, metadata FROM sources WHERE id = ANY(%s)",
+                (source_ids,),
+            )
+            for row in cur.fetchall():
+                metadata = row.get("metadata", {})
+                # JSONB should return dict directly from psycopg2; this isinstance check
+                # handles legacy data or non-JSONB columns that might return serialized strings
+                if isinstance(metadata, str):
+                    metadata = json.loads(metadata)
+                source_metadata[row["id"]] = {
+                    "type": row.get("type"),
+                    "metadata": metadata,
+                }
 
-                            # Build agent-friendly memory result
-                            memory = {
-                                "memory_id": str(source_id),
-                                "content": item.get("content", ""),
-                                "title": item.get("title"),
-                                "importance": metadata.get("importance", 0.5),
-                                "context": metadata.get("context"),
-                                "tags": metadata.get("tags", []),
-                                "confidence": item.get("confidence", {}),
-                                "age_days": item.get("freshness", 0),
-                                "created_at": item.get("created_at"),
-                                "score": item.get("final_score", 0),
-                            }
-                            memories.append(memory)
+    # Filter for memories (observation sources with memory metadata)
+    memories = []
+    for source_id, item in source_items.items():
+        src_data = source_metadata.get(source_id)
+        if src_data and src_data["type"] == "observation":
+            metadata = src_data["metadata"]
+            if metadata.get("memory"):
+                # Filter by tags if provided
+                if tags:
+                    item_tags = metadata.get("tags", [])
+                    if not any(tag in item_tags for tag in tags):
+                        continue
 
-                            if len(memories) >= limit:
-                                break
+                # Filter by confidence if provided
+                if min_confidence is not None:
+                    confidence = item.get("confidence", {})
+                    if isinstance(confidence, dict):
+                        overall = confidence.get("overall", 0)
+                    else:
+                        overall = float(item.get("reliability", 0))
+                    if overall < min_confidence:
+                        continue
+
+                # Build agent-friendly memory result
+                memory = {
+                    "memory_id": str(source_id),
+                    "content": item.get("content", ""),
+                    "title": item.get("title"),
+                    "importance": metadata.get("importance", 0.5),
+                    "context": metadata.get("context"),
+                    "tags": metadata.get("tags", []),
+                    "confidence": item.get("confidence", {}),
+                    "age_days": item.get("freshness", 0),
+                    "created_at": item.get("created_at"),
+                    "score": item.get("final_score", 0),
+                }
+                memories.append(memory)
+
+                if len(memories) >= limit:
+                    break
 
     return {
         "success": True,
@@ -303,6 +324,8 @@ def memory_forget(
             return {"success": False, "error": f"Source {memory_id} is not a memory (type={row.get('type')})"}
 
         metadata = row.get("metadata", {})
+        # JSONB should return dict directly from psycopg2; this isinstance check
+        # handles legacy data or non-JSONB columns that might return serialized strings
         if isinstance(metadata, str):
             metadata = json.loads(metadata)
 

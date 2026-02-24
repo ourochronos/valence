@@ -17,6 +17,9 @@ from valence.core.db import get_cursor
 
 from ..output import output_error, output_result
 
+# Constants
+SNIPPET_TRUNCATE_LENGTH = 200  # Max content length before truncation
+
 
 def register(subparsers: argparse._SubParsersAction) -> None:
     """Register the memory sub-command group."""
@@ -234,13 +237,14 @@ def cmd_memory_list(args: argparse.Namespace) -> int:
     with get_cursor() as cur:
         if tags:
             # Filter by tags using JSONB containment
+            # Properly cast tags array for PostgreSQL JSONB ?| operator
             cur.execute(
                 """
                 SELECT s.id, s.title, s.content, s.metadata, s.created_at
                 FROM sources s
                 WHERE s.type = 'observation'
                   AND s.metadata->>'memory' = 'true'
-                  AND s.metadata->'tags' ?| %s
+                  AND s.metadata->'tags' ?| %s::text[]
                 ORDER BY s.created_at DESC
                 LIMIT %s
                 """,
@@ -264,13 +268,15 @@ def cmd_memory_list(args: argparse.Namespace) -> int:
     memories = []
     for row in rows:
         metadata = row.get("metadata", {})
+        # JSONB should return dict directly from psycopg2; this isinstance check
+        # handles legacy data or non-JSONB columns that might return serialized strings
         if isinstance(metadata, str):
             metadata = json.loads(metadata)
 
         # Truncate content for display
         content = row.get("content", "")
-        if len(content) > 200:
-            content = content[:197] + "..."
+        if len(content) > SNIPPET_TRUNCATE_LENGTH:
+            content = content[: SNIPPET_TRUNCATE_LENGTH - 3] + "..."
 
         memories.append(
             {
