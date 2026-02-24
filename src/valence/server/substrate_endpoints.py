@@ -228,7 +228,7 @@ async def entities_list_endpoint(request: Request) -> JSONResponse:
 
         result = entity_search(
             query=query,
-            type=request.query_params.get("type"),
+            entity_type=request.query_params.get("type"),
             limit=_parse_int(request.query_params.get("limit"), 20, 100),
         )
         return JSONResponse(result)

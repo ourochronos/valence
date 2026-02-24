@@ -32,12 +32,12 @@ def contention_list(
     """List active contentions."""
     from valence.core.contention import list_contentions
 
-    result = run_async(
-        list_contentions(
-            article_id=article_id,
-            status=status,
-        )
-    )
+    kwargs: dict[str, Any] = {}
+    if article_id is not None:
+        kwargs["article_id"] = article_id
+    if status is not None:
+        kwargs["status"] = status
+    result = run_async(list_contentions(**kwargs))
     if not result.success:
         return {"success": False, "error": result.error}
     contentions = result.data or []

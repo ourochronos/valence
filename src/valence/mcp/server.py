@@ -299,7 +299,7 @@ def run() -> None:
         startup_checks(fail_fast=True)
 
     try:
-        schema_dir = Path(__file__).parent.parent
+        schema_dir = str(Path(__file__).parent.parent)
         init_schema(schema_dir)
         logger.info("Schema initialized")
     except (DatabaseException, Exception) as e:
