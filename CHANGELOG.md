@@ -441,3 +441,4 @@ and the foundation of its Python implementation.
 
 [Unreleased]: https://github.com/ourochronos/valence/compare/v0.1.0-alpha...HEAD
 [0.1.0-alpha]: https://github.com/ourochronos/valence/releases/tag/v0.1.0-alpha
+# CI trigger

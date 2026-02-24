@@ -5,14 +5,12 @@ on:
     branches: [main]
     paths-ignore:
       - "docs/**"
-      - "*.md"
       - "!pyproject.toml"
       - ".github/ISSUE_TEMPLATE/**"
   push:
     branches: [main]
     paths-ignore:
       - "docs/**"
-      - "*.md"
       - "!pyproject.toml"
       - ".github/ISSUE_TEMPLATE/**"
 
