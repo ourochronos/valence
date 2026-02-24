@@ -22,7 +22,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-import psycopg2
 import yaml
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
@@ -157,7 +156,7 @@ async def health_endpoint(request: Request) -> JSONResponse:
         with get_cursor() as cur:
             cur.execute("SELECT 1")
         health_data["database"] = "connected"
-    except (psycopg2.Error, RuntimeError):
+    except Exception:
         health_data["database"] = "error: connection failed"
         health_data["status"] = "degraded"
 
