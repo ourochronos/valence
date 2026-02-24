@@ -167,7 +167,8 @@ class TemporalValidity:
             return "always valid"
         elif self.valid_from is None:
             # valid_until must be set since we didn't match the first condition
-            assert self.valid_until is not None
+            if self.valid_until is None:
+                raise ValueError("valid_until must be set for this operation")
             return f"valid until {self.valid_until.isoformat()}"
         elif self.valid_until is None:
             return f"valid from {self.valid_from.isoformat()}"
