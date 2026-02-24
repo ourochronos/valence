@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 
 class _Encoder(json.JSONEncoder):
-    def default(self, o):
+    def default(self, o: Any) -> Any:
         if isinstance(o, Decimal):
             return float(o)
         if isinstance(o, (datetime, date)):

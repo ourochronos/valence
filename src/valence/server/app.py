@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from collections.abc import AsyncGenerator
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -867,7 +868,7 @@ async def _embedding_backfill_loop(interval_seconds: int = 300) -> None:
 
 
 @asynccontextmanager
-async def lifespan(app: Starlette):
+async def lifespan(app: Starlette) -> AsyncGenerator[None, None]:
     """Application lifespan handler."""
     import asyncio
 
