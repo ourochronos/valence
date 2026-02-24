@@ -305,6 +305,19 @@ def run() -> None:
     except (DatabaseException, Exception) as e:
         logger.warning(f"Schema initialization skipped (may already exist): {e}")
 
+    # Check and run scheduled maintenance if needed
+    try:
+        from valence.core.maintenance import check_and_run_maintenance
+
+        with get_cursor() as cur:
+            result = check_and_run_maintenance(cur)
+            if result:
+                logger.info(f"Scheduled maintenance completed: {result['timestamp']}")
+            else:
+                logger.debug("Scheduled maintenance check: no action needed")
+    except Exception as e:
+        logger.warning(f"Scheduled maintenance check failed: {e}")
+
     async def main():
         async with stdio_server() as (read_stream, write_stream):
             await server.run(read_stream, write_stream, server.create_initialization_options())
