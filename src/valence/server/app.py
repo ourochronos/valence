@@ -16,8 +16,8 @@ from __future__ import annotations
 import json
 import logging
 import time
-from collections.abc import AsyncGenerator
 from collections import defaultdict
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -262,7 +262,7 @@ async def mcp_endpoint(request: Request) -> Response:
             },
             status_code=400,
         )
-    except Exception as e:
+    except Exception:
         logger.exception("Error handling MCP request")
         return JSONResponse(
             {
@@ -335,7 +335,7 @@ async def _handle_rpc_request(request: dict[str, Any]) -> dict[str, Any] | None:
             "error": {"code": -32602, "message": str(e)},
             "id": request_id,
         }
-    except Exception as e:
+    except Exception:
         logger.exception(f"Error in method {method}")
         if is_notification:
             return None
@@ -858,14 +858,14 @@ async def _embedding_backfill_loop(interval_seconds: int = 300) -> None:
                                 (embedding_str, row["id"]),
                             )
                         backfilled += 1
-                    except Exception as e:
+                    except Exception:
                         logger.warning(f"Embedding backfill failed for article {row['id']}", exc_info=True)
                 logger.info(f"Embedding backfill: completed {backfilled}/{len(rows)}")
             else:
                 logger.debug("Embedding backfill: all articles have embeddings")
         except ImportError:
             logger.debug("Embedding backfill: our_embeddings not available, skipping")
-        except Exception as e:
+        except Exception:
             logger.warning("Embedding backfill loop error", exc_info=True)
 
         await asyncio.sleep(interval)
