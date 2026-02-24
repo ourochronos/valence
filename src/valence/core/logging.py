@@ -86,6 +86,14 @@ class JSONFormatter(logging.Formatter):
     """
 
     def format(self, record: logging.LogRecord) -> str:
+        """Format a log record as JSON.
+
+        Args:
+            record: LogRecord to format.
+
+        Returns:
+            JSON string with timestamp, level, logger, message, and optional correlation ID.
+        """
         log_data: dict[str, Any] = {
             "timestamp": datetime.now(UTC).isoformat(),
             "level": record.levelname,
@@ -142,6 +150,15 @@ class StandardFormatter(logging.Formatter):
         self.use_colors = use_colors and sys.stderr.isatty()
 
     def format(self, record: logging.LogRecord) -> str:
+        """Format a log record with optional color coding.
+
+        Args:
+            record: LogRecord to format.
+
+        Returns:
+            Formatted log string with timestamp, logger name, level, and message.
+            Includes color coding if enabled and writing to a TTY.
+        """
         # Make a copy to avoid mutating the original record
         record = logging.makeLogRecord(record.__dict__)
 

@@ -347,10 +347,14 @@ async def _handle_rpc_request(request: dict[str, Any]) -> dict[str, Any] | None:
 
 
 class MethodNotFoundError(Exception):
+    """Raised when an MCP method is not found."""
+
     pass
 
 
 class InvalidParamsError(Exception):
+    """Raised when MCP method parameters are invalid."""
+
     pass
 
 

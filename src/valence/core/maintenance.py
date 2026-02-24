@@ -26,6 +26,11 @@ class MaintenanceResult:
 
     @property
     def summary(self) -> str:
+        """Get a summary of the maintenance operation.
+
+        Returns:
+            String describing the operation and its details.
+        """
         return f"{self.operation}: {self.details}"
 
 

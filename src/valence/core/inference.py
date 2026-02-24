@@ -246,10 +246,29 @@ class InferenceResult:
 
     @classmethod
     def success(cls, content: str, task_type: str, parsed: dict | None = None) -> InferenceResult:
+        """Create a successful inference result.
+
+        Args:
+            content: Generated content from the LLM.
+            task_type: Type of inference task (compile, update, classify, etc.).
+            parsed: Optional parsed output dictionary.
+
+        Returns:
+            InferenceResult with degraded=False.
+        """
         return cls(content=content, degraded=False, task_type=task_type, error=None, parsed=parsed)
 
     @classmethod
     def degraded_result(cls, task_type: str, error: str) -> InferenceResult:
+        """Create a degraded inference result for failures.
+
+        Args:
+            task_type: Type of inference task that failed.
+            error: Error message describing the failure.
+
+        Returns:
+            InferenceResult with degraded=True and empty content.
+        """
         return cls(content="", degraded=True, task_type=task_type, error=error, parsed=None)
 
 
