@@ -162,6 +162,8 @@ def _build_compilation_prompt(sources: list[dict], title_hint: str | None, targe
 Write a coherent, concise article that synthesizes the key information.
 Target approximately {target_tokens} tokens (words × 1.3). Stay under {target_tokens + 500} tokens.
 
+IMPORTANT: Each article should cover ONE coherent topic. Use a descriptive title that reflects the article's actual content — never use generic titles like "part 1", "part 2", or sequential numbering.
+
 For each source, identify its relationship to the compiled article content:
 - "originates": source introduced the article's core information
 - "confirms": independent source corroborating existing information
