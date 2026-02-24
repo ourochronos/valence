@@ -33,8 +33,8 @@ def _check_postgres_available() -> tuple[bool, str | None]:
 
     # Get connection params from environment
     host = os.environ.get("VALENCE_DB_HOST", "localhost")
-    port = int(os.environ.get("VALENCE_DB_PORT", "5432"))
-    dbname = os.environ.get("VALENCE_DB_NAME", "valence")
+    port = int(os.environ.get("VALENCE_DB_PORT", "5433"))
+    dbname = os.environ.get("VALENCE_DB_NAME", "valence_test")
     user = os.environ.get("VALENCE_DB_USER", "valence")
     password = os.environ.get("VALENCE_DB_PASSWORD", "")
 
@@ -153,7 +153,7 @@ def clean_env(monkeypatch):
 def env_with_db_vars(monkeypatch):
     """Set up database environment variables."""
     monkeypatch.setenv("VALENCE_DB_HOST", "localhost")
-    monkeypatch.setenv("VALENCE_DB_PORT", "5432")
+    monkeypatch.setenv("VALENCE_DB_PORT", "5433")
     monkeypatch.setenv("VALENCE_DB_NAME", "valence_test")
     monkeypatch.setenv("VALENCE_DB_USER", "valence")
     monkeypatch.setenv("VALENCE_DB_PASSWORD", "testpass")
