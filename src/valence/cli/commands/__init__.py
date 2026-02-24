@@ -6,7 +6,6 @@ its argparse sub-commands and sets ``parser.set_defaults(func=handler)``.
 
 from . import (
     articles,
-    beliefs,
     compile,
     config_cmd,
     conflicts,
@@ -21,7 +20,6 @@ from . import (
     unified_search,
 )
 from .articles import cmd_articles_create, cmd_articles_get, cmd_articles_search
-from .beliefs import cmd_add, cmd_init, cmd_list, cmd_query
 from .compile import cmd_compile
 from .conflicts import cmd_conflicts
 from .embeddings import cmd_embeddings
@@ -45,7 +43,6 @@ COMMAND_MODULES = [
     articles,
     provenance,
     config_cmd,
-    beliefs,
     conflicts,
     stats,
     embeddings,
@@ -72,13 +69,9 @@ __all__ = [
     "cmd_sources_list",
     "cmd_sources_search",
     # Legacy commands
-    "cmd_add",
     "cmd_conflicts",
     "cmd_embeddings",
-    "cmd_init",
-    "cmd_list",
     "cmd_migrate",
-    "cmd_query",
     "cmd_stats",
     "cmd_maintenance",
 ]
