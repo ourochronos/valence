@@ -401,7 +401,7 @@ class InferenceProvider:
             else:
                 content = result
 
-        except (RuntimeError, ValueError, TypeError, OSError, ConnectionError) as exc:
+        except (RuntimeError, ValueError, TypeError, OSError, ConnectionError, ImportError, TimeoutError) as exc:
             logger.warning("Inference backend failed for task %r: %s", task_type, exc)
             return InferenceResult.degraded_result(
                 task_type=task_type,
