@@ -6,14 +6,12 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Generator
 from datetime import UTC, datetime
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
-def get_db_connection() -> Generator[Any, None, None]:
+def get_db_connection():  # type: ignore[no-untyped-def]
     """Get a database connection from the pool.
 
     This is a thin wrapper around core.db.get_connection() for backward compatibility.
