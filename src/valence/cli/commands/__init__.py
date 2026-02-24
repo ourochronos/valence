@@ -18,6 +18,7 @@ from . import (
     memory,
     migration,
     provenance,
+    sessions,
     sources,
     stats,
     status,
@@ -45,6 +46,7 @@ COMMAND_MODULES = [
     compile,  # valence compile
     status,  # valence status
     memory,  # valence memory
+    sessions,  # valence sessions
     sources,
     articles,
     provenance,

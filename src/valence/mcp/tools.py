@@ -27,6 +27,15 @@ Tool list:
     memory_recall      —   Search memories (agent-friendly wrapper)
     memory_status      —   Get memory system stats
     memory_forget      —   Mark a memory as forgotten (soft delete)
+    session_start      —   Upsert a session (insert-if-new)
+    session_append     —   Append message(s) to session buffer
+    session_flush      —   Flush unflushed messages to source
+    session_finalize   —   Flush + complete + compile
+    session_search     —   Search conversation sources
+    session_list       —   List sessions with filters
+    session_get        —   Get session + optional messages
+    session_compile    —   Compile session sources into article
+    session_flush_stale —  Flush all stale sessions
 """
 
 from __future__ import annotations
@@ -604,6 +613,262 @@ SUBSTRATE_TOOLS = [
                 },
             },
             "required": ["memory_id"],
+        },
+    ),
+    # =========================================================================
+    # Session tools (conversation ingestion)
+    # =========================================================================
+    Tool(
+        name="session_start",
+        description=(
+            "Upsert a session (insert-if-new or update last_activity_at).\n\n"
+            "Sessions are first-class sources that buffer conversation messages in the database. "
+            "Call this when a session begins or resumes. If the session already exists, "
+            "its last_activity_at timestamp is updated."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Unique session identifier (platform-provided, required)",
+                },
+                "platform": {
+                    "type": "string",
+                    "description": "Platform name (e.g., 'openclaw', 'claude-code', required)",
+                },
+                "channel": {
+                    "type": "string",
+                    "description": "Optional channel (e.g., 'discord', 'telegram', 'cli')",
+                },
+                "participants": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of participant names",
+                },
+                "metadata": {
+                    "type": "object",
+                    "description": "Optional JSON metadata",
+                },
+                "parent_session_id": {
+                    "type": "string",
+                    "description": "Parent session ID for subagents",
+                },
+                "subagent_label": {
+                    "type": "string",
+                    "description": "Label for subagent sessions",
+                },
+                "subagent_model": {
+                    "type": "string",
+                    "description": "Model used for subagent",
+                },
+                "subagent_task": {
+                    "type": "string",
+                    "description": "Task description for subagent",
+                },
+            },
+            "required": ["session_id", "platform"],
+        },
+    ),
+    Tool(
+        name="session_append",
+        description=(
+            "Append message(s) to a session buffer.\n\n"
+            "Supports two modes:\n"
+            "1. Batch mode: pass 'messages' as a list of dicts with keys: speaker, role, content, metadata?\n"
+            "2. Single mode: pass speaker, role, content directly\n\n"
+            "Updates the session's last_activity_at timestamp."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Session identifier (required)",
+                },
+                "messages": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "speaker": {"type": "string"},
+                            "role": {"type": "string", "enum": ["user", "assistant", "system", "tool"]},
+                            "content": {"type": "string"},
+                            "metadata": {"type": "object"},
+                        },
+                        "required": ["speaker", "role", "content"],
+                    },
+                    "description": "List of message dicts (batch mode)",
+                },
+                "speaker": {
+                    "type": "string",
+                    "description": "Speaker name (single mode)",
+                },
+                "role": {
+                    "type": "string",
+                    "enum": ["user", "assistant", "system", "tool"],
+                    "description": "Message role (single mode)",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Message content (single mode)",
+                },
+                "message_metadata": {
+                    "type": "object",
+                    "description": "Optional message-specific metadata (single mode)",
+                },
+            },
+            "required": ["session_id"],
+        },
+    ),
+    Tool(
+        name="session_flush",
+        description=(
+            "Flush unflushed messages to a conversation source.\n\n"
+            "Serializes buffered messages to markdown transcript format, "
+            "ingests as a conversation source, marks messages as flushed, "
+            "and increments the session's chunk_index.\n\n"
+            "Optionally triggers compilation into an article."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Session identifier (required)",
+                },
+                "compile": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Whether to trigger compilation after flush",
+                },
+            },
+            "required": ["session_id"],
+        },
+    ),
+    Tool(
+        name="session_finalize",
+        description=(
+            "Flush final messages and mark session as completed.\n\n"
+            "Flushes any remaining unflushed messages, marks the session status "
+            "as 'completed', sets ended_at timestamp, and triggers compilation."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Session identifier (required)",
+                },
+            },
+            "required": ["session_id"],
+        },
+    ),
+    Tool(
+        name="session_search",
+        description=(
+            "Semantic search over conversation sources.\n\n"
+            "Searches for conversation-type sources matching the query. "
+            "Returns source records with session metadata."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query (required)",
+                },
+                "limit": {
+                    "type": "integer",
+                    "default": 20,
+                    "description": "Maximum results to return (default 20)",
+                },
+            },
+            "required": ["query"],
+        },
+    ),
+    Tool(
+        name="session_list",
+        description=(
+            "List sessions with optional filters.\n\nReturns session records matching the specified filters, ordered by last_activity_at descending."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "enum": ["active", "stale", "completed"],
+                    "description": "Filter by status",
+                },
+                "platform": {
+                    "type": "string",
+                    "description": "Filter by platform",
+                },
+                "since": {
+                    "type": "string",
+                    "description": "Filter by started_at >= since (ISO timestamp)",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum results to return",
+                },
+            },
+        },
+    ),
+    Tool(
+        name="session_get",
+        description=("Get session details with optional messages.\n\nReturns the session record and optionally all messages in the buffer."),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Session identifier (required)",
+                },
+                "include_messages": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Whether to include messages in the response",
+                },
+            },
+            "required": ["session_id"],
+        },
+    ),
+    Tool(
+        name="session_compile",
+        description=(
+            "Compile session sources into an article.\n\n"
+            "Finds all conversation sources for the given session and compiles "
+            "them into a coherent knowledge article using LLM summarization."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Session identifier (required)",
+                },
+            },
+            "required": ["session_id"],
+        },
+    ),
+    Tool(
+        name="session_flush_stale",
+        description=(
+            "Flush all stale sessions (no activity for stale_minutes).\n\n"
+            "Finds active sessions with no activity for the specified duration, "
+            "flushes them to sources, marks them as stale, and triggers compilation.\n\n"
+            "This is typically called periodically by a cron job or timer."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "stale_minutes": {
+                    "type": "integer",
+                    "default": 30,
+                    "description": "Inactivity threshold in minutes (default 30)",
+                },
+            },
         },
     ),
 ]
