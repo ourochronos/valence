@@ -363,7 +363,7 @@ async def _dispatch_method(method: str, params: dict[str, Any]) -> Any:
         MethodNotFoundError: If method is not found
         InvalidParamsError: If parameters are invalid
     """
-    from ..mcp_server import SUBSTRATE_TOOLS, TOOL_HANDLERS
+    from ..mcp import SUBSTRATE_TOOLS, TOOL_HANDLERS
 
     settings = get_settings()
 
@@ -631,7 +631,7 @@ use `pattern_record` to capture them.
 
 def _get_tool_reference() -> str:
     """Get the tool reference resource content."""
-    from ..mcp_server import SUBSTRATE_TOOLS
+    from ..mcp import SUBSTRATE_TOOLS
 
     lines = ["# Valence Tool Reference\n"]
 
@@ -769,7 +769,7 @@ async def info_endpoint(request: Request) -> JSONResponse:
     """Server info endpoint (no auth required)."""
     settings = get_settings()
 
-    from ..mcp_server import SUBSTRATE_TOOLS
+    from ..mcp import SUBSTRATE_TOOLS
 
     response_data: dict[str, Any] = {
         "server": settings.server_name,

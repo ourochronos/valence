@@ -23,7 +23,7 @@ from mcp.types import (
 from pydantic import AnyUrl
 
 from ..core.exceptions import DatabaseException, ValidationException
-from ..mcp_server import SUBSTRATE_TOOLS, TOOL_HANDLERS
+from ..mcp import SUBSTRATE_TOOLS, TOOL_HANDLERS
 
 logger = logging.getLogger(__name__)
 

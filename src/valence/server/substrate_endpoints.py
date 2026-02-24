@@ -39,7 +39,7 @@ async def beliefs_list_endpoint(request: Request) -> JSONResponse:
         return missing_field_error("query")
 
     try:
-        from ..mcp_server import article_search
+        from ..mcp.handlers.articles import article_search
 
         domain_filter = None
         df_raw = request.query_params.get("domain_filter")
@@ -85,7 +85,7 @@ async def beliefs_create_endpoint(request: Request) -> JSONResponse:
         return missing_field_error("content")
 
     try:
-        from ..mcp_server import article_create
+        from ..mcp.handlers.articles import article_create
 
         result = article_create(
             content=content,
@@ -113,7 +113,7 @@ async def beliefs_search_endpoint(request: Request) -> JSONResponse:
         return missing_field_error("query")
 
     try:
-        from ..mcp_server import article_search
+        from ..mcp.handlers.articles import article_search
 
         domain_filter = None
         df_raw = request.query_params.get("domain_filter")
@@ -154,7 +154,7 @@ async def beliefs_get_endpoint(request: Request) -> JSONResponse:
         return missing_field_error("belief_id")
 
     try:
-        from ..mcp_server import article_get
+        from ..mcp.handlers.articles import article_get
 
         result = article_get(
             article_id=belief_id,
@@ -193,7 +193,7 @@ async def beliefs_supersede_endpoint(request: Request) -> JSONResponse:
         return missing_field_error("reason")
 
     try:
-        from ..mcp_server import article_update
+        from ..mcp.handlers.articles import article_update
 
         result = article_update(
             article_id=belief_id,
@@ -224,7 +224,7 @@ async def entities_list_endpoint(request: Request) -> JSONResponse:
         return missing_field_error("query")
 
     try:
-        from ..mcp_server import entity_search
+        from ..mcp.handlers.entities import entity_search
 
         result = entity_search(
             query=query,
@@ -250,7 +250,7 @@ async def entities_get_endpoint(request: Request) -> JSONResponse:
         return missing_field_error("id")
 
     try:
-        from ..mcp_server import entity_get
+        from ..mcp.handlers.entities import entity_get
 
         result = entity_get(
             entity_id=entity_id,
@@ -278,7 +278,7 @@ async def tensions_list_endpoint(request: Request) -> JSONResponse:
         return err
 
     try:
-        from ..mcp_server import contention_list
+        from ..mcp.handlers.contention import contention_list
 
         result = contention_list(
             article_id=request.query_params.get("article_id"),
@@ -316,7 +316,7 @@ async def tensions_resolve_endpoint(request: Request) -> JSONResponse:
         return missing_field_error("action")
 
     try:
-        from ..mcp_server import contention_resolve
+        from ..mcp.handlers.contention import contention_resolve
 
         result = contention_resolve(
             contention_id=tension_id,

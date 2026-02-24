@@ -5,10 +5,10 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 from valence.core.maintenance import (
-    MaintenanceResult,
-    vacuum_analyze,
-    run_full_maintenance,
     VACUUM_TABLES,
+    MaintenanceResult,
+    run_full_maintenance,
+    vacuum_analyze,
 )
 
 
