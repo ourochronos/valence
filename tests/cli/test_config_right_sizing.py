@@ -4,12 +4,10 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from valence.cli.commands.config_cmd import (
-    cmd_config_right_sizing,
     _get_current_right_sizing,
     _show_right_sizing,
+    cmd_config_right_sizing,
 )
 
 

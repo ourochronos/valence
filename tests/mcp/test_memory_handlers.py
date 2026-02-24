@@ -21,7 +21,6 @@ import pytest
 
 from valence.mcp.handlers.memory import memory_forget, memory_recall, memory_status, memory_store
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

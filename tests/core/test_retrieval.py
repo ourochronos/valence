@@ -136,9 +136,6 @@ def _make_cursor(
 
     # We need to simulate multiple SQL executions on the same cursor.
     # Strategy: track execute() call count and return appropriate results.
-    execute_count = [0]
-    fetchone_queue: list = []
-    fetchall_queue: list = []
 
     # The execute->fetch pairs happen in this order per retrieve() call:
     # 1. Article full-text search -> fetchall (article_rows)
@@ -657,7 +654,7 @@ class TestUngroupedSourcesAndQueue:
             from valence.core.retrieval import retrieve
 
             # Should not raise
-            results = await retrieve("python", include_sources=True)
+            await retrieve("python", include_sources=True)
 
         # mutation_queue INSERT should NOT have been called
         calls_str = str(cur.execute.call_args_list)

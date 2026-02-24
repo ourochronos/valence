@@ -382,8 +382,6 @@ class TestGetDecayCandidates:
         mock_cur = _make_cursor_mock(fetchall=[])
         captured_sql = []
 
-        original_execute = mock_cur.execute.side_effect
-
         def capture_sql(sql, params=None):
             captured_sql.append(sql)
 

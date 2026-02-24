@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
@@ -136,7 +136,7 @@ class TestCheckAndRunMaintenance:
         mock_cur = MagicMock()
 
         # Last run was 25 hours ago
-        last_run = datetime.now(timezone.utc) - timedelta(hours=25)
+        last_run = datetime.now(UTC) - timedelta(hours=25)
         last_run_iso = last_run.isoformat()
 
         mock_cur.fetchone.side_effect = [
@@ -153,7 +153,7 @@ class TestCheckAndRunMaintenance:
         mock_cur = MagicMock()
 
         # Last run was 5 hours ago
-        last_run = datetime.now(timezone.utc) - timedelta(hours=5)
+        last_run = datetime.now(UTC) - timedelta(hours=5)
         last_run_iso = last_run.isoformat()
 
         mock_cur.fetchone.return_value = {"value": {"enabled": True, "interval_hours": 24, "last_run": last_run_iso}}

@@ -182,7 +182,7 @@ class TestOpenAICompatBackend:
     async def test_successful_call_returns_content(self):
         from valence.core.backends.openai_compat import create_openai_backend
 
-        backend = create_openai_backend(
+        create_openai_backend(
             base_url="http://localhost:11434/v1",
             api_key="ollama",
             model="qwen3:30b",
