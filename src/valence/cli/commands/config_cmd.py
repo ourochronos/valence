@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from typing import Any
 
 from ..http_client import ValenceAPIError, ValenceConnectionError, get_client
 from ..output import output_error, output_result
@@ -127,6 +128,23 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         help="Ollama model name (default: qwen3:30b). Must be pulled first: ollama pull <model>",
     )
     ollama_p.set_defaults(func=cmd_config_inference_ollama)
+
+    # valence config inference callback --url URL [--token TOKEN]
+    callback_p = inference_sub.add_parser(
+        "callback",
+        help="Use an external HTTP callback for inference (e.g. OpenClaw plugin)",
+    )
+    callback_p.add_argument(
+        "--url",
+        required=True,
+        help="HTTP(S) URL to POST inference requests to",
+    )
+    callback_p.add_argument(
+        "--token",
+        default=None,
+        help="Optional Bearer token for callback authentication",
+    )
+    callback_p.set_defaults(func=cmd_config_inference_callback)
 
     # valence config right-sizing ...
     right_sizing_parser = config_sub.add_parser(
@@ -266,6 +284,17 @@ def cmd_config_inference_ollama(args: argparse.Namespace) -> int:
         "host": args.host,
         "model": args.model,
     }
+    return _write_inference_config(config_value)
+
+
+def cmd_config_inference_callback(args: argparse.Namespace) -> int:
+    """Configure an external HTTP callback as the inference backend."""
+    config_value: dict[str, Any] = {
+        "provider": "callback",
+        "callback_url": args.url,
+    }
+    if args.token:
+        config_value["token"] = args.token
     return _write_inference_config(config_value)
 
 
