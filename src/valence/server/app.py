@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 from collections import defaultdict
 from collections.abc import AsyncGenerator
@@ -870,6 +871,147 @@ async def _embedding_backfill_loop(interval_seconds: int = 300) -> None:
         await asyncio.sleep(interval)
 
 
+# ---------------------------------------------------------------------------
+# Request Security Middlewares (#462, #466)
+# ---------------------------------------------------------------------------
+
+
+class RequestBodySizeLimitMiddleware:
+    """Middleware to limit request body size to prevent DoS attacks.
+
+    Issue #462: Limits request body to 10MB by default.
+    """
+
+    def __init__(self, app: Any, max_size: int = 10 * 1024 * 1024) -> None:
+        """Initialize middleware.
+
+        Args:
+            app: ASGI application
+            max_size: Maximum request body size in bytes (default 10MB)
+        """
+        self.app = app
+        self.max_size = max_size
+
+    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+        """ASGI middleware interface."""
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        # Check Content-Length header if present
+        headers = dict(scope.get("headers", []))
+        content_length = headers.get(b"content-length")
+
+        if content_length:
+            try:
+                size = int(content_length.decode())
+                if size > self.max_size:
+                    # Send 413 Payload Too Large
+                    await send(
+                        {
+                            "type": "http.response.start",
+                            "status": 413,
+                            "headers": [(b"content-type", b"application/json")],
+                        }
+                    )
+                    await send(
+                        {
+                            "type": "http.response.body",
+                            "body": json.dumps(
+                                {
+                                    "error": "Request body too large",
+                                    "max_size_mb": self.max_size / (1024 * 1024),
+                                }
+                            ).encode(),
+                        }
+                    )
+                    return
+            except (ValueError, UnicodeDecodeError):
+                pass
+
+        # Pass through to application
+        await self.app(scope, receive, send)
+
+
+class RateLimitMiddleware:
+    """Simple IP-based rate limiting for unauthenticated endpoints.
+
+    Issue #466: Protects /health, /metrics, /docs from abuse.
+    """
+
+    def __init__(self, app: Any, requests_per_minute: int = 60) -> None:
+        """Initialize rate limiter.
+
+        Args:
+            app: ASGI application
+            requests_per_minute: Maximum requests per IP per minute
+        """
+        self.app = app
+        self.requests_per_minute = requests_per_minute
+        self.rate_limit_window = 60.0  # 1 minute in seconds
+
+        # Simple in-memory tracking: {ip: [timestamp, ...]}
+        self._request_log: dict[str, list[float]] = defaultdict(list)
+        self._lock = threading.Lock()
+
+        # Paths to rate limit
+        self._rate_limited_paths = {"/health", "/api/v1/health", "/metrics", "/api/v1/metrics", "/docs", "/api/v1/docs"}
+
+    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+        """ASGI middleware interface."""
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+
+        # Only rate limit specific unauthenticated endpoints
+        if path not in self._rate_limited_paths:
+            await self.app(scope, receive, send)
+            return
+
+        # Get client IP
+        client_ip = "unknown"
+        if scope.get("client"):
+            client_ip = scope["client"][0]
+
+        current_time = time.time()
+
+        with self._lock:
+            # Clean old requests outside the window
+            self._request_log[client_ip] = [ts for ts in self._request_log[client_ip] if current_time - ts < self.rate_limit_window]
+
+            # Check if rate limit exceeded
+            if len(self._request_log[client_ip]) >= self.requests_per_minute:
+                # Send 429 Too Many Requests
+                await send(
+                    {
+                        "type": "http.response.start",
+                        "status": 429,
+                        "headers": [(b"content-type", b"application/json"), (b"retry-after", b"60")],
+                    }
+                )
+                await send(
+                    {
+                        "type": "http.response.body",
+                        "body": json.dumps(
+                            {
+                                "error": "Rate limit exceeded",
+                                "limit": self.requests_per_minute,
+                                "window_seconds": int(self.rate_limit_window),
+                            }
+                        ).encode(),
+                    }
+                )
+                return
+
+            # Record this request
+            self._request_log[client_ip].append(current_time)
+
+        # Pass through to application
+        await self.app(scope, receive, send)
+
+
 @asynccontextmanager
 async def lifespan(app: Starlette) -> AsyncGenerator[None, None]:
     """Application lifespan handler."""
@@ -967,6 +1109,8 @@ def create_app() -> Starlette:
 
     # Define middleware
     middleware = [
+        Middleware(RequestBodySizeLimitMiddleware),
+        Middleware(RateLimitMiddleware),
         Middleware(
             CORSMiddleware,
             allow_origins=settings.allowed_origins,

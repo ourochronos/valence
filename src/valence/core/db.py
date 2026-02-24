@@ -7,6 +7,7 @@ Config via VALENCE_DB_* environment variables.
 """
 
 import os
+import queue
 import threading
 import uuid
 from collections.abc import Generator
@@ -15,6 +16,7 @@ from typing import Any
 
 from psycopg2 import pool as psycopg2_pool
 from psycopg2.extras import RealDictCursor
+from psycopg2.pool import PoolError
 
 
 def _get_db_config() -> dict[str, Any]:
@@ -35,13 +37,107 @@ _pool_lock = threading.Lock()
 
 def _get_pool() -> psycopg2_pool.ThreadedConnectionPool:
     """Get or create the connection pool."""
+    from valence.core.config import get_config
+
     global _pool
     if _pool is None:
         with _pool_lock:
             if _pool is None:
                 cfg = _get_db_config()
-                _pool = psycopg2_pool.ThreadedConnectionPool(minconn=2, maxconn=10, **cfg)
+                config = get_config()
+                _pool = psycopg2_pool.ThreadedConnectionPool(
+                    minconn=config.db_pool_min,
+                    maxconn=config.db_pool_max,
+                    **cfg,
+                )
     return _pool
+
+
+def _get_conn_with_timeout(pool: psycopg2_pool.ThreadedConnectionPool, timeout: int) -> Any:
+    """Get a connection from pool with timeout.
+
+    Args:
+        pool: The connection pool
+        timeout: Timeout in seconds
+
+    Returns:
+        A database connection
+
+    Raises:
+        PoolError: If timeout expires before connection is available
+    """
+    result_queue: queue.Queue = queue.Queue()
+
+    def _get_conn():
+        try:
+            conn = pool.getconn()
+            result_queue.put(("success", conn))
+        except Exception as e:
+            result_queue.put(("error", e))
+
+    thread = threading.Thread(target=_get_conn, daemon=True)
+    thread.start()
+
+    try:
+        result_type, result_value = result_queue.get(timeout=timeout)
+        if result_type == "error":
+            raise result_value
+        return result_value
+    except queue.Empty:
+        raise PoolError(f"Connection pool timeout after {timeout} seconds")
+
+
+def _validate_connection(conn: Any) -> bool:
+    """Check if a connection is valid and healthy.
+
+    Args:
+        conn: Database connection to validate
+
+    Returns:
+        True if connection is valid, False otherwise
+    """
+    if conn.closed:
+        return False
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1")
+            cur.fetchone()
+        return True
+    except Exception:
+        return False
+
+
+def _get_healthy_connection(pool: psycopg2_pool.ThreadedConnectionPool, timeout: int) -> Any:
+    """Get a healthy connection from pool, discarding stale ones.
+
+    Args:
+        pool: The connection pool
+        timeout: Timeout in seconds
+
+    Returns:
+        A validated database connection
+
+    Raises:
+        PoolError: If unable to get a healthy connection
+    """
+    max_attempts = 3
+    for attempt in range(max_attempts):
+        conn = _get_conn_with_timeout(pool, timeout)
+        if _validate_connection(conn):
+            return conn
+
+        # Connection is stale, close it and try again
+        try:
+            conn.close()
+        except Exception:
+            pass
+        pool.putconn(conn, close=True)
+
+        if attempt == max_attempts - 1:
+            raise PoolError("Failed to get healthy connection after multiple attempts")
+
+    raise PoolError("Failed to get healthy connection")
 
 
 @contextmanager
@@ -53,8 +149,11 @@ def get_cursor() -> Generator[Any, None, None]:
             cur.execute("SELECT * FROM sources")
             rows = cur.fetchall()
     """
+    from valence.core.config import get_config
+
     pool = _get_pool()
-    conn = pool.getconn()
+    config = get_config()
+    conn = _get_healthy_connection(pool, config.db_pool_timeout)
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             yield cur
@@ -78,8 +177,11 @@ def get_connection() -> Generator[Any, None, None]:
             with conn.cursor() as cur:
                 cur.execute("CREATE DATABASE test")
     """
+    from valence.core.config import get_config
+
     pool = _get_pool()
-    conn = pool.getconn()
+    config = get_config()
+    conn = _get_healthy_connection(pool, config.db_pool_timeout)
     try:
         yield conn
     finally:

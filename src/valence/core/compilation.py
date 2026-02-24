@@ -113,6 +113,11 @@ DEFAULT_RIGHT_SIZING: dict[str, int] = {
     "target_tokens": 2000,
 }
 
+DEFAULT_PROMPT_LIMITS: dict[str, int] = {
+    "max_total_chars": 100_000,  # Maximum total characters in prompt
+    "max_source_chars": 50_000,  # Maximum characters per individual source
+}
+
 
 def _get_right_sizing() -> dict[str, int]:
     """Read ``right_sizing`` from ``system_config``, falling back to defaults."""
@@ -131,6 +136,23 @@ def _get_right_sizing() -> dict[str, int]:
     return DEFAULT_RIGHT_SIZING.copy()
 
 
+def _get_prompt_limits() -> dict[str, int]:
+    """Read ``prompt_limits`` from ``system_config``, falling back to defaults."""
+    try:
+        with get_cursor() as cur:
+            cur.execute("SELECT value FROM system_config WHERE key = 'prompt_limits' LIMIT 1")
+            row = cur.fetchone()
+            if row:
+                val = row["value"]
+                if isinstance(val, str):
+                    val = json.loads(val)
+                if isinstance(val, dict):
+                    return {**DEFAULT_PROMPT_LIMITS, **val}
+    except Exception as exc:  # pragma: no cover
+        logger.warning("Failed to read prompt_limits config: %s", exc)
+    return DEFAULT_PROMPT_LIMITS.copy()
+
+
 # ---------------------------------------------------------------------------
 # Token counting
 # ---------------------------------------------------------------------------
@@ -147,13 +169,20 @@ def _count_tokens(content: str) -> int:
 
 
 def _build_compilation_prompt(sources: list[dict], title_hint: str | None, target_tokens: int) -> str:
-    """Build the LLM prompt for compiling multiple sources into a single article."""
+    """Build the LLM prompt for compiling multiple sources into a single article.
+
+    Returns structured prompt for LLM compilation task.
+    """
     source_blocks = []
+
     for src in sources:
         sid = src.get("id") or "?"
         title = src.get("title") or "Untitled"
         content = (src.get("content") or "").strip()
-        source_blocks.append(f"## Source id={sid}: {title}\n{content}")
+
+        block = f"## Source id={sid}: {title}\n{content}"
+        source_blocks.append(block)
+
     sources_text = "\n\n".join(source_blocks)
 
     title_line = f'\nThe article title should be: "{title_hint}"' if title_hint else ""
@@ -304,25 +333,38 @@ async def compile_article(
     # ---- Fetch all sources ----
     sources: list[dict] = []
     with get_cursor() as cur:
+        # Batch fetch all sources to avoid N+1 query (issue #456)
+        cur.execute(
+            "SELECT id, type, title, url, content, reliability FROM sources WHERE id = ANY(%s)",
+            (source_ids,),
+        )
+        rows = cur.fetchall()
+        # Build a map of fetched sources by ID
+        fetched_by_id = {str(row["id"]): dict(row) for row in rows}
+        # Preserve input order and identify missing sources
+        missing_ids = []
         for sid in source_ids:
-            cur.execute(
-                "SELECT id, type, title, url, content, reliability FROM sources WHERE id = %s",
-                (sid,),
-            )
-            row = cur.fetchone()
-            if row is None:
-                return err(f"Source not found: {sid}")
-            src = dict(row)
-            src["id"] = str(src["id"])
-            sources.append(src)
+            if sid in fetched_by_id:
+                src = fetched_by_id[sid]
+                src["id"] = str(src["id"])
+                sources.append(src)
+            else:
+                missing_ids.append(sid)
+        if missing_ids:
+            return err(f"Source(s) not found: {', '.join(missing_ids)}")
 
     # ---- LLM compilation ----
-    prompt = _build_compilation_prompt(sources, title_hint, target_tokens)
+    try:
+        prompt = _build_compilation_prompt(sources, title_hint, target_tokens)
+    except ValueError as exc:
+        # Prompt size limit exceeded (issue #460)
+        return err(str(exc))
+
     is_degraded = False
     try:
         llm_response = await _call_llm(prompt, task_type=TASK_COMPILE)
         parsed = validate_output(TASK_COMPILE, llm_response)
-    except (NotImplementedError, InferenceSchemaError, ValueError, json.JSONDecodeError) as exc:
+    except (NotImplementedError, InferenceSchemaError, json.JSONDecodeError) as exc:
         logger.warning("LLM compilation unavailable (%s), using fallback concatenation", exc)
         is_degraded = True
         content_parts = [f"## {s.get('title') or 'Source'}\n{s.get('content', '')}" for s in sources]

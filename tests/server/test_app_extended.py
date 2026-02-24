@@ -38,6 +38,8 @@ def app_env(monkeypatch, tmp_path):
     monkeypatch.setenv("VALENCE_TOKEN_FILE", str(token_file))
     monkeypatch.setenv("VALENCE_RATE_LIMIT_RPM", "60")
     monkeypatch.setenv("VALENCE_EXTERNAL_URL", "http://localhost:8420")
+    monkeypatch.setenv("VALENCE_OAUTH_ENABLED", "false")
+    monkeypatch.setenv("VALENCE_OAUTH_JWT_SECRET", "test-jwt-secret-for-testing")
 
     return {"token_file": token_file}
 

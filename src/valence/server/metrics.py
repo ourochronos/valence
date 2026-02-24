@@ -54,6 +54,8 @@ class MetricsCollector:
     """Thread-safe metrics collector.
 
     Collects request metrics and provides Prometheus text format output.
+
+    Issue #464: Database metrics are cached and refreshed in background.
     """
 
     def __init__(self) -> None:
@@ -67,6 +69,11 @@ class MetricsCollector:
 
         # Active connections gauge
         self._active_connections: int = 0
+
+        # Cached database metrics (#464)
+        self._db_metrics_cache: list[str] = []
+        self._db_metrics_last_update: float = 0.0
+        self._db_metrics_cache_ttl: float = 60.0  # Refresh every 60 seconds
 
     def record_request(self, method: str, path: str, status_code: int, duration_seconds: float) -> None:
         """Record a completed request.
@@ -161,12 +168,40 @@ class MetricsCollector:
             lines.append("# TYPE valence_active_connections gauge")
             lines.append(f"valence_active_connections {self._active_connections}")
 
-        # Database metrics (collected on demand)
-        db_metrics = self._collect_database_metrics()
+        # Database metrics (cached, #464)
+        db_metrics = self._get_cached_database_metrics()
         lines.extend(db_metrics)
 
         lines.append("")
         return "\n".join(lines)
+
+    def _get_cached_database_metrics(self) -> list[str]:
+        """Get database metrics from cache or refresh if expired.
+
+        Issue #464: Cache DB metrics to avoid blocking on each scrape.
+        """
+        import time
+
+        current_time = time.time()
+
+        with self._lock:
+            # Return cached metrics if still fresh
+            if current_time - self._db_metrics_last_update < self._db_metrics_cache_ttl:
+                return self._db_metrics_cache
+
+        # Cache expired or empty, refresh synchronously but log timing
+        start = time.perf_counter()
+        fresh_metrics = self._collect_database_metrics()
+        duration = time.perf_counter() - start
+
+        if duration > 0.1:  # Log slow DB metric collection
+            logger.debug(f"Database metrics collection took {duration:.3f}s")
+
+        with self._lock:
+            self._db_metrics_cache = fresh_metrics
+            self._db_metrics_last_update = current_time
+
+        return fresh_metrics
 
     def _collect_database_metrics(self) -> list[str]:
         """Collect database-related metrics."""
