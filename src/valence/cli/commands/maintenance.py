@@ -119,8 +119,8 @@ def cmd_maintenance_schedule(args: argparse.Namespace) -> int:
                 return 0
 
             # Show current schedule
-            schedule = get_maintenance_schedule(cur)
-            if schedule is None:
+            schedule_result = get_maintenance_schedule(cur)
+            if schedule_result is None:
                 print("Scheduled maintenance is disabled or not configured")
                 print("\nTo enable:")
                 print("  valence maintenance schedule --interval HOURS")
@@ -128,8 +128,8 @@ def cmd_maintenance_schedule(args: argparse.Namespace) -> int:
 
             print("Current maintenance schedule:")
             print("  Enabled: True")
-            print(f"  Interval: {schedule.get('interval_hours', 24)} hours")
-            last_run = schedule.get("last_run")
+            print(f"  Interval: {schedule_result.get('interval_hours', 24)} hours")
+            last_run = schedule_result.get("last_run")
             print(f"  Last run: {last_run if last_run else 'Never'}")
             return 0
 
