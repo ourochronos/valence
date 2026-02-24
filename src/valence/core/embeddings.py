@@ -1,24 +1,26 @@
 """Embedding generation for Valence.
 
 Uses OpenAI text-embedding-3-small by default.
-Config via VALENCE_EMBEDDING_* environment variables.
+Config via CoreSettings (get_config()).
 """
 
 import logging
-import os
 from typing import Any
 
 import httpx
+
+from valence.core.config import get_config
 
 logger = logging.getLogger(__name__)
 
 
 def get_embedding_config() -> dict[str, Any]:
-    """Get embedding configuration from environment."""
+    """Get embedding configuration from CoreSettings."""
+    config = get_config()
     return {
-        "provider": os.environ.get("VALENCE_EMBEDDING_PROVIDER", "openai"),
-        "model": os.environ.get("VALENCE_EMBEDDING_MODEL", "text-embedding-3-small"),
-        "dims": int(os.environ.get("VALENCE_EMBEDDING_DIMS", "1536")),
+        "provider": config.embedding_provider,
+        "model": config.embedding_model,
+        "dims": config.embedding_dims,
     }
 
 
@@ -36,12 +38,13 @@ def generate_embedding(text: str, model: str | None = None) -> list[float]:
         ValueError: If API key not set or provider not supported
         httpx.HTTPError: If API call fails
     """
+    config = get_config()
     cfg = get_embedding_config()
 
     if cfg["provider"] != "openai":
         raise ValueError(f"Unsupported embedding provider: {cfg['provider']}")
 
-    api_key = os.environ.get("OPENAI_API_KEY")
+    api_key = config.openai_api_key
     if not api_key:
         raise ValueError("OPENAI_API_KEY not set")
 

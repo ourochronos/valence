@@ -42,7 +42,7 @@ class CoreSettings(BaseSettings):
         validation_alias="VALENCE_DB_HOST",
     )
     db_port: int = Field(
-        default=5432,
+        default=5433,
         description="Database port",
         validation_alias="VALENCE_DB_PORT",
     )
@@ -83,6 +83,11 @@ class CoreSettings(BaseSettings):
         description="Embedding provider: 'local' or 'openai'",
         validation_alias="VALENCE_EMBEDDING_PROVIDER",
     )
+    embedding_model: str = Field(
+        default="BAAI/bge-small-en-v1.5",
+        description="Embedding model name (local model path or OpenAI model name)",
+        validation_alias="VALENCE_EMBEDDING_MODEL",
+    )
     embedding_model_path: str = Field(
         default="BAAI/bge-small-en-v1.5",
         description="Local embedding model name or path",
@@ -102,6 +107,16 @@ class CoreSettings(BaseSettings):
         default="",
         description="OpenAI API key for embeddings",
         validation_alias="OPENAI_API_KEY",
+    )
+
+    # ==========================================================================
+    # CURATION SETTINGS
+    # ==========================================================================
+
+    min_capture_confidence: float = Field(
+        default=0.50,
+        description="Minimum confidence threshold for auto-capture",
+        validation_alias="VALENCE_MIN_CAPTURE_CONFIDENCE",
     )
 
     # ==========================================================================

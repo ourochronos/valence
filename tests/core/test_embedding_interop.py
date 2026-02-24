@@ -51,8 +51,10 @@ class TestGetEmbeddingCapability:
         assert cap.model == "BAAI/bge-small-en-v1.5"
 
     def test_openai_provider_default(self, clean_env, monkeypatch):
-        """Test default dimensions when provider is set to openai."""
+        """Test dimensions when provider is set to openai with matching model."""
         monkeypatch.setenv("VALENCE_EMBEDDING_PROVIDER", "openai")
+        monkeypatch.setenv("VALENCE_EMBEDDING_MODEL", "text-embedding-3-small")
+        monkeypatch.setenv("VALENCE_EMBEDDING_DIMS", "1536")
         cap = get_embedding_capability()
         assert cap.dimensions == 1536
         assert cap.model == "text-embedding-3-small"

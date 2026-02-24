@@ -30,7 +30,7 @@ class TestCoreSettingsDefaults:
         settings = CoreSettings()
 
         assert settings.db_host == "localhost"
-        assert settings.db_port == 5432
+        assert settings.db_port == 5433
         assert settings.db_name == "valence"
         assert settings.db_user == "valence"
         assert settings.db_password == ""
@@ -188,14 +188,14 @@ class TestCoreSettingsComputedProperties:
     def test_database_url(self, clean_env):
         """Test database_url property constructs correct URL."""
         settings = CoreSettings()
-        expected = "postgresql://valence:@localhost:5432/valence"
+        expected = "postgresql://valence:@localhost:5433/valence"
         assert settings.database_url == expected
 
     def test_database_url_with_password(self, monkeypatch, clean_env):
         """Test database_url includes password when set."""
         monkeypatch.setenv("VALENCE_DB_PASSWORD", "secret")
         settings = CoreSettings()
-        expected = "postgresql://valence:secret@localhost:5432/valence"
+        expected = "postgresql://valence:secret@localhost:5433/valence"
         assert settings.database_url == expected
 
     def test_database_url_custom_values(self, monkeypatch, clean_env):
@@ -217,7 +217,7 @@ class TestCoreSettingsComputedProperties:
 
         assert params == {
             "host": "localhost",
-            "port": 5432,
+            "port": 5433,
             "dbname": "valence",
             "user": "valence",
             "password": "",

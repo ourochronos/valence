@@ -148,13 +148,13 @@ class TestServerSettings:
 
         monkeypatch.setenv("VALENCE_FEDERATION_ENABLED", "true")
         monkeypatch.setenv("VALENCE_FEDERATION_NODE_NAME", "MyNode")
-        monkeypatch.setenv("VALENCE_FEDERATION_NODE_DID", "did:vkb:web:example.com")
+        monkeypatch.setenv("VALENCE_FEDERATION_DID", "did:vkb:web:example.com")
 
         settings = ServerSettings()
 
         assert settings.federation_enabled is True
         assert settings.federation_node_name == "MyNode"
-        assert settings.federation_node_did == "did:vkb:web:example.com"
+        assert settings.federation_did == "did:vkb:web:example.com"
         assert settings.federation_capabilities == ["belief_sync"]
 
     def test_federation_defaults(self, clean_env):

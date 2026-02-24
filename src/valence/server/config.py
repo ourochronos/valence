@@ -8,7 +8,9 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from pydantic import Field, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
+
+from valence.core.config import CoreSettings
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +27,11 @@ def get_package_version() -> str:
         return "0.0.0-dev"
 
 
-class ServerSettings(BaseSettings):
+class ServerSettings(CoreSettings):
     """Configuration for the Valence HTTP MCP server.
+
+    Inherits core settings (DB, embedding, federation identity, logging, cache)
+    and adds server-specific settings (HTTP, OAuth, MCP).
 
     Settings can be configured via environment variables with VALENCE_ prefix.
     """
@@ -84,16 +89,6 @@ class ServerSettings(BaseSettings):
         description="Path to OAuth clients storage file",
     )
 
-    # Database settings (inherited from existing VKB config)
-    db_host: str = Field(default="localhost", alias="VALENCE_DB_HOST")
-    db_port: int = Field(default=5433, alias="VALENCE_DB_PORT")
-    db_name: str = Field(default="valence", alias="VALENCE_DB_NAME")
-    db_user: str = Field(default="valence", alias="VALENCE_DB_USER")
-    db_password: str = Field(default="", alias="VALENCE_DB_PASSWORD")
-
-    # OpenAI for embeddings
-    openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
-
     # CORS settings
     allowed_origins: list[str] = Field(
         default=[],
@@ -109,12 +104,6 @@ class ServerSettings(BaseSettings):
     # Rate limiting (requests per minute per client)
     rate_limit_rpm: int = Field(default=60, description="Rate limit per minute")
 
-    # Cache settings (Issue #147)
-    cache_max_size: int = Field(
-        default=1000,
-        description="Maximum size for in-memory LRU caches (router_cache, failure_events, etc.)",
-    )
-
     # Server name for MCP
     server_name: str = Field(default="valence", description="MCP server name")
     server_version: str = Field(default_factory=get_package_version, description="Server version")
@@ -126,7 +115,7 @@ class ServerSettings(BaseSettings):
     )
 
     # ==========================================================================
-    # FEDERATION SETTINGS
+    # FEDERATION SETTINGS (extends CoreSettings federation identity)
     # ==========================================================================
 
     # Enable/disable federation
@@ -135,24 +124,10 @@ class ServerSettings(BaseSettings):
         description="Enable federation protocol endpoints",
     )
 
-    # Node identity
-    federation_node_did: str | None = Field(
-        default=None,
-        description="Node DID (e.g., did:valence:web:valence.example.com). If not set, derived from external_url.",
-    )
+    # Node identity (extends federation_did from CoreSettings)
     federation_node_name: str | None = Field(
         default=None,
         description="Human-readable node name",
-    )
-
-    # Cryptographic identity (Ed25519 public key in multibase format)
-    federation_public_key: str | None = Field(
-        default=None,
-        description="Ed25519 public key in multibase format (z6Mk...)",
-    )
-    federation_private_key: str | None = Field(
-        default=None,
-        description="Ed25519 private key hex (for signing - keep secret!)",
     )
 
     # Capabilities
@@ -206,10 +181,6 @@ class ServerSettings(BaseSettings):
         default=5,
         description="Minimum contributors required for aggregation results",
     )
-    federation_require_auth: bool = Field(
-        default=False,
-        description="Require authentication for all federation/sync requests. When true, unauthenticated federation requests are rejected with 401.",
-    )
 
     @model_validator(mode="after")
     def validate_production_settings(self) -> ServerSettings:
@@ -244,11 +215,6 @@ class ServerSettings(BaseSettings):
             object.__setattr__(self, "oauth_jwt_secret", secrets.token_hex(32))
 
         return self
-
-    @property
-    def database_url(self) -> str:
-        """Construct database URL."""
-        return f"postgresql://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
 
     @property
     def base_url(self) -> str:

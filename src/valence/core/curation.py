@@ -7,7 +7,7 @@ insight extraction.
 
 from __future__ import annotations
 
-import os
+from valence.core.config import get_config
 
 # Signal types mapped to base confidence scores.
 # Higher confidence = stronger signal that this should be captured.
@@ -22,8 +22,16 @@ SIGNAL_CONFIDENCE: dict[str, float] = {
     "mentioned_in_passing": 0.35,
 }
 
-# Minimum confidence for auto-capture (configurable via env)
-MIN_CAPTURE_CONFIDENCE = float(os.environ.get("VALENCE_MIN_CAPTURE_CONFIDENCE", "0.50"))
+# Minimum confidence for auto-capture
+# Note: This is a default constant for tests. Live code should use _get_min_capture_confidence()
+# which reads from config (VALENCE_MIN_CAPTURE_CONFIDENCE env var)
+MIN_CAPTURE_CONFIDENCE = 0.50
+
+
+def _get_min_capture_confidence() -> float:
+    """Get minimum capture confidence from config."""
+    return get_config().min_capture_confidence
+
 
 # Maximum beliefs auto-created per session to prevent spam
 MAX_AUTO_BELIEFS_PER_SESSION = 10
@@ -36,7 +44,7 @@ MIN_THEME_LENGTH = 10
 def should_capture(signal_type: str) -> bool:
     """Check if a signal type meets the minimum capture threshold."""
     confidence = SIGNAL_CONFIDENCE.get(signal_type, 0.0)
-    return confidence >= MIN_CAPTURE_CONFIDENCE
+    return confidence >= _get_min_capture_confidence()
 
 
 def get_confidence(signal_type: str) -> float:

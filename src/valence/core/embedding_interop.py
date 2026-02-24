@@ -41,22 +41,17 @@ class EmbeddingCapability:
 def get_embedding_capability() -> EmbeddingCapability:
     """Get this node's embedding capability from config.
 
-    Reads VALENCE_EMBEDDING_DIMS and related config, falling back to defaults.
+    Reads from CoreSettings via get_config().
     """
-    import os
+    from valence.core.config import get_config
 
-    provider = os.environ.get("VALENCE_EMBEDDING_PROVIDER", "local")
+    config = get_config()
 
-    # Default dimensions based on provider
-    if provider == "openai":
-        default_dims = 1536
-    else:
-        default_dims = 384
+    # Use configured dimensions
+    dims = config.embedding_dims
 
-    dims = int(os.environ.get("VALENCE_EMBEDDING_DIMS", str(default_dims)))
-
-    # Get configured model or infer from dimensions
-    model = os.environ.get("VALENCE_EMBEDDING_MODEL", "")
+    # Get configured model
+    model = config.embedding_model
 
     # Map common dimensions to known models
     dim_to_model = {
