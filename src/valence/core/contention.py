@@ -84,7 +84,7 @@ _SCHEMA_ENSURED = False
 def _ensure_contention_schema() -> None:
     """Make related_article_id nullable, add source_id and degraded to contentions.
 
-    The original tensions table required two article FKs; for source-triggered
+    The original contentions table required two article FKs; for source-triggered
     contentions we need only one article + a source reference.  This runs once
     per process.
     """
