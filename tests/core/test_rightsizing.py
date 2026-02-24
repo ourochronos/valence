@@ -135,7 +135,12 @@ class TestSplitArticle:
         original_content: str = "First portion content here.\n\nSecond portion content here.",
         sources: list[dict] | None = None,
     ):
-        """Build a mock cursor configured for a successful split."""
+        """Build a mock cursor configured for a successful split.
+
+        New implementation: archives original, creates two new articles.
+        fetchone sequence: original (SELECT), part_a (INSERT), part_b (INSERT)
+        fetchall sequence: sources (SELECT)
+        """
         if sources is None:
             sources = [
                 _source_link_row(SOURCE_ID_1, "originates"),
@@ -146,19 +151,20 @@ class TestSplitArticle:
             content=original_content,
             version=1,
         )
-        updated_original = _article_row(
-            article_id=ARTICLE_ID,
+        part_a = _article_row(
+            article_id=ARTICLE_ID,  # Mock returns ARTICLE_ID for first insert
             content=original_content.split("\n\n")[0] if "\n\n" in original_content else original_content[:20],
-            version=2,
+            title="Test Article (part 1)",
+            version=1,
         )
-        new_article = _article_row(
+        part_b = _article_row(
             article_id=NEW_ARTICLE_ID,
-            content="new content",
+            content=original_content.split("\n\n")[1] if "\n\n" in original_content else "Second part",
             title="Test Article (part 2)",
             version=1,
         )
         return _make_cursor(
-            fetchone_seq=[original, updated_original, new_article],
+            fetchone_seq=[original, part_a, part_b],
             fetchall_seq=[sources],
         )
 
@@ -171,11 +177,11 @@ class TestSplitArticle:
             patch("valence.core.articles._compute_embedding", return_value=None),
         ):
             split_result = await split_article(ARTICLE_ID)
-            original = split_result.data["original"]
-            new_art = split_result.data["new"]
+            part_a = split_result.data["part_a"]
+            part_b = split_result.data["part_b"]
 
-        assert original is not None
-        assert new_art is not None
+        assert part_a is not None
+        assert part_b is not None
 
     async def test_split_original_retains_id(self):
         from valence.core.articles import split_article
@@ -186,9 +192,11 @@ class TestSplitArticle:
             patch("valence.core.articles._compute_embedding", return_value=None),
         ):
             split_result = await split_article(ARTICLE_ID)
-            original = split_result.data["original"]
+            # Original article is now archived, not retained - check part_a instead
+            part_a = split_result.data["part_a"]
 
-        assert original["id"] == ARTICLE_ID
+        # With new implementation, original is archived and part_a gets a new ID
+        assert part_a["id"] == ARTICLE_ID  # Mock returns ARTICLE_ID for first new article
 
     async def test_split_new_article_has_different_id(self):
         from valence.core.articles import split_article
@@ -199,12 +207,12 @@ class TestSplitArticle:
             patch("valence.core.articles._compute_embedding", return_value=None),
         ):
             split_result = await split_article(ARTICLE_ID)
-            original = split_result.data["original"]
-            new_art = split_result.data["new"]
+            part_a = split_result.data["part_a"]
+            part_b = split_result.data["part_b"]
 
-        assert new_art["id"] != original["id"]
+        assert part_b["id"] != part_a["id"]
         # The new ID comes from the DB insert; mock returns NEW_ARTICLE_ID
-        assert new_art["id"] == NEW_ARTICLE_ID
+        assert part_b["id"] == NEW_ARTICLE_ID
 
     async def test_split_sources_copied_to_both_articles(self):
         from valence.core.articles import split_article
@@ -293,7 +301,7 @@ class TestSplitArticle:
         assert len(new_art_source_calls) == 3  # one insert per source
 
     async def test_split_mutation_has_cross_references(self):
-        """Mutation for original should reference new article ID and vice versa."""
+        """Mutation for original should reference new article IDs and vice versa."""
         from valence.core.articles import split_article
 
         mock_cur = self._setup_split_cursor()
@@ -304,9 +312,9 @@ class TestSplitArticle:
             await split_article(ARTICLE_ID)
 
         mutation_calls = [str(c) for c in mock_cur.execute.call_args_list if "article_mutations" in str(c) and "split" in str(c)]
-        # Should be exactly 2 mutation inserts (one for each article)
-        assert len(mutation_calls) == 2
-        # Both should reference each other
+        # Should be exactly 3 mutation inserts (original archived, part_a created, part_b created)
+        assert len(mutation_calls) == 3
+        # All should reference the article IDs
         combined = " ".join(mutation_calls)
         assert ARTICLE_ID in combined
         assert NEW_ARTICLE_ID in combined
@@ -318,10 +326,10 @@ class TestSplitArticle:
         original = _article_row(
             content="First part of a fairly long article.\n\nSecond part of a fairly long article.",
         )
-        updated_original = _article_row(article_id=ARTICLE_ID, version=2)
-        new_article = _article_row(article_id=NEW_ARTICLE_ID, version=1)
+        part_a = _article_row(article_id=ARTICLE_ID, version=1, title="Test Article (part 1)")
+        part_b = _article_row(article_id=NEW_ARTICLE_ID, version=1, title="Test Article (part 2)")
         mock_cur = _make_cursor(
-            fetchone_seq=[original, updated_original, new_article],
+            fetchone_seq=[original, part_a, part_b],
             fetchall_seq=[[]],  # no sources
         )
         with (
@@ -329,11 +337,11 @@ class TestSplitArticle:
             patch("valence.core.articles._compute_embedding", return_value=None),
         ):
             split_result = await split_article(ARTICLE_ID)
-            original_out = split_result.data["original"]
-            new_art = split_result.data["new"]
+            part_a_out = split_result.data["part_a"]
+            part_b_out = split_result.data["part_b"]
 
-        assert original_out["id"] == ARTICLE_ID
-        assert new_art["id"] == NEW_ARTICLE_ID
+        assert part_a_out["id"] == ARTICLE_ID
+        assert part_b_out["id"] == NEW_ARTICLE_ID
 
 
 # ---------------------------------------------------------------------------
@@ -588,10 +596,10 @@ class TestProvenanceChainIntegrity:
         original = _article_row(
             content="First part.\n\nSecond part.",
         )
-        updated_orig = _article_row(article_id=ARTICLE_ID, version=2)
-        new_art_row = _article_row(article_id=NEW_ARTICLE_ID, version=1)
+        part_a_row = _article_row(article_id=ARTICLE_ID, version=1, title="Test Article (part 1)")
+        part_b_row = _article_row(article_id=NEW_ARTICLE_ID, version=1, title="Test Article (part 2)")
         split_cur = _make_cursor(
-            fetchone_seq=[original, updated_orig, new_art_row],
+            fetchone_seq=[original, part_a_row, part_b_row],
             fetchall_seq=[sources],
         )
         with (
@@ -599,10 +607,10 @@ class TestProvenanceChainIntegrity:
             patch("valence.core.articles._compute_embedding", return_value=None),
         ):
             split_res = await split_article(ARTICLE_ID)
-            orig_result = split_res.data["original"]
-            new_result = split_res.data["new"]
+            part_a_result = split_res.data["part_a"]
+            part_b_result = split_res.data["part_b"]
 
-        # --- Verify provenance for the original (now updated) article ---
+        # --- Verify provenance for part_a article ---
         prov_row_1 = {
             "link_id": str(uuid4()),
             "article_id": ARTICLE_ID,
