@@ -46,7 +46,7 @@ def memory_store(
     importance = max(0.0, min(1.0, float(importance)))
 
     # Build metadata with agent-specific fields
-    metadata = {
+    metadata: dict[str, Any] = {
         "memory": True,
         "importance": importance,
     }
