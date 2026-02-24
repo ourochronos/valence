@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-02-24
+
+Complete rewrite: unified schema, append-only sources with supersession, hybrid retrieval, MCP tools interface.
+
 ### Fixed
 - `pattern_record` and `pattern_reinforce` UUID array handling — psycopg2 can't adapt `list[UUID]` to PostgreSQL `UUID[]`; now passes strings with `::uuid[]` cast (affects both MCP stdio server and unified HTTP server)
 
