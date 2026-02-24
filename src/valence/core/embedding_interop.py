@@ -1,7 +1,7 @@
 """Embedding interoperability for federation (#356).
 
-Ensures beliefs federate as text only — embeddings are never sent.
-Received beliefs are re-embedded locally using the node's configured model.
+Ensures articles federate as text only — embeddings are never sent.
+Received articles are re-embedded locally using the node's configured model.
 Provides text-based similarity fallback for cross-model comparison.
 
 Key principle: Each node embeds with its own model. Embedding vectors are

@@ -1,6 +1,6 @@
-"""Temporal validity tracking for Valence beliefs.
+"""Temporal validity tracking for Valence articles.
 
-Beliefs can have time-bounded validity and can supersede each other
+Articles can have time-bounded validity and can supersede each other
 to form chains of knowledge evolution.
 """
 
@@ -198,7 +198,7 @@ class SupersessionChain:
 
     @property
     def length(self) -> int:
-        """Number of beliefs in the chain."""
+        """Number of articles in the chain."""
         return len(self.belief_ids)
 
     @property

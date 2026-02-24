@@ -7,7 +7,7 @@ Metrics exported:
 - valence_http_request_duration_seconds: Request latency histogram
 - valence_http_requests_total: Request count by endpoint/status
 - valence_active_connections: Currently active connections
-- valence_beliefs_total: Total belief count in database
+- valence_articles_total: Total article count in database
 - valence_federation_peers_total: Number of federation peers
 """
 
@@ -176,9 +176,9 @@ class MetricsCollector:
             stats_dict = stats.to_dict()
 
             lines.append("")
-            lines.append("# HELP valence_beliefs_total Total beliefs in database")
-            lines.append("# TYPE valence_beliefs_total gauge")
-            lines.append(f"valence_beliefs_total {stats_dict.get('beliefs', 0)}")
+            lines.append("# HELP valence_articles_total Total articles in database")
+            lines.append("# TYPE valence_articles_total gauge")
+            lines.append(f"valence_articles_total {stats_dict.get('articles', 0)}")
 
             lines.append("")
             lines.append("# HELP valence_entities_total Total entities in database")
@@ -201,17 +201,17 @@ class MetricsCollector:
             lines.append(f"valence_patterns_total {stats_dict.get('patterns', 0)}")
 
             lines.append("")
-            lines.append("# HELP valence_tensions_total Total belief tensions")
-            lines.append("# TYPE valence_tensions_total gauge")
-            lines.append(f"valence_tensions_total {stats_dict.get('tensions', 0)}")
+            lines.append("# HELP valence_contentions_total Total article contentions")
+            lines.append("# TYPE valence_contentions_total gauge")
+            lines.append(f"valence_contentions_total {stats_dict.get('contentions', 0)}")
 
         except Exception as e:
             logger.debug(f"Could not collect database metrics: {e}")
             # Return placeholder when DB unavailable
             lines.append("")
-            lines.append("# HELP valence_beliefs_total Total beliefs in database")
-            lines.append("# TYPE valence_beliefs_total gauge")
-            lines.append("# valence_beliefs_total unavailable (database error)")
+            lines.append("# HELP valence_articles_total Total articles in database")
+            lines.append("# TYPE valence_articles_total gauge")
+            lines.append("# valence_articles_total unavailable (database error)")
 
         return lines
 
