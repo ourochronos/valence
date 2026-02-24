@@ -12,6 +12,7 @@ from . import (
     embeddings,
     ingest,
     maintenance,
+    memory,
     migration,
     provenance,
     sources,
@@ -25,6 +26,7 @@ from .conflicts import cmd_conflicts
 from .embeddings import cmd_embeddings
 from .ingest import cmd_ingest
 from .maintenance import cmd_maintenance
+from .memory import cmd_memory_import, cmd_memory_import_dir, cmd_memory_list, cmd_memory_search
 from .migration import cmd_migrate
 from .provenance import cmd_provenance_get, cmd_provenance_link, cmd_provenance_trace
 from .sources import cmd_sources_get, cmd_sources_ingest, cmd_sources_list, cmd_sources_search
@@ -39,6 +41,7 @@ COMMAND_MODULES = [
     ingest,  # valence ingest
     compile,  # valence compile
     status,  # valence status
+    memory,  # valence memory
     sources,
     articles,
     provenance,
@@ -68,6 +71,11 @@ __all__ = [
     "cmd_sources_ingest",
     "cmd_sources_list",
     "cmd_sources_search",
+    # Memory commands
+    "cmd_memory_import",
+    "cmd_memory_import_dir",
+    "cmd_memory_list",
+    "cmd_memory_search",
     # Legacy commands
     "cmd_conflicts",
     "cmd_embeddings",
