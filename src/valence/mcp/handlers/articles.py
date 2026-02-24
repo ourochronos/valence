@@ -27,9 +27,7 @@ def knowledge_search(
     try:
         from valence.core.retrieval import retrieve
 
-        results = run_async(
-            retrieve(query, limit=limit, include_sources=include_sources, session_id=session_id)
-        )
+        results = run_async(retrieve(query, limit=limit, include_sources=include_sources, session_id=session_id))
     except Exception as exc:
         logger.exception("knowledge_search failed for query %r: %s", query, exc)
         return {"success": False, "error": str(exc)}

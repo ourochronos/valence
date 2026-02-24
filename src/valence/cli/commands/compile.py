@@ -50,10 +50,7 @@ def cmd_compile(args: argparse.Namespace) -> int:
         except ValenceAPIError as e:
             # If endpoint doesn't exist yet, provide helpful error
             if e.status_code == 404:
-                output_error(
-                    "Auto-compilation endpoint not yet implemented. "
-                    "Specify source IDs manually or wait for server update."
-                )
+                output_error("Auto-compilation endpoint not yet implemented. Specify source IDs manually or wait for server update.")
             else:
                 output_error(e.message)
             return 1

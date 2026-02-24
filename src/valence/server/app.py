@@ -983,7 +983,6 @@ app = create_app()
 def run() -> None:
     """Run the server using uvicorn."""
 
-
     import uvicorn
 
     settings = get_settings()

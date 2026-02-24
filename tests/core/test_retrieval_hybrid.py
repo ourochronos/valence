@@ -41,9 +41,7 @@ class MockCursor:
 @patch("valence.core.retrieval._has_active_contentions")
 @patch("valence.core.retrieval._build_provenance_summary")
 @patch("valence.core.retrieval.get_cursor")
-def test_hybrid_retrieval_vector_only_match(
-    mock_get_cursor, mock_prov, mock_cont, mock_gen_embed
-):
+def test_hybrid_retrieval_vector_only_match(mock_get_cursor, mock_prov, mock_cont, mock_gen_embed):
     """Test that vector-only matches are returned when text search finds nothing."""
     # Mock article found by vector but not by text
     mock_rows = [
@@ -91,9 +89,7 @@ def test_hybrid_retrieval_vector_only_match(
 @patch("valence.core.retrieval._has_active_contentions")
 @patch("valence.core.retrieval._build_provenance_summary")
 @patch("valence.core.retrieval.get_cursor")
-def test_hybrid_retrieval_text_only_match(
-    mock_get_cursor, mock_prov, mock_cont, mock_gen_embed
-):
+def test_hybrid_retrieval_text_only_match(mock_get_cursor, mock_prov, mock_cont, mock_gen_embed):
     """Test that text-only matches are returned when embedding is missing."""
     # Mock article found by text but not by vector
     mock_rows = [
@@ -141,9 +137,7 @@ def test_hybrid_retrieval_text_only_match(
 @patch("valence.core.retrieval._has_active_contentions")
 @patch("valence.core.retrieval._build_provenance_summary")
 @patch("valence.core.retrieval.get_cursor")
-def test_hybrid_retrieval_rrf_combination(
-    mock_get_cursor, mock_prov, mock_cont, mock_gen_embed
-):
+def test_hybrid_retrieval_rrf_combination(mock_get_cursor, mock_prov, mock_cont, mock_gen_embed):
     """Test that RRF correctly ranks items with both signals highest."""
     # Mock: article with both signals vs article with only one signal
     mock_rows = [
@@ -212,9 +206,7 @@ def test_hybrid_retrieval_rrf_combination(
 @patch("valence.core.retrieval._has_active_contentions")
 @patch("valence.core.retrieval._build_provenance_summary")
 @patch("valence.core.retrieval.get_cursor")
-def test_hybrid_retrieval_embedding_fallback(
-    mock_get_cursor, mock_prov, mock_cont, mock_gen_embed
-):
+def test_hybrid_retrieval_embedding_fallback(mock_get_cursor, mock_prov, mock_cont, mock_gen_embed):
     """Test fallback to text-only when embedding generation fails."""
     mock_rows = [
         {
@@ -294,4 +286,3 @@ def test_sources_hybrid_retrieval(mock_get_cursor, mock_gen_embed):
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-

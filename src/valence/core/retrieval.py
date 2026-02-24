@@ -54,6 +54,7 @@ def _try_generate_embedding(query: str) -> str | None:
 def _serialize_row(row: dict[str, Any]) -> dict[str, Any]:
     """Convert a DB row dict: UUID → str, datetime → ISO string."""
     from valence.core.db import serialize_row
+
     return serialize_row(row)
 
 

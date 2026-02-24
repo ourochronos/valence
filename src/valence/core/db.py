@@ -37,9 +37,7 @@ def _get_pool() -> psycopg2_pool.ThreadedConnectionPool:
         with _pool_lock:
             if _pool is None:
                 cfg = _get_db_config()
-                _pool = psycopg2_pool.ThreadedConnectionPool(
-                    minconn=2, maxconn=10, **cfg
-                )
+                _pool = psycopg2_pool.ThreadedConnectionPool(minconn=2, maxconn=10, **cfg)
     return _pool
 
 
@@ -137,9 +135,7 @@ def get_schema_version() -> str | None:
         return None
 
     with get_cursor() as cur:
-        cur.execute(
-            "SELECT value FROM system_config WHERE key = 'schema_version'"
-        )
+        cur.execute("SELECT value FROM system_config WHERE key = 'schema_version'")
         result = cur.fetchone()
         return result["value"] if result else None
 
@@ -170,9 +166,7 @@ def init_schema(schema_path: str | None = None) -> None:
                 break
 
         if schema_path is None:
-            raise FileNotFoundError(
-                "schema.sql not found. Checked: " + ", ".join(str(c) for c in candidates)
-            )
+            raise FileNotFoundError("schema.sql not found. Checked: " + ", ".join(str(c) for c in candidates))
 
     with open(schema_path) as f:
         schema_sql = f.read()

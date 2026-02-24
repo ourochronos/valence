@@ -420,12 +420,20 @@ class TestRankingOrder:
     async def test_higher_relevance_ranks_first(self):
         """Article with higher RRF score should rank above lower-scored article."""
         high = _make_article_row(
-            article_id=ARTICLE_ID, text_rank=0.95, vec_rank=1, rrf_score=0.033,
-            confidence_overall=0.7, days_old=5,
+            article_id=ARTICLE_ID,
+            text_rank=0.95,
+            vec_rank=1,
+            rrf_score=0.033,
+            confidence_overall=0.7,
+            days_old=5,
         )
         low = _make_article_row(
-            article_id=ARTICLE_ID_2, text_rank=0.2, vec_rank=5, rrf_score=0.016,
-            confidence_overall=0.7, days_old=5,
+            article_id=ARTICLE_ID_2,
+            text_rank=0.2,
+            vec_rank=5,
+            rrf_score=0.016,
+            confidence_overall=0.7,
+            days_old=5,
         )
 
         fetch_all_responses = [[high, low]]

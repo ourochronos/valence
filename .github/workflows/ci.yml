@@ -85,15 +85,15 @@ jobs:
           PGPASSWORD: testpass
           PGDATABASE: valence_test
         run: |
-          psql -f src/valence/substrate/schema.sql
-          psql -f src/valence/substrate/procedures.sql
+          psql -f schema.sql
 
       - name: Run tests
         env:
-          VKB_DB_HOST: localhost
-          VKB_DB_USER: valence
-          VKB_DB_PASSWORD: testpass
-          VKB_DB_NAME: valence_test
+          VALENCE_DB_HOST: localhost
+          VALENCE_DB_PORT: "5432"
+          VALENCE_DB_USER: valence
+          VALENCE_DB_PASSWORD: testpass
+          VALENCE_DB_NAME: valence_test
         run: |
           pytest tests/ \
             -m "not integration and not slow" \
@@ -106,7 +106,6 @@ jobs:
 
   integration:
     runs-on: ubuntu-latest
-    # Run in parallel with unit tests
     if: github.ref == 'refs/heads/main'
 
     services:
@@ -145,14 +144,14 @@ jobs:
           PGPASSWORD: testpass
           PGDATABASE: valence_test
         run: |
-          psql -f src/valence/substrate/schema.sql
-          psql -f src/valence/substrate/procedures.sql
+          psql -f schema.sql
 
       - name: Integration tests
         env:
-          VKB_DB_HOST: localhost
-          VKB_DB_USER: valence
-          VKB_DB_PASSWORD: testpass
-          VKB_DB_NAME: valence_test
+          VALENCE_DB_HOST: localhost
+          VALENCE_DB_PORT: "5432"
+          VALENCE_DB_USER: valence
+          VALENCE_DB_PASSWORD: testpass
+          VALENCE_DB_NAME: valence_test
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: pytest tests/ -m "integration" -v --tb=short --timeout=60
