@@ -1,28 +1,14 @@
 """
-Integration tests for Valence Pod deployment.
+Integration tests for Valence v2 deployment.
 
-These tests verify that a deployed pod is functioning correctly.
-They can be run against a local development database or a remote pod.
+Verify that a deployed database has the correct schema and basic operations work.
 
 Requirements:
-    - PostgreSQL database available (VALENCE_DB_HOST, VALENCE_DB_NAME, etc.)
-    - For remote tests: VALENCE_DOMAIN environment variable
-
-These tests are automatically skipped when PostgreSQL is unavailable.
+    - PostgreSQL with pgvector available (VALENCE_DB_HOST, etc.)
 
 Usage:
-    # Test local database
     pytest tests/integration/test_deployment.py -v
-
-    # Test remote pod
-    VALENCE_POD_IP=x.x.x.x VALENCE_DOMAIN=pod.example.com \
-        pytest tests/integration/test_deployment.py -v
-
-    # Skip slow tests
-    pytest tests/integration/test_deployment.py -v -m "not slow"
-
-    # Skip integration tests entirely (no DB)
-    pytest -m "not integration"
+    pytest -m "not integration"  # skip
 """
 
 import os
@@ -30,18 +16,14 @@ import os
 import psycopg2
 import pytest
 
-# Configuration from environment
-VALENCE_POD_IP = os.environ.get("VALENCE_POD_IP")
-VALENCE_DOMAIN = os.environ.get("VALENCE_DOMAIN")
 DB_HOST = os.environ.get("VALENCE_DB_HOST", "localhost")
 DB_PORT = int(os.environ.get("VALENCE_DB_PORT", "5432"))
-DB_NAME = os.environ.get("VALENCE_DB_NAME", "valence")
+DB_NAME = os.environ.get("VALENCE_DB_NAME", "valence_test")
 DB_USER = os.environ.get("VALENCE_DB_USER", "valence")
-DB_PASS = os.environ.get("VALENCE_DB_PASSWORD", os.environ.get("VALENCE_DB_PASSWORD", ""))
+DB_PASS = os.environ.get("VALENCE_DB_PASSWORD", "")
 
 
 def _check_db_available():
-    """Check if the database is available."""
     try:
         conn = psycopg2.connect(
             host=DB_HOST,
@@ -57,19 +39,12 @@ def _check_db_available():
         return False
 
 
-# Check once at module load
 _DB_AVAILABLE = _check_db_available()
 
 
 def get_db_connection():
-    """Get a database connection, either local or via SSH tunnel."""
     if not _DB_AVAILABLE:
         pytest.skip("Database not available (integration test)")
-
-    if VALENCE_POD_IP and DB_HOST == "localhost":
-        # Remote pod - would need SSH tunnel
-        pytest.skip("Remote database testing requires SSH tunnel setup")
-
     return psycopg2.connect(
         host=DB_HOST,
         port=DB_PORT,
@@ -79,309 +54,184 @@ def get_db_connection():
     )
 
 
-# Mark all tests in this module as integration tests
 pytestmark = pytest.mark.integration
+
+# The 10 v2 tables
+V2_TABLES = {
+    "sources",
+    "articles",
+    "article_sources",
+    "usage_traces",
+    "contentions",
+    "entities",
+    "article_entities",
+    "system_config",
+    "article_mutations",
+    "mutation_queue",
+}
 
 
 class TestDatabaseSchema:
-    """Tests for database schema verification."""
-
     def test_database_connection(self):
-        """Verify we can connect to the database."""
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT 1")
-        result = cursor.fetchone()
-        assert result[0] == 1
+        assert cursor.fetchone()[0] == 1
         conn.close()
 
     def test_pgvector_extension(self):
-        """Verify pgvector extension is installed."""
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
-        result = cursor.fetchone()
-        assert result is not None, "pgvector extension not installed"
+        assert cursor.fetchone() is not None, "pgvector extension not installed"
         conn.close()
 
-    def test_core_tables_exist(self):
-        """Verify core tables exist in the schema."""
-        required_tables = [
-            "beliefs",
-            "entities",
-            "vkb_sessions",
-            "vkb_exchanges",
-            "vkb_patterns",
-            "tensions",
-        ]
-
+    def test_v2_tables_exist(self):
         conn = get_db_connection()
         cursor = conn.cursor()
-
         cursor.execute("""
-            SELECT table_name
-            FROM information_schema.tables
+            SELECT table_name FROM information_schema.tables
             WHERE table_schema = 'public'
         """)
-        existing_tables = {row[0] for row in cursor.fetchall()}
+        existing = {row[0] for row in cursor.fetchall()}
         conn.close()
-
-        missing = set(required_tables) - existing_tables
+        missing = V2_TABLES - existing
         assert not missing, f"Missing tables: {missing}"
 
-    def test_beliefs_table_columns(self):
-        """Verify beliefs table has expected columns."""
-        expected_columns = {
+    def test_sources_table_columns(self):
+        expected = {
             "id",
+            "type",
+            "title",
+            "url",
             "content",
+            "fingerprint",
+            "reliability",
+            "content_hash",
+            "metadata",
+            "created_at",
+            "embedding",
+            "content_tsv",
+            "supersedes_id",
+        }
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'sources'
+        """)
+        actual = {row[0] for row in cursor.fetchall()}
+        conn.close()
+        missing = expected - actual
+        assert not missing, f"Sources table missing columns: {missing}"
+
+    def test_articles_table_columns(self):
+        expected = {
+            "id",
+            "title",
+            "content",
+            "status",
+            "version",
             "confidence",
             "domain_path",
             "created_at",
+            "modified_at",
             "embedding",
+            "content_tsv",
+            "usage_score",
+            "pinned",
         }
-
         conn = get_db_connection()
         cursor = conn.cursor()
-
         cursor.execute("""
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_name = 'beliefs'
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'articles'
         """)
-        actual_columns = {row[0] for row in cursor.fetchall()}
+        actual = {row[0] for row in cursor.fetchall()}
         conn.close()
-
-        missing = expected_columns - actual_columns
-        assert not missing, f"Beliefs table missing columns: {missing}"
-
-    def test_sessions_table_columns(self):
-        """Verify vkb_sessions table has expected columns."""
-        expected_columns = {
-            "id",
-            "external_room_id",
-            "status",
-            "started_at",
-        }
-
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_name = 'vkb_sessions'
-        """)
-        actual_columns = {row[0] for row in cursor.fetchall()}
-        conn.close()
-
-        missing = expected_columns - actual_columns
-        assert not missing, f"Sessions table missing columns: {missing}"
+        missing = expected - actual
+        assert not missing, f"Articles table missing columns: {missing}"
 
 
-class TestBeliefOperations:
-    """Tests for belief CRUD operations."""
-
+class TestSourceOperations:
     @pytest.fixture
     def db_conn(self):
-        """Provide a database connection with cleanup."""
-        conn = get_db_connection()
-        yield conn
-        conn.rollback()  # Rollback any test changes
-        conn.close()
-
-    def test_create_belief(self, db_conn):
-        """Test creating a belief."""
-        cursor = db_conn.cursor()
-
-        cursor.execute("""
-            INSERT INTO beliefs (content, confidence, domain_path)
-            VALUES ('Test belief from integration test', '{"overall": 0.8}'::jsonb, ARRAY['test'])
-            RETURNING id
-        """)
-        belief_id = cursor.fetchone()[0]
-        assert belief_id is not None
-
-        # Verify it exists
-        cursor.execute("SELECT content FROM beliefs WHERE id = %s", (belief_id,))
-        result = cursor.fetchone()
-        assert result[0] == "Test belief from integration test"
-
-    def test_query_beliefs(self, db_conn):
-        """Test querying beliefs."""
-        cursor = db_conn.cursor()
-
-        # Insert test data
-        cursor.execute("""
-            INSERT INTO beliefs (content, confidence, domain_path)
-            VALUES ('Query test belief', '{"overall": 0.7}'::jsonb, ARRAY['test', 'query'])
-            RETURNING id
-        """)
-        belief_id = cursor.fetchone()[0]
-
-        # Query by domain path
-        cursor.execute("""
-            SELECT id, content FROM beliefs
-            WHERE domain_path @> ARRAY['test']
-        """)
-        results = cursor.fetchall()
-        assert any(r[0] == belief_id for r in results)
-
-
-class TestSessionOperations:
-    """Tests for session operations."""
-
-    @pytest.fixture
-    def db_conn(self):
-        """Provide a database connection with cleanup."""
         conn = get_db_connection()
         yield conn
         conn.rollback()
         conn.close()
 
-    def test_create_session(self, db_conn):
-        """Test creating a session."""
+    def test_insert_source(self, db_conn):
         cursor = db_conn.cursor()
-
         cursor.execute("""
-            INSERT INTO vkb_sessions (external_room_id, status, platform)
-            VALUES ('!test_room:example.com', 'active', 'slack')
+            INSERT INTO sources (type, title, content, fingerprint, reliability, content_hash)
+            VALUES ('observation', 'Test', 'Test content', 'abc123', 0.8, 'abc123')
             RETURNING id
         """)
-        session_id = cursor.fetchone()[0]
-        assert session_id is not None
+        source_id = cursor.fetchone()[0]
+        assert source_id is not None
 
-    def test_add_exchange(self, db_conn):
-        """Test adding an exchange to a session."""
+    def test_supersession(self, db_conn):
         cursor = db_conn.cursor()
-
-        # Create session
         cursor.execute("""
-            INSERT INTO vkb_sessions (external_room_id, status, platform)
-            VALUES ('!exchange_test:example.com', 'active', 'slack')
+            INSERT INTO sources (type, content, fingerprint, reliability, content_hash)
+            VALUES ('observation', 'Original', 'orig1', 0.8, 'orig1')
             RETURNING id
         """)
-        session_id = cursor.fetchone()[0]
+        original_id = cursor.fetchone()[0]
 
-        # Add exchange
         cursor.execute(
             """
-            INSERT INTO vkb_exchanges (session_id, sequence, role, content)
-            VALUES (%s, 1, 'user', 'Test message')
+            INSERT INTO sources (type, content, fingerprint, reliability, content_hash, supersedes_id)
+            VALUES ('observation', 'Updated', 'upd1', 0.9, 'upd1', %s)
             RETURNING id
         """,
-            (session_id,),
+            (original_id,),
         )
-        exchange_id = cursor.fetchone()[0]
-        assert exchange_id is not None
+        new_id = cursor.fetchone()[0]
+        assert new_id is not None
+
+        cursor.execute("SELECT supersedes_id FROM sources WHERE id = %s", (new_id,))
+        assert cursor.fetchone()[0] == original_id
 
 
 class TestEntityOperations:
-    """Tests for entity operations."""
-
     @pytest.fixture
     def db_conn(self):
-        """Provide a database connection with cleanup."""
         conn = get_db_connection()
         yield conn
         conn.rollback()
         conn.close()
 
     def test_create_entity(self, db_conn):
-        """Test creating an entity."""
         cursor = db_conn.cursor()
-
         cursor.execute("""
             INSERT INTO entities (name, type, aliases)
-            VALUES ('Test Entity', 'concept', ARRAY['test', 'testing'])
+            VALUES ('Test Entity', 'concept', ARRAY['test'])
             RETURNING id
         """)
-        entity_id = cursor.fetchone()[0]
-        assert entity_id is not None
+        assert cursor.fetchone()[0] is not None
 
-    def test_entity_aliases(self, db_conn):
-        """Test entity alias lookup."""
+    def test_entity_alias_lookup(self, db_conn):
         cursor = db_conn.cursor()
-
         cursor.execute("""
             INSERT INTO entities (name, type, aliases)
             VALUES ('Alias Test', 'tool', ARRAY['at', 'alias-test'])
             RETURNING id
         """)
         entity_id = cursor.fetchone()[0]
-
-        # Query by alias
-        cursor.execute("""
-            SELECT id FROM entities WHERE 'at' = ANY(aliases)
-        """)
-        result = cursor.fetchone()
-        assert result[0] == entity_id
-
-
-@pytest.mark.slow
-class TestRemoteEndpoints:
-    """Tests for remote HTTP endpoints (requires VALENCE_DOMAIN)."""
-
-    @pytest.fixture(autouse=True)
-    def require_domain(self):
-        """Skip these tests if domain is not set."""
-        if not VALENCE_DOMAIN:
-            pytest.skip("VALENCE_DOMAIN not set")
+        cursor.execute("SELECT id FROM entities WHERE 'at' = ANY(aliases)")
+        assert cursor.fetchone()[0] == entity_id
 
 
 class TestIdempotency:
-    """Tests for deployment idempotency."""
-
     @pytest.fixture
     def db_conn(self):
-        """Provide a database connection."""
         conn = get_db_connection()
         yield conn
         conn.close()
 
-    def test_schema_reapply_safe(self, db_conn):
-        """Verify schema can be reapplied without errors.
-
-        This tests that IF NOT EXISTS patterns work correctly.
-        """
-        cursor = db_conn.cursor()
-
-        # Try creating tables that should already exist
-        # This should not raise errors if schema is idempotent
-
-        # Test a typical IF NOT EXISTS pattern
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS beliefs (
-                id UUID PRIMARY KEY DEFAULT gen_random_uuid()
-            )
-        """)
-        # Should not raise error
-
-        db_conn.rollback()
-
     def test_extension_reapply_safe(self, db_conn):
-        """Verify pgvector extension can be created again."""
         cursor = db_conn.cursor()
-
         cursor.execute("CREATE EXTENSION IF NOT EXISTS vector")
-        # Should not raise error
-
         db_conn.rollback()
-
-
-# CLI for running verification outside pytest
-if __name__ == "__main__":
-    print("Running deployment verification...")
-    print(f"Target: {VALENCE_DOMAIN or 'local'}")
-    print()
-
-    # Quick connectivity check
-    try:
-        conn = get_db_connection()
-        print("✓ Database connection successful")
-        conn.close()
-    except Exception as e:
-        print(f"✗ Database connection failed: {e}")
-        exit(1)
-
-    print()
-    print("Run full tests with: pytest tests/integration/test_deployment.py -v")
