@@ -32,8 +32,5 @@ def run_async(coro: Any) -> Any:
 def validate_enum(value: str, valid_values: list[str], param_name: str) -> dict[str, Any] | None:
     """Return error dict if value is not in valid_values, else None."""
     if value not in valid_values:
-        return {
-            "success": False,
-            "error": f"Invalid {param_name} '{value}'. Must be one of: {', '.join(valid_values)}"
-        }
+        return {"success": False, "error": f"Invalid {param_name} '{value}'. Must be one of: {', '.join(valid_values)}"}
     return None

@@ -112,11 +112,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         return [
             TextContent(
                 type="text",
-                text=json.dumps({
-                    "success": False,
-                    "error": f"Validation error: {e.message}",
-                    "details": e.details
-                }),
+                text=json.dumps({"success": False, "error": f"Validation error: {e.message}", "details": e.details}),
             )
         ]
     except DatabaseException as e:
@@ -124,10 +120,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         return [
             TextContent(
                 type="text",
-                text=json.dumps({
-                    "success": False,
-                    "error": f"Database error: {e.message}"
-                }),
+                text=json.dumps({"success": False, "error": f"Database error: {e.message}"}),
             )
         ]
     except Exception as e:
@@ -135,10 +128,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         return [
             TextContent(
                 type="text",
-                text=json.dumps({
-                    "success": False,
-                    "error": f"Internal error: {str(e)}"
-                }),
+                text=json.dumps({"success": False, "error": f"Internal error: {str(e)}"}),
             )
         ]
 

@@ -53,9 +53,7 @@ def vacuum_analyze(cur) -> MaintenanceResult:
 
 def refresh_views(cur, concurrent: bool = True) -> MaintenanceResult:
     """Refresh materialized views if any exist."""
-    cur.execute(
-        "SELECT matviewname FROM pg_matviews WHERE schemaname = 'public'"
-    )
+    cur.execute("SELECT matviewname FROM pg_matviews WHERE schemaname = 'public'")
     views = [row["matviewname"] for row in cur.fetchall()]
 
     refreshed = []

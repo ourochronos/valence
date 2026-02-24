@@ -22,10 +22,7 @@ logger = logging.getLogger(__name__)
 
 async def remove_source(source_id: str) -> ValenceResponse:
     """[DEPRECATED] Sources are append-only. Use supersession."""
-    return err(
-        "remove_source is deprecated. Sources are append-only. "
-        "Use supersession (ingest --supersedes) for corrections."
-    )
+    return err("remove_source is deprecated. Sources are append-only. Use supersession (ingest --supersedes) for corrections.")
 
 
 async def remove_article(article_id: str) -> ValenceResponse:

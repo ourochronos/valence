@@ -175,9 +175,7 @@ class DimensionalConfidence:
         """Get domain applicability dimension."""
         return self.dimensions.get(ConfidenceDimension.DOMAIN_APPLICABILITY, self.overall)
 
-    def recalculate_overall(
-        self, weights: dict[str, float] | None = None, use_geometric: bool = True
-    ) -> None:
+    def recalculate_overall(self, weights: dict[str, float] | None = None, use_geometric: bool = True) -> None:
         """Recalculate overall score from dimensions."""
         if self.dimensions:
             self.overall = _compute_overall(self.dimensions, weights, use_geometric)
@@ -229,9 +227,7 @@ def aggregate_confidence(confidences: list[DimensionalConfidence]) -> Dimensiona
     # Aggregate each dimension using geometric mean
     aggregated_dims: dict[str, float] = {}
     for dim in all_dims:
-        values = [
-            conf.dimensions.get(dim, conf.overall) for conf in confidences
-        ]
+        values = [conf.dimensions.get(dim, conf.overall) for conf in confidences]
         # Geometric mean
         product = 1.0
         for v in values:

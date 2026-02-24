@@ -284,4 +284,3 @@ async def list_sources(
         rows = cur.fetchall()
 
     return ok(data=[_row_to_dict(row) for row in rows])
-
