@@ -26,8 +26,12 @@ DB_PASS = os.environ.get("VALENCE_DB_PASSWORD", "")
 def _check_db_available():
     try:
         conn = psycopg2.connect(
-            host=DB_HOST, port=DB_PORT, database=DB_NAME,
-            user=DB_USER, password=DB_PASS, connect_timeout=3,
+            host=DB_HOST,
+            port=DB_PORT,
+            database=DB_NAME,
+            user=DB_USER,
+            password=DB_PASS,
+            connect_timeout=3,
         )
         conn.close()
         return True
@@ -42,8 +46,11 @@ def get_db_connection():
     if not _DB_AVAILABLE:
         pytest.skip("Database not available (integration test)")
     return psycopg2.connect(
-        host=DB_HOST, port=DB_PORT, database=DB_NAME,
-        user=DB_USER, password=DB_PASS,
+        host=DB_HOST,
+        port=DB_PORT,
+        database=DB_NAME,
+        user=DB_USER,
+        password=DB_PASS,
     )
 
 
@@ -51,9 +58,16 @@ pytestmark = pytest.mark.integration
 
 # The 10 v2 tables
 V2_TABLES = {
-    "sources", "articles", "article_sources", "usage_traces",
-    "contentions", "entities", "article_entities", "system_config",
-    "article_mutations", "mutation_queue",
+    "sources",
+    "articles",
+    "article_sources",
+    "usage_traces",
+    "contentions",
+    "entities",
+    "article_entities",
+    "system_config",
+    "article_mutations",
+    "mutation_queue",
 }
 
 
@@ -85,9 +99,21 @@ class TestDatabaseSchema:
         assert not missing, f"Missing tables: {missing}"
 
     def test_sources_table_columns(self):
-        expected = {"id", "type", "title", "url", "content", "fingerprint",
-                    "reliability", "content_hash", "metadata", "created_at",
-                    "embedding", "content_tsv", "supersedes_id"}
+        expected = {
+            "id",
+            "type",
+            "title",
+            "url",
+            "content",
+            "fingerprint",
+            "reliability",
+            "content_hash",
+            "metadata",
+            "created_at",
+            "embedding",
+            "content_tsv",
+            "supersedes_id",
+        }
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
@@ -100,9 +126,21 @@ class TestDatabaseSchema:
         assert not missing, f"Sources table missing columns: {missing}"
 
     def test_articles_table_columns(self):
-        expected = {"id", "title", "content", "status", "version",
-                    "confidence", "domain_path", "created_at", "modified_at",
-                    "embedding", "content_tsv", "usage_score", "pinned"}
+        expected = {
+            "id",
+            "title",
+            "content",
+            "status",
+            "version",
+            "confidence",
+            "domain_path",
+            "created_at",
+            "modified_at",
+            "embedding",
+            "content_tsv",
+            "usage_score",
+            "pinned",
+        }
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
@@ -142,11 +180,14 @@ class TestSourceOperations:
         """)
         original_id = cursor.fetchone()[0]
 
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO sources (type, content, fingerprint, reliability, content_hash, supersedes_id)
             VALUES ('observation', 'Updated', 'upd1', 0.9, 'upd1', %s)
             RETURNING id
-        """, (original_id,))
+        """,
+            (original_id,),
+        )
         new_id = cursor.fetchone()[0]
         assert new_id is not None
 
