@@ -5,20 +5,20 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime
 from typing import Any
 
+from valence.core.compilation import compile_article
 from valence.core.sessions import (
     append_message,
     append_messages,
     finalize_session,
     flush_session,
     flush_stale_sessions,
+    get_messages,
     get_session,
     list_sessions,
-    update_session,
     upsert_session,
 )
 from valence.core.sources import search_sources
@@ -242,8 +242,6 @@ def session_get(session_id: str, include_messages: bool = True) -> dict[str, Any
     """
     import asyncio
 
-    from valence.core.sessions import get_messages
-
     session_result = asyncio.run(get_session(session_id=session_id))
 
     if not session_result.success:
@@ -271,8 +269,6 @@ def session_compile(session_id: str) -> dict[str, Any]:
         dict with success flag and compilation result or error.
     """
     import asyncio
-
-    from valence.core.compilation import compile_article
 
     # Find all sources for this session
     result = asyncio.run(search_sources(f"session_key:{session_id}"))
