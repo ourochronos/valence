@@ -793,13 +793,15 @@ async def config_inference_endpoint(request: Request) -> JSONResponse:
     """PUT /api/v1/config/inference — update inference configuration at runtime."""
     body = await request.json()
     provider_name = body.get("provider")
-    
+
     if not provider_name:
         return JSONResponse({"error": "Missing 'provider' field"}, status_code=400)
-    
+
     # Write to system_config
-    from valence.core.db import get_cursor
     import json as _json
+
+    from valence.core.db import get_cursor
+
     with get_cursor() as cur:
         cur.execute(
             """
@@ -811,7 +813,7 @@ async def config_inference_endpoint(request: Request) -> JSONResponse:
             """,
             (_json.dumps(body),),
         )
-    
+
     # Hot-reload the backend
     backend = _create_inference_backend(body)
     if backend is not None:
@@ -1062,48 +1064,53 @@ class RateLimitMiddleware:
 
 def _create_inference_backend(config: dict) -> Any:
     """Create an inference backend from system_config values.
-    
+
     Returns an async callable suitable for InferenceProvider.configure(),
     or None if the config is invalid or the backend can't be created.
     """
     provider_name = config.get("provider")
-    
+
     if provider_name == "gemini":
         from valence.core.backends.gemini_cli import create_gemini_backend
+
         return create_gemini_backend(
             model=config.get("model", "gemini-2.5-flash"),
         )
-    
+
     elif provider_name == "ollama":
         from valence.core.backends.ollama import create_ollama_backend
+
         return create_ollama_backend(
             host=config.get("host", "http://localhost:11434"),
             model=config.get("model", "qwen3:30b"),
         )
-    
+
     elif provider_name == "cerebras":
         from valence.core.backends.openai_compat import create_openai_backend
+
         return create_openai_backend(
             base_url="https://api.cerebras.ai/v1",
             api_key=config.get("api_key", ""),
             model=config.get("model", "llama-4-scout-17b-16e-instruct"),
         )
-    
+
     elif provider_name == "openai":
         from valence.core.backends.openai_compat import create_openai_backend
+
         return create_openai_backend(
             base_url=config.get("base_url", "https://api.openai.com/v1"),
             api_key=config.get("api_key", ""),
             model=config.get("model", "gpt-4.1-mini"),
         )
-    
+
     elif provider_name == "callback":
         from valence.core.backends.callback import create_callback_backend
+
         return create_callback_backend(
             callback_url=config.get("callback_url", ""),
             token=config.get("token"),
         )
-    
+
     else:
         logger.warning("Unknown inference provider: %s", provider_name)
         return None
@@ -1124,12 +1131,14 @@ async def lifespan(app: Starlette) -> AsyncGenerator[None, None]:
     # Load inference configuration from system_config (#485)
     try:
         from valence.core.db import get_cursor
+
         with get_cursor() as cur:
             cur.execute("SELECT value FROM system_config WHERE key = 'inference' LIMIT 1")
             row = cur.fetchone()
-        
+
         if row is not None:
             import json as _json
+
             config = row["value"] if isinstance(row["value"], dict) else _json.loads(row["value"])
             backend = _create_inference_backend(config)
             if backend is not None:

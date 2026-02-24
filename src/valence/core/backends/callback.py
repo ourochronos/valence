@@ -60,16 +60,12 @@ def create_callback_backend(
 
         if response.status_code != 200:
             body = response.text[:500]
-            raise RuntimeError(
-                f"Callback backend ({callback_url}) returned HTTP {response.status_code}: {body}"
-            )
+            raise RuntimeError(f"Callback backend ({callback_url}) returned HTTP {response.status_code}: {body}")
 
         data = response.json()
         text = data.get("text")
         if text is None:
-            raise RuntimeError(
-                f"Callback backend ({callback_url}) response missing 'text' field: {data!r}"
-            )
+            raise RuntimeError(f"Callback backend ({callback_url}) response missing 'text' field: {data!r}")
 
         logger.debug(
             "Callback backend: received %d chars from %s",
