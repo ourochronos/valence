@@ -6,13 +6,13 @@ its argparse sub-commands and sets ``parser.set_defaults(func=handler)``.
 
 from . import (
     articles,
-    beliefs,
     compile,
     config_cmd,
     conflicts,
     embeddings,
     ingest,
     maintenance,
+    memory,
     migration,
     provenance,
     sources,
@@ -21,12 +21,12 @@ from . import (
     unified_search,
 )
 from .articles import cmd_articles_create, cmd_articles_get, cmd_articles_search
-from .beliefs import cmd_add, cmd_init, cmd_list, cmd_query
 from .compile import cmd_compile
 from .conflicts import cmd_conflicts
 from .embeddings import cmd_embeddings
 from .ingest import cmd_ingest
 from .maintenance import cmd_maintenance
+from .memory import cmd_memory_import, cmd_memory_import_dir, cmd_memory_list, cmd_memory_search
 from .migration import cmd_migrate
 from .provenance import cmd_provenance_get, cmd_provenance_link, cmd_provenance_trace
 from .sources import cmd_sources_get, cmd_sources_ingest, cmd_sources_list, cmd_sources_search
@@ -41,11 +41,11 @@ COMMAND_MODULES = [
     ingest,  # valence ingest
     compile,  # valence compile
     status,  # valence status
+    memory,  # valence memory
     sources,
     articles,
     provenance,
     config_cmd,
-    beliefs,
     conflicts,
     stats,
     embeddings,
@@ -71,14 +71,15 @@ __all__ = [
     "cmd_sources_ingest",
     "cmd_sources_list",
     "cmd_sources_search",
+    # Memory commands
+    "cmd_memory_import",
+    "cmd_memory_import_dir",
+    "cmd_memory_list",
+    "cmd_memory_search",
     # Legacy commands
-    "cmd_add",
     "cmd_conflicts",
     "cmd_embeddings",
-    "cmd_init",
-    "cmd_list",
     "cmd_migrate",
-    "cmd_query",
     "cmd_stats",
     "cmd_maintenance",
 ]

@@ -3,10 +3,8 @@
 Valence CLI - Personal knowledge substrate for AI agents.
 
 Commands:
-  valence init              Initialize database (creates schema)
-  valence add <content>     Add a new belief
-  valence query <text>      Search beliefs with derivation chains
-  valence list              List recent beliefs
+  valence sources search    Search knowledge sources
+  valence articles search   Search compiled articles
   valence conflicts         Detect contradicting beliefs
   valence stats             Show database statistics
 """
@@ -21,20 +19,16 @@ from pathlib import Path
 # Re-export for backward compatibility (tests import from valence.cli.main)
 from .commands import (
     COMMAND_MODULES,
-    cmd_add,
     cmd_articles_create,
     cmd_articles_get,
     cmd_articles_search,
     cmd_conflicts,
     cmd_embeddings,
-    cmd_init,
-    cmd_list,
     cmd_maintenance,
     cmd_migrate,
     cmd_provenance_get,
     cmd_provenance_link,
     cmd_provenance_trace,
-    cmd_query,
     cmd_sources_ingest,
     cmd_sources_list,
     cmd_sources_search,
@@ -62,14 +56,10 @@ __all__ = [
     "cmd_sources_list",
     "cmd_sources_search",
     # Legacy commands
-    "cmd_add",
     "cmd_conflicts",
     "cmd_embeddings",
-    "cmd_init",
-    "cmd_list",
     "cmd_maintenance",
     "cmd_migrate",
-    "cmd_query",
     "cmd_stats",
     "compute_confidence_score",
     "compute_recency_score",
@@ -114,9 +104,6 @@ v2 Knowledge System:
   valence provenance get <id>             List all sources for article
 
 Legacy:
-  valence query "search terms"            Search beliefs (legacy)
-  valence add "Fact here" -d tech         Add belief (legacy)
-  valence list -n 20                      List recent beliefs (legacy)
   valence stats                           Show statistics
   valence conflicts                       Detect contradictions
 
