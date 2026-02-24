@@ -319,23 +319,61 @@ def _split_content_at_midpoint(content: str) -> tuple[str, str]:
     return content[:best_pos].rstrip(), content[best_pos:].lstrip()
 
 
-async def split_article(article_id: str) -> ValenceResponse:
-    """Split an oversized article into two articles.
+def _build_split_prompt(content: str, target_tokens: int) -> str:
+    """Build the LLM prompt for topic-aware article splitting.
 
-    The original article retains its ID and receives the first portion of the
-    content. A new article is created with a new ID for the second portion.
-    Both articles inherit the full source set from the original. Mutations of
-    type 'split' are recorded on both articles with cross-references.
+    Args:
+        content: The article content to split.
+        target_tokens: Target token count per section (informational).
+
+    Returns:
+        Prompt string for the LLM.
+    """
+    from valence.core.inference import TASK_OUTPUT_SCHEMAS, TASK_SPLIT
+
+    schema = TASK_OUTPUT_SCHEMAS[TASK_SPLIT]
+
+    return f"""You are splitting an oversized knowledge article into two coherent parts.
+
+ARTICLE CONTENT:
+{content}
+
+Find the best natural topic boundary to split this article. Prefer a split point that:
+- Separates distinct topics or themes (NOT arbitrary character counts)
+- Occurs near the midpoint (roughly ~{target_tokens} tokens per part)
+- Falls at a paragraph or section break
+
+Respond with the character index where the split should occur, and descriptive titles for each resulting part.
+IMPORTANT: Use titles that reflect the actual content of each part — NEVER use generic titles like "part 1", "part 2", or sequential numbering.
+
+Respond ONLY with valid JSON matching this exact schema (no markdown fences):
+{schema}"""
+
+
+async def split_article(article_id: str) -> ValenceResponse:
+    """Split an oversized article into two articles using topic-aware splitting.
+
+    Uses LLM inference (TASK_SPLIT) to identify the best split point based on
+    topic boundaries, not mechanical character counts. The original article is
+    ARCHIVED (status='archived'), and two new articles are created with
+    descriptive titles.
+
+    Both new articles inherit the full source set from the original. Mutations
+    of type 'split' are recorded on all three articles with cross-references.
+
+    Falls back to mechanical midpoint split if LLM is unavailable.
 
     Args:
         article_id: UUID of the article to split.
 
     Returns:
-        Tuple of (updated_original, new_article) as plain dicts.
+        Dict with ``success`` and ``data`` containing {"part_a": ..., "part_b": ...}.
 
     Raises:
         ValueError: If the article is not found or content is too short to split.
     """
+    from valence.core.inference import TASK_SPLIT, InferenceSchemaError, provider, validate_output
+
     with get_cursor() as cur:
         # Fetch original article
         cur.execute("SELECT * FROM articles WHERE id = %s", (article_id,))
@@ -359,42 +397,82 @@ async def split_article(article_id: str) -> ValenceResponse:
         )
         sources = [dict(r) for r in cur.fetchall()]
 
-        # Split content
-        first_half, second_half = _split_content_at_midpoint(content)
-        if not first_half:
-            first_half = content[: len(content) // 2]
-        if not second_half:
-            second_half = content[len(content) // 2 :]
+        # --- LLM-based topic-aware split ---
+        target_tokens = _count_tokens(content) // 2
+        prompt = _build_split_prompt(content, target_tokens)
+        is_degraded = False
 
-        # --- Update original article with first half ---
+        try:
+            result = await provider.infer(TASK_SPLIT, prompt)
+            if result.degraded:
+                raise InferenceSchemaError(result.error or "LLM unavailable")
+            parsed = validate_output(TASK_SPLIT, result.content)
+            split_index = parsed["split_index"]
+            part_a_title = parsed["part_a_title"]
+            part_b_title = parsed["part_b_title"]
+            reasoning = parsed.get("reasoning", "")
+            logger.info("Topic-aware split for article %s: %s", article_id, reasoning)
+        except (InferenceSchemaError, ValueError, KeyError) as exc:
+            logger.warning("LLM split unavailable (%s), using fallback midpoint split", exc)
+            is_degraded = True
+            # Fallback: mechanical split at paragraph boundary near midpoint
+            first_half, second_half = _split_content_at_midpoint(content)
+            split_index = len(first_half)
+            orig_title = original.get("title") or "Article"
+            part_a_title = f"{orig_title} (part 1)"
+            part_b_title = f"{orig_title} (part 2)"
+
+        # Ensure valid split index
+        if split_index <= 0 or split_index >= len(content):
+            logger.warning("Invalid split_index=%d for content len=%d, using midpoint", split_index, len(content))
+            split_index = len(content) // 2
+
+        # Split content at LLM-identified index
+        first_half = content[:split_index].rstrip()
+        second_half = content[split_index:].lstrip()
+
+        if not first_half or not second_half:
+            # Safety fallback if split produced empty content
+            first_half, second_half = _split_content_at_midpoint(content)
+
+        # --- Archive the original article ---
+        cur.execute(
+            "UPDATE articles SET status = 'archived', modified_at = NOW() WHERE id = %s",
+            (article_id,),
+        )
+
+        # --- Create first new article (part A) ---
         first_token_count = _count_tokens(first_half)
         first_hash = _content_hash(first_half)
         first_embedding = _compute_embedding(first_half)
 
         cur.execute(
             """
-            UPDATE articles
-            SET content      = %s,
-                size_tokens  = %s,
-                content_hash = %s,
-                embedding    = %s::vector,
-                version      = version + 1,
-                modified_at  = NOW(),
-                compiled_at  = NOW()
-            WHERE id = %s
+            INSERT INTO articles
+                (content, title, author_type, domain_path, size_tokens, confidence,
+                 content_hash, embedding, compiled_at)
+            VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s, %s::vector, NOW())
             RETURNING *
             """,
-            (first_half, first_token_count, first_hash, first_embedding, article_id),
+            (
+                first_half,
+                part_a_title,
+                original.get("author_type", "system"),
+                original.get("domain_path") or [],
+                first_token_count,
+                '{"overall": 0.7}',
+                first_hash,
+                first_embedding,
+            ),
         )
-        updated_row = cur.fetchone()
-        updated_original = _row_to_article(dict(updated_row))
+        part_a_row = cur.fetchone()
+        part_a = _row_to_article(dict(part_a_row))
+        part_a_id = part_a["id"]
 
-        # --- Create new article with second half ---
+        # --- Create second new article (part B) ---
         second_token_count = _count_tokens(second_half)
         second_hash = _content_hash(second_half)
         second_embedding = _compute_embedding(second_half)
-        orig_title = original.get("title")
-        new_title = f"{orig_title} (part 2)" if orig_title else None
 
         cur.execute(
             """
@@ -406,7 +484,7 @@ async def split_article(article_id: str) -> ValenceResponse:
             """,
             (
                 second_half,
-                new_title,
+                part_b_title,
                 original.get("author_type", "system"),
                 original.get("domain_path") or [],
                 second_token_count,
@@ -415,55 +493,63 @@ async def split_article(article_id: str) -> ValenceResponse:
                 second_embedding,
             ),
         )
-        new_row = cur.fetchone()
-        new_article = _row_to_article(dict(new_row))
-        new_article_id = new_article["id"]
+        part_b_row = cur.fetchone()
+        part_b = _row_to_article(dict(part_b_row))
+        part_b_id = part_b["id"]
 
-        # --- Inherit full source set for both articles ---
+        # --- Inherit full source set for both new articles ---
         for src in sources:
             src_id = str(src["source_id"])
             rel = src["relationship"]
             notes = src.get("notes")
 
-            # Original already has them; re-upsert to be safe
+            # Link to part A
             cur.execute(
                 """
                 INSERT INTO article_sources (article_id, source_id, relationship, notes)
                 VALUES (%s, %s, %s, %s)
                 ON CONFLICT (article_id, source_id, relationship) DO NOTHING
                 """,
-                (article_id, src_id, rel, notes),
+                (part_a_id, src_id, rel, notes),
             )
-            # New article inherits all sources
+            # Link to part B
             cur.execute(
                 """
                 INSERT INTO article_sources (article_id, source_id, relationship, notes)
                 VALUES (%s, %s, %s, %s)
                 ON CONFLICT (article_id, source_id, relationship) DO NOTHING
                 """,
-                (new_article_id, src_id, rel, notes),
+                (part_b_id, src_id, rel, notes),
             )
 
-        # --- Record 'split' mutations on both articles ---
+        # --- Record 'split' mutations on all three articles ---
         cur.execute(
             """
             INSERT INTO article_mutations
                 (mutation_type, article_id, related_article_id, summary)
-            VALUES ('split', %s, %s, 'Article split: this article retains first portion')
+            VALUES ('split', %s, %s, 'Article archived: split into two topic-aware parts')
             """,
-            (article_id, new_article_id),
+            (article_id, part_a_id),
         )
         cur.execute(
             """
             INSERT INTO article_mutations
                 (mutation_type, article_id, related_article_id, summary)
-            VALUES ('split', %s, %s, 'Article split: created from second portion of original')
+            VALUES ('split', %s, %s, 'Article created from first topic section of original')
             """,
-            (new_article_id, article_id),
+            (part_a_id, article_id),
+        )
+        cur.execute(
+            """
+            INSERT INTO article_mutations
+                (mutation_type, article_id, related_article_id, summary)
+            VALUES ('split', %s, %s, 'Article created from second topic section of original')
+            """,
+            (part_b_id, article_id),
         )
 
-    logger.info("Split article %s → original + new %s", article_id, new_article_id)
-    return ok(data={"original": updated_original, "new": new_article})
+    logger.info("Split article %s → part_a=%s (%s), part_b=%s (%s)", article_id, part_a_id, part_a_title, part_b_id, part_b_title)
+    return ok(data={"part_a": part_a, "part_b": part_b}, degraded=is_degraded)
 
 
 async def merge_articles(

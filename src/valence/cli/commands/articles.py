@@ -56,6 +56,11 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     list_p.add_argument("--limit", "-n", type=int, default=10, help="Max results (default 10)")
     list_p.set_defaults(func=cmd_articles_list)
 
+    # --- split ---
+    split_p = articles_sub.add_parser("split", help="Split an article into two topic-aware parts")
+    split_p.add_argument("article_id", help="UUID of the article to split")
+    split_p.set_defaults(func=cmd_articles_split)
+
 
 # ---------------------------------------------------------------------------
 # Command handlers
@@ -137,6 +142,22 @@ def cmd_articles_list(args: argparse.Namespace) -> int:
 
     try:
         result = client.post("/articles/search", body=body)
+        output_result(result)
+        return 0
+    except ValenceConnectionError as e:
+        output_error(str(e))
+        return 1
+    except ValenceAPIError as e:
+        output_error(e.message)
+        return 1
+
+
+def cmd_articles_split(args: argparse.Namespace) -> int:
+    """Split an article into two topic-aware parts."""
+    client = get_client()
+
+    try:
+        result = client.post(f"/articles/{args.article_id}/split", body={})
         output_result(result)
         return 0
     except ValenceConnectionError as e:
