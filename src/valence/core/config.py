@@ -60,7 +60,7 @@ class CoreSettings(BaseSettings):
         validation_alias="VALENCE_DB_USER",
     )
     db_password: str = Field(
-        default="",
+        default="valence",
         description="Database password",
         validation_alias="VALENCE_DB_PASSWORD",
     )
