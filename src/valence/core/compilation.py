@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Compilation pipeline for Valence v2 knowledge articles.
 
 Provides LLM-based article compilation from sources, incremental updates,

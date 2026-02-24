@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Memory tool handlers for agent-friendly memory operations.
 
 Provides thin wrappers around source/article primitives optimized for AI agents:

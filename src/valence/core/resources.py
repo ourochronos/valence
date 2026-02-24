@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Resource models for shared operational knowledge.
 
 Resources represent shareable operational knowledge like prompts, configs,

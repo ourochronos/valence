@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Compilation command — compile sources into articles.
 
 Commands:

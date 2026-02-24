@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Contention tool handlers."""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Temporal validity tracking for Valence articles.
 
 Articles can have time-bounded validity and can supersede each other

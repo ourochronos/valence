@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Curation decision framework for auto-capture.
 
 Defines vocabulary and confidence thresholds for different types of

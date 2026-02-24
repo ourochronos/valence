@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Standard response envelope for the Valence v2 knowledge system.
 
 All public core functions return a ``ValenceResponse`` so callers always

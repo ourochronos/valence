@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Contention detection and surfacing for the Valence v2 knowledge system.
 
 A contention records a discovered disagreement between an article and a source

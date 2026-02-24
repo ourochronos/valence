@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 #!/usr/bin/env python3
 """
 Valence CLI - Personal knowledge substrate for AI agents.

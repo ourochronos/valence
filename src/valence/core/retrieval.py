@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Unified retrieval and ranking for the Valence v2 knowledge system.
 
 Implements WU-05 (C9 — Knowledge Retrieval, C8 — Freshness Awareness).

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Cerebras Cloud backend for Valence inference.
 
 Cerebras offers extremely low latency (< 1 s for classification tasks) via

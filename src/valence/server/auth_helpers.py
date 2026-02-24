@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Authentication and authorization helpers for REST endpoints.
 
 Provides authenticate() and require_scope() for use by endpoint handlers.

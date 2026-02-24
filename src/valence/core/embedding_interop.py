@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Embedding interoperability for federation (#356).
 
 Ensures articles federate as text only — embeddings are never sent.

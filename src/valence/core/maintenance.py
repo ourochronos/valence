@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Maintenance operations for the Valence knowledge system.
 
 Provides vacuum, view refresh, and orchestrated maintenance cycles.

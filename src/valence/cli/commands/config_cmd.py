@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """CLI commands for configuring Valence inference backends.
 
 Implements WU-18: ``valence config inference <provider> [options]``.

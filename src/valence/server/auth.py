@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Token authentication for the HTTP MCP server."""
 
 from __future__ import annotations

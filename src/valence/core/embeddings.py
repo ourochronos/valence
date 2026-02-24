@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Embedding generation for Valence.
 
 Uses OpenAI text-embedding-3-small by default.

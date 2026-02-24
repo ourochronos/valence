@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Usage tracking and self-organization for the Valence v2 knowledge system.
 
 Implements WU-09 (C4: Self-Organization, C8: Freshness Awareness).

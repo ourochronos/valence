@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Memory CLI commands — import, list, and search agent memories.
 
 Commands:

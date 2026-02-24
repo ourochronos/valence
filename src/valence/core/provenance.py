@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Provenance tracking for Valence v2 knowledge articles.
 
 Provides functions to link sources to articles, retrieve provenance chains,

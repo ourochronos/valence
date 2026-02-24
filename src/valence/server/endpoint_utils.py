@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Shared utility functions for REST endpoint parameter parsing and output formatting.
 
 Shared helpers for REST endpoint parameter parsing and output formatting.

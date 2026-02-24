@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Valence v2 - Knowledge system for AI agents.
 
 Valence ingests information from diverse sources, compiles it into articles

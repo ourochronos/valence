@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Unified inference router for the Valence v2 knowledge system.
 
 Single configuration point for all LLM inference tasks (C11, DR-8, DR-9).

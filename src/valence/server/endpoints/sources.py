@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """REST endpoints for source ingestion and retrieval (C1).
 
 Routes (mounted under /api/v1 in app.py):

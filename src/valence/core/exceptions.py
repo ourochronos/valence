@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Custom exception hierarchy for Valence.
 
 Provides specific exception types for different error categories,

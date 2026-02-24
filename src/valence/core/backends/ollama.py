@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Ollama local inference backend for Valence.
 
 Ollama runs models locally (no API key, no cloud costs, full privacy).

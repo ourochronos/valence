@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """OpenAI-compatible HTTP API backend for Valence inference.
 
 Works with any provider that implements the OpenAI chat-completions API:

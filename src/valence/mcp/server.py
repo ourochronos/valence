@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Unified MCP Server for Valence v2.
 
 Provides 24 knowledge substrate tools via MCP protocol.
