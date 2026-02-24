@@ -5,7 +5,9 @@ Provides vacuum, view refresh, and orchestrated maintenance cycles.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from psycopg2 import sql
@@ -92,3 +94,127 @@ def run_full_maintenance(
         results.append(vacuum_analyze(cur))
 
     return results
+
+
+def get_maintenance_schedule(cur) -> dict[str, Any] | None:
+    """Get current maintenance schedule configuration from system_config.
+
+    Returns:
+        Dict with 'interval_hours' and 'last_run' (ISO timestamp), or None if disabled.
+    """
+    cur.execute("SELECT value FROM system_config WHERE key = 'maintenance_schedule'")
+    row = cur.fetchone()
+    if not row:
+        return None
+
+    schedule = row["value"]
+    if isinstance(schedule, str):
+        schedule = json.loads(schedule)
+
+    # Handle disabled state
+    if schedule.get("enabled") is False:
+        return None
+
+    return schedule
+
+
+def set_maintenance_schedule(cur, interval_hours: int) -> dict[str, Any]:
+    """Set maintenance schedule interval in system_config.
+
+    Args:
+        cur: Database cursor
+        interval_hours: Hours between maintenance runs (must be > 0)
+
+    Returns:
+        Updated schedule configuration
+    """
+    if interval_hours <= 0:
+        raise ValueError("interval_hours must be positive")
+
+    schedule = {
+        "enabled": True,
+        "interval_hours": interval_hours,
+        "last_run": None,
+    }
+
+    cur.execute(
+        """
+        INSERT INTO system_config (key, value, updated_at)
+        VALUES ('maintenance_schedule', %s, now())
+        ON CONFLICT (key) DO UPDATE
+        SET value = EXCLUDED.value, updated_at = now()
+        """,
+        (json.dumps(schedule),),
+    )
+
+    return schedule
+
+
+def disable_maintenance_schedule(cur) -> None:
+    """Disable scheduled maintenance."""
+    cur.execute(
+        """
+        INSERT INTO system_config (key, value, updated_at)
+        VALUES ('maintenance_schedule', %s, now())
+        ON CONFLICT (key) DO UPDATE
+        SET value = EXCLUDED.value, updated_at = now()
+        """,
+        (json.dumps({"enabled": False}),),
+    )
+
+
+def check_and_run_maintenance(cur) -> dict[str, Any] | None:
+    """Check if maintenance should run and execute if needed.
+
+    Lightweight check designed to be called on server startup or CLI invocation.
+    Reads maintenance_schedule from system_config, compares timestamps, and runs
+    if enough time has elapsed.
+
+    Returns:
+        Dict with maintenance results if run, None if skipped
+    """
+    schedule = get_maintenance_schedule(cur)
+
+    # Not configured or disabled
+    if not schedule:
+        return None
+
+    interval_hours = schedule.get("interval_hours", 24)
+    last_run_str = schedule.get("last_run")
+
+    # Determine if we should run
+    should_run = False
+    if last_run_str is None:
+        # Never run before
+        should_run = True
+    else:
+        # Parse last_run and check elapsed time
+        last_run = datetime.fromisoformat(last_run_str.replace("Z", "+00:00"))
+        now = datetime.now(UTC)
+        elapsed = now - last_run
+
+        if elapsed >= timedelta(hours=interval_hours):
+            should_run = True
+
+    if not should_run:
+        return None
+
+    # Run maintenance
+    results = run_full_maintenance(cur, dry_run=False, skip_vacuum=False, skip_views=False)
+
+    # Update last_run timestamp
+    schedule["last_run"] = datetime.now(UTC).isoformat()
+    cur.execute(
+        """
+        UPDATE system_config
+        SET value = %s, updated_at = now()
+        WHERE key = 'maintenance_schedule'
+        """,
+        (json.dumps(schedule),),
+    )
+
+    return {
+        "maintenance_run": True,
+        "timestamp": schedule["last_run"],
+        "results": [{"operation": r.operation, "details": r.details} for r in results],
+    }
