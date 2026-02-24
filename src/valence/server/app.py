@@ -31,6 +31,8 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.routing import Route
 
+from valence.core.inference import provider as inference_provider
+
 from .admin_endpoints import (
     admin_embeddings_backfill,
     admin_embeddings_migrate,
@@ -787,6 +789,41 @@ async def swagger_ui_endpoint(request: Request) -> HTMLResponse:
     return HTMLResponse(html)
 
 
+async def config_inference_endpoint(request: Request) -> JSONResponse:
+    """PUT /api/v1/config/inference — update inference configuration at runtime."""
+    body = await request.json()
+    provider_name = body.get("provider")
+
+    if not provider_name:
+        return JSONResponse({"error": "Missing 'provider' field"}, status_code=400)
+
+    # Write to system_config
+    import json as _json
+
+    from valence.core.db import get_cursor
+
+    with get_cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO system_config (key, value)
+            VALUES ('inference', %s::jsonb)
+            ON CONFLICT (key) DO UPDATE
+                SET value = EXCLUDED.value,
+                    updated_at = NOW()
+            """,
+            (_json.dumps(body),),
+        )
+
+    # Hot-reload the backend
+    backend = _create_inference_backend(body)
+    if backend is not None:
+        inference_provider.configure(backend)
+        logger.info("Inference backend hot-reloaded: %s", provider_name)
+        return JSONResponse({"status": "ok", "provider": provider_name})
+    else:
+        return JSONResponse({"error": f"Failed to create backend for provider '{provider_name}'"}, status_code=400)
+
+
 async def info_endpoint(request: Request) -> JSONResponse:
     """Server info endpoint (no auth required)."""
     settings = get_settings()
@@ -1025,6 +1062,60 @@ class RateLimitMiddleware:
         await self.app(scope, receive, send)
 
 
+def _create_inference_backend(config: dict) -> Any:
+    """Create an inference backend from system_config values.
+
+    Returns an async callable suitable for InferenceProvider.configure(),
+    or None if the config is invalid or the backend can't be created.
+    """
+    provider_name = config.get("provider")
+
+    if provider_name == "gemini":
+        from valence.core.backends.gemini_cli import create_gemini_backend
+
+        return create_gemini_backend(
+            model=config.get("model", "gemini-2.5-flash"),
+        )
+
+    elif provider_name == "ollama":
+        from valence.core.backends.ollama import create_ollama_backend
+
+        return create_ollama_backend(
+            host=config.get("host", "http://localhost:11434"),
+            model=config.get("model", "qwen3:30b"),
+        )
+
+    elif provider_name == "cerebras":
+        from valence.core.backends.openai_compat import create_openai_backend
+
+        return create_openai_backend(
+            base_url="https://api.cerebras.ai/v1",
+            api_key=config.get("api_key", ""),
+            model=config.get("model", "llama-4-scout-17b-16e-instruct"),
+        )
+
+    elif provider_name == "openai":
+        from valence.core.backends.openai_compat import create_openai_backend
+
+        return create_openai_backend(
+            base_url=config.get("base_url", "https://api.openai.com/v1"),
+            api_key=config.get("api_key", ""),
+            model=config.get("model", "gpt-4.1-mini"),
+        )
+
+    elif provider_name == "callback":
+        from valence.core.backends.callback import create_callback_backend
+
+        return create_callback_backend(
+            callback_url=config.get("callback_url", ""),
+            token=config.get("token"),
+        )
+
+    else:
+        logger.warning("Unknown inference provider: %s", provider_name)
+        return None
+
+
 @asynccontextmanager
 async def lifespan(app: Starlette) -> AsyncGenerator[None, None]:
     """Application lifespan handler."""
@@ -1036,6 +1127,29 @@ async def lifespan(app: Starlette) -> AsyncGenerator[None, None]:
     # Initialize legacy token store
     get_token_store(settings.token_file)
     logger.info(f"Token store initialized from {settings.token_file}")
+
+    # Load inference configuration from system_config (#485)
+    try:
+        from valence.core.db import get_cursor
+
+        with get_cursor() as cur:
+            cur.execute("SELECT value FROM system_config WHERE key = 'inference' LIMIT 1")
+            row = cur.fetchone()
+
+        if row is not None:
+            import json as _json
+
+            config = row["value"] if isinstance(row["value"], dict) else _json.loads(row["value"])
+            backend = _create_inference_backend(config)
+            if backend is not None:
+                inference_provider.configure(backend)
+                logger.info("Inference backend configured: %s", config.get("provider", "unknown"))
+            else:
+                logger.warning("Inference config found but backend creation failed — running in degraded mode")
+        else:
+            logger.info("No inference configuration found — running in degraded mode (compilation will concatenate)")
+    except Exception:
+        logger.exception("Failed to load inference configuration — running in degraded mode")
 
     # Start background embedding backfill task (#399)
     backfill_task = asyncio.create_task(_embedding_backfill_loop())
@@ -1123,6 +1237,8 @@ def create_app() -> Starlette:
         Route(f"{API_V1}/sessions/{{session_id}}/finalize", finalize_session_endpoint, methods=["POST"]),
         # Stats (Issue #396)
         Route(f"{API_V1}/stats", stats_endpoint, methods=["GET"]),
+        # Config endpoints
+        Route(f"{API_V1}/config/inference", config_inference_endpoint, methods=["PUT"]),
         # Admin endpoints (Issue #396)
         Route(f"{API_V1}/admin/maintenance", admin_maintenance, methods=["POST"]),
         Route(f"{API_V1}/admin/embeddings/status", admin_embeddings_status, methods=["GET"]),
