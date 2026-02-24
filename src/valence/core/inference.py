@@ -382,7 +382,7 @@ class InferenceProvider:
             else:
                 content = result
 
-        except Exception as exc:  # noqa: BLE001
+        except (RuntimeError, ValueError, TypeError, OSError, ConnectionError) as exc:
             logger.warning("Inference backend failed for task %r: %s", task_type, exc)
             return InferenceResult.degraded_result(
                 task_type=task_type,

@@ -260,7 +260,7 @@ class MetricsMiddleware(BaseHTTPMiddleware):
             )
 
             return response
-        except Exception:
+        except Exception as e:
             duration = time.perf_counter() - start_time
             collector.record_request(
                 method=request.method,

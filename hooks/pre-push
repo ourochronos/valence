@@ -1,0 +1,21 @@
+#!/bin/sh
+# Pre-push hook: run ruff format check before pushing
+# Install: cp hooks/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push
+
+if command -v ruff >/dev/null 2>&1; then
+    echo "Running ruff format check..."
+    ruff format --check src/valence tests 2>/dev/null
+    if [ $? -ne 0 ]; then
+        echo ""
+        echo "❌ ruff format check failed. Run: ruff format src/valence tests"
+        exit 1
+    fi
+    echo "Running ruff lint..."
+    ruff check src/valence 2>/dev/null
+    if [ $? -ne 0 ]; then
+        echo ""
+        echo "❌ ruff lint failed. Run: ruff check src/valence --fix"
+        exit 1
+    fi
+    echo "✓ Lint checks passed"
+fi

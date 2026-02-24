@@ -13,6 +13,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any
 
+import psycopg2
 from psycopg2 import pool as psycopg2_pool
 from psycopg2.extras import RealDictCursor
 
@@ -59,7 +60,7 @@ def get_cursor() -> Generator[Any, None, None]:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             yield cur
         conn.commit()
-    except Exception:
+    except psycopg2.Error:
         conn.rollback()
         raise
     finally:
@@ -186,7 +187,7 @@ def check_connection() -> bool:
         with get_cursor() as cur:
             cur.execute("SELECT 1")
         return True
-    except Exception:
+    except psycopg2.Error:
         return False
 
 
