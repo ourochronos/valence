@@ -138,7 +138,7 @@ class ServerSettings(BaseSettings):
     # Node identity
     federation_node_did: str | None = Field(
         default=None,
-        description="Node DID (e.g., did:vkb:web:valence.example.com). If not set, derived from external_url.",
+        description="Node DID (e.g., did:valence:web:valence.example.com). If not set, derived from external_url.",
     )
     federation_node_name: str | None = Field(
         default=None,

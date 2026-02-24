@@ -42,6 +42,10 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         "--metadata",
         help='Optional JSON metadata, e.g. \'{"author":"name"}\'',
     )
+    ingest_p.add_argument(
+        "--supersedes",
+        help="Optional UUID of a source this one supersedes/replaces",
+    )
     ingest_p.set_defaults(func=cmd_ingest)
 
 
@@ -86,6 +90,10 @@ def cmd_ingest(args: argparse.Namespace) -> int:
     # Add URL field if it's a URL
     if args.content.startswith(("http://", "https://")):
         body["url"] = args.content
+
+    # Add supersession link if provided
+    if args.supersedes:
+        body["supersedes"] = args.supersedes
 
     try:
         result = client.post("/sources", body=body)

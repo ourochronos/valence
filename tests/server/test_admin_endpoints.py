@@ -86,30 +86,12 @@ class TestMaintenance:
         assert resp.status_code == 400
 
     @patch("valence.cli.utils.get_db_connection")
-    @patch("valence.core.maintenance.apply_retention")
-    def test_retention(self, mock_retention, mock_conn, client):
-        from valence.core.maintenance import MaintenanceResult
-
-        mock_retention.return_value = [MaintenanceResult(operation="apply_retention", details={"deleted": 5})]
-        conn = MagicMock()
-        conn.autocommit = False
-        conn.cursor.return_value = MagicMock()
-        mock_conn.return_value = conn
-
-        resp = client.post("/api/v1/admin/maintenance", json={"retention": True})
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["success"] is True
-        assert data["count"] == 1
-
-    @patch("valence.cli.utils.get_db_connection")
     @patch("valence.core.maintenance.run_full_maintenance")
     def test_run_all(self, mock_full, mock_conn, client):
         from valence.core.maintenance import MaintenanceResult
 
         mock_full.return_value = [
-            MaintenanceResult(operation="retention", details={}),
-            MaintenanceResult(operation="archive", details={}),
+            MaintenanceResult(operation="vacuum_analyze", details={}),
         ]
         conn = MagicMock()
         conn.autocommit = False
@@ -118,22 +100,7 @@ class TestMaintenance:
 
         resp = client.post("/api/v1/admin/maintenance", json={"all": True})
         assert resp.status_code == 200
-        assert resp.json()["count"] == 2
-
-    @patch("valence.cli.utils.get_db_connection")
-    @patch("valence.core.maintenance.apply_retention")
-    def test_dry_run(self, mock_retention, mock_conn, client):
-        from valence.core.maintenance import MaintenanceResult
-
-        mock_retention.return_value = [MaintenanceResult(operation="retention", details={"would_delete": 5}, dry_run=True)]
-        conn = MagicMock()
-        conn.autocommit = False
-        conn.cursor.return_value = MagicMock()
-        mock_conn.return_value = conn
-
-        resp = client.post("/api/v1/admin/maintenance", json={"retention": True, "dry_run": True})
-        assert resp.status_code == 200
-        assert resp.json()["dry_run"] is True
+        assert resp.json()["count"] == 1
 
 
 # =============================================================================

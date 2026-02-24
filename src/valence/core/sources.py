@@ -84,6 +84,7 @@ async def ingest_source(
     title: str | None = None,
     url: str | None = None,
     metadata: dict | None = None,
+    supersedes: str | None = None,
 ) -> ValenceResponse:
     """Ingest a source into the knowledge substrate.
 
@@ -98,6 +99,7 @@ async def ingest_source(
         title: Optional human-readable title.
         url: Optional canonical URL for the source.
         metadata: Optional JSON-serialisable metadata dict.
+        supersedes: Optional UUID of a source this one supersedes (for updates).
 
     Returns:
         ValenceResponse with data = source dict on success.
@@ -125,13 +127,22 @@ async def ingest_source(
             existing_id = str(existing["id"])
             return err(f"Duplicate source: fingerprint {fingerprint!r} already exists (existing_id={existing_id})")
 
+        # Validate supersedes target exists if provided
+        if supersedes:
+            cur.execute(
+                "SELECT id FROM sources WHERE id = %s::uuid",
+                (supersedes,),
+            )
+            if not cur.fetchone():
+                return err(f"Superseded source not found: {supersedes}")
+
         cur.execute(
             """
             INSERT INTO sources (type, title, url, content, fingerprint, reliability,
-                                 content_hash, metadata)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                                 content_hash, metadata, supersedes_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::uuid)
             RETURNING id, type, title, url, content, fingerprint, reliability,
-                      content_hash, metadata, created_at
+                      content_hash, metadata, created_at, supersedes_id
             """,
             (
                 source_type,
@@ -142,12 +153,22 @@ async def ingest_source(
                 reliability,
                 fingerprint,  # content_hash = fingerprint for backward compat
                 metadata_json,
+                supersedes,
             ),
         )
         row = cur.fetchone()
 
     result = _row_to_dict(row)
-    logger.info("Ingested source id=%s type=%s fingerprint=%s", result["id"], source_type, fingerprint[:8])
+    if supersedes:
+        logger.info(
+            "Ingested source id=%s type=%s fingerprint=%s, supersedes=%s",
+            result["id"],
+            source_type,
+            fingerprint[:8],
+            supersedes,
+        )
+    else:
+        logger.info("Ingested source id=%s type=%s fingerprint=%s", result["id"], source_type, fingerprint[:8])
     return ok(data=result)
 
 
@@ -263,3 +284,4 @@ async def list_sources(
         rows = cur.fetchall()
 
     return ok(data=[_row_to_dict(row) for row in rows])
+

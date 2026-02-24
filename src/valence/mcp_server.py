@@ -34,7 +34,6 @@ from mcp.server.stdio import stdio_server
 from mcp.types import Resource, TextContent, TextResourceContents
 from pydantic import AnyUrl
 
-from .core.db import DatabaseError as OurDatabaseError
 from .core.db import get_cursor, init_schema
 from .core.exceptions import DatabaseException, ValidationException
 from .core.health import DatabaseStats, cli_health_check, startup_checks
@@ -100,6 +99,7 @@ def source_ingest(
     title: str | None = None,
     url: str | None = None,
     metadata: dict | None = None,
+    supersedes: str | None = None,
 ) -> dict[str, Any]:
     """Ingest a new source into the knowledge substrate."""
     if not content or not content.strip():
@@ -129,13 +129,18 @@ def source_ingest(
                 "error": "Duplicate source: fingerprint already exists",
             }
 
+        if supersedes:
+            cur.execute("SELECT id FROM sources WHERE id = %s::uuid", (supersedes,))
+            if not cur.fetchone():
+                return {"success": False, "error": f"Superseded source not found: {supersedes}"}
+
         cur.execute(
             """
             INSERT INTO sources (type, title, url, content, fingerprint, reliability,
-                                 content_hash, metadata)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                                 content_hash, metadata, supersedes_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::uuid)
             RETURNING id, type, title, url, content, fingerprint, reliability,
-                      content_hash, metadata, created_at
+                      content_hash, metadata, created_at, supersedes_id
             """,
             (
                 source_type,
@@ -146,6 +151,7 @@ def source_ingest(
                 reliability,
                 fingerprint,
                 metadata_json,
+                supersedes,
             ),
         )
         row = cur.fetchone()
@@ -979,7 +985,7 @@ def run() -> None:
         schema_dir = Path(__file__).parent
         init_schema(schema_dir)
         logger.info("Schema initialized")
-    except (DatabaseException, OurDatabaseError) as e:
+    except (DatabaseException, Exception) as e:
         logger.warning(f"Schema initialization skipped (may already exist): {e}")
 
     async def main():

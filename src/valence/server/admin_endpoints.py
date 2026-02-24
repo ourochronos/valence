@@ -47,18 +47,14 @@ async def admin_maintenance(request: Request) -> Response:
     dry_run = body.get("dry_run", False)
     run_all = body.get("all", False)
 
-    ops_requested = any(body.get(op) for op in ("retention", "archive", "tombstones", "compact", "views", "vacuum"))
+    ops_requested = any(body.get(op) for op in ("views", "vacuum"))
     if not run_all and not ops_requested:
-        return missing_field_error("at least one operation (retention, archive, tombstones, compact, views, vacuum, all)")
+        return missing_field_error("at least one operation (views, vacuum, all)")
 
     try:
         from ..cli.utils import get_db_connection
         from ..core.maintenance import (
             MaintenanceResult,
-            apply_retention,
-            archive_beliefs,
-            cleanup_tombstones,
-            compact_exchanges,
             refresh_views,
             run_full_maintenance,
             vacuum_analyze,
@@ -76,14 +72,6 @@ async def admin_maintenance(request: Request) -> Response:
             else:
                 cur = conn.cursor()
 
-                if body.get("retention"):
-                    results.extend(apply_retention(cur, dry_run=dry_run))
-                if body.get("archive"):
-                    results.append(archive_beliefs(cur, dry_run=dry_run))
-                if body.get("tombstones"):
-                    results.append(cleanup_tombstones(cur, dry_run=dry_run))
-                if body.get("compact"):
-                    results.append(compact_exchanges(cur, dry_run=dry_run))
                 if body.get("views") and not dry_run:
                     results.append(refresh_views(cur))
                 elif body.get("views"):

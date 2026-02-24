@@ -48,7 +48,8 @@ CREATE TABLE public.sources (
     embedding public.vector(1536),
     content_tsv tsvector GENERATED ALWAYS AS (to_tsvector('english'::regconfig, COALESCE(content, ''::text))) STORED,
     redacted_at timestamp with time zone,
-    redacted_by text
+    redacted_by text,
+    supersedes_id uuid
 );
 
 COMMENT ON COLUMN public.sources.reliability IS 'Initial reliability: document=0.8, code=0.8, web=0.6, conversation=0.5, observation=0.4, tool_output=0.7, user_input=0.75';
@@ -398,6 +399,7 @@ CREATE INDEX idx_sources_created ON public.sources USING btree (created_at DESC)
 CREATE INDEX idx_sources_hash ON public.sources USING btree (content_hash) WHERE (content_hash IS NOT NULL);
 CREATE INDEX idx_sources_tsv ON public.sources USING gin (content_tsv);
 CREATE INDEX idx_sources_embedding ON public.sources USING hnsw (embedding public.vector_cosine_ops) WITH (m='16', ef_construction='200');
+CREATE INDEX idx_sources_supersedes ON public.sources USING btree (supersedes_id) WHERE (supersedes_id IS NOT NULL);
 
 -- articles
 CREATE INDEX idx_articles_status ON public.articles USING btree (status);
@@ -454,6 +456,9 @@ ALTER TABLE ONLY public.article_sources
 
 ALTER TABLE ONLY public.article_sources
     ADD CONSTRAINT article_sources_source_id_fkey FOREIGN KEY (source_id) REFERENCES public.sources(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.sources
+    ADD CONSTRAINT sources_supersedes_id_fkey FOREIGN KEY (supersedes_id) REFERENCES public.sources(id) ON DELETE SET NULL;
 
 -- articles
 ALTER TABLE ONLY public.articles

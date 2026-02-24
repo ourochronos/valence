@@ -48,9 +48,6 @@ class DatabaseStats:
         tables = [
             ("articles", "beliefs_count"),
             ("entities", "entities_count"),
-            ("vkb_sessions", "sessions_count"),
-            ("vkb_exchanges", "exchanges_count"),
-            ("vkb_patterns", "patterns_count"),
             ("contentions", "tensions_count"),
         ]
         for table, attr in tables:
@@ -81,10 +78,6 @@ REQUIRED_TABLES = [
     "article_entities",
     "sources",
     "contentions",
-    "vkb_sessions",
-    "vkb_exchanges",
-    "vkb_patterns",
-    "vkb_session_insights",
 ]
 
 

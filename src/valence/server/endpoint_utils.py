@@ -1,6 +1,6 @@
 """Shared utility functions for REST endpoint parameter parsing and output formatting.
 
-Extracted from substrate_endpoints.py and vkb_endpoints.py to avoid duplication.
+Shared helpers for REST endpoint parameter parsing and output formatting.
 """
 
 from __future__ import annotations

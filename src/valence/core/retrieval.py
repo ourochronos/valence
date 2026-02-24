@@ -19,7 +19,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
-import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -54,13 +53,8 @@ def _try_generate_embedding(query: str) -> str | None:
 
 def _serialize_row(row: dict[str, Any]) -> dict[str, Any]:
     """Convert a DB row dict: UUID → str, datetime → ISO string."""
-    d = dict(row)
-    for key, val in list(d.items()):
-        if isinstance(val, datetime):
-            d[key] = val.isoformat()
-        elif isinstance(val, uuid.UUID):
-            d[key] = str(val)
-    return d
+    from valence.core.db import serialize_row
+    return serialize_row(row)
 
 
 def _extract_rrf_scores(d: dict[str, Any], rrf_min: float, rrf_range: float) -> None:

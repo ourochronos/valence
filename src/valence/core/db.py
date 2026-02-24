@@ -123,8 +123,10 @@ def table_exists(table_name: str) -> bool:
 
 def count_rows(table_name: str) -> int:
     """Count rows in a table."""
+    from psycopg2 import sql as psql
+
     with get_cursor() as cur:
-        cur.execute(f"SELECT COUNT(*) as count FROM {table_name}")
+        cur.execute(psql.SQL("SELECT COUNT(*) as count FROM {}").format(psql.Identifier(table_name)))
         result = cur.fetchone()
         return result["count"] if result else 0
 
@@ -196,22 +198,15 @@ def get_connection_params() -> dict[str, Any]:
     return _get_db_config()
 
 
-# Exception aliases for backward compatibility
-class DatabaseError(Exception):
-    """Database operation error."""
-    pass
+def serialize_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Convert a DB row dict: UUID → str, datetime → ISO string."""
+    import uuid as _uuid
+    from datetime import datetime as _dt
 
-
-class ValidationError(DatabaseError):
-    """Data validation error."""
-    pass
-
-
-class NotFoundError(DatabaseError):
-    """Record not found error."""
-    pass
-
-
-class ConflictError(DatabaseError):
-    """Conflict error (e.g., duplicate key)."""
-    pass
+    d = dict(row)
+    for key, val in list(d.items()):
+        if isinstance(val, _dt):
+            d[key] = val.isoformat()
+        elif isinstance(val, _uuid.UUID):
+            d[key] = str(val)
+    return d

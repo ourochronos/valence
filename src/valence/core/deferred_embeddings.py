@@ -33,6 +33,8 @@ _EMBEDDABLE_TABLES: dict[str, str] = {
 
 # Module-level import for patchability in tests.
 # our_db is required; our_embeddings is optional (graceful degradation).
+from psycopg2 import sql  # noqa: E402
+
 from valence.core.db import get_cursor  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -51,7 +53,7 @@ def _check_needs_embedding_sync(table: str, row_id: str) -> bool:
 
     with get_cursor() as cur:
         cur.execute(
-            f"SELECT embedding IS NULL AS needs_embed FROM {table} WHERE id = %s",  # noqa: S608
+            sql.SQL("SELECT embedding IS NULL AS needs_embed FROM {} WHERE id = %s").format(sql.Identifier(table)),
             (row_id,),
         )
         row = cur.fetchone()
@@ -76,7 +78,7 @@ def _compute_embedding_sync(table: str, row_id: str) -> bool:
     # Fetch text content and check whether embedding is already present
     with get_cursor() as cur:
         cur.execute(
-            f"SELECT {text_col}, embedding IS NULL AS needs_embed FROM {table} WHERE id = %s",  # noqa: S608
+            sql.SQL("SELECT {}, embedding IS NULL AS needs_embed FROM {} WHERE id = %s").format(sql.Identifier(text_col), sql.Identifier(table)),
             (row_id,),
         )
         row = cur.fetchone()
@@ -109,7 +111,7 @@ def _compute_embedding_sync(table: str, row_id: str) -> bool:
     # Persist the embedding
     with get_cursor() as cur:
         cur.execute(
-            f"UPDATE {table} SET embedding = %s::vector WHERE id = %s AND embedding IS NULL",  # noqa: S608
+            sql.SQL("UPDATE {} SET embedding = %s::vector WHERE id = %s AND embedding IS NULL").format(sql.Identifier(table)),
             (embedding_str, row_id),
         )
 
@@ -161,7 +163,7 @@ def _batch_fill_sync(table: str, batch_size: int) -> int:
             embedding_str = vector_to_pgvector(vector)
             with get_cursor() as cur:
                 cur.execute(
-                    f"UPDATE {table} SET embedding = %s::vector WHERE id = %s AND embedding IS NULL",  # noqa: S608
+                    sql.SQL("UPDATE {} SET embedding = %s::vector WHERE id = %s AND embedding IS NULL").format(sql.Identifier(table)),
                     (embedding_str, row_id),
                 )
             computed += 1
