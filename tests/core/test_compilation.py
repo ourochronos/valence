@@ -16,6 +16,7 @@ import pytest
 
 import valence.core.compilation as compilation_mod
 from valence.core.compilation import (
+    DEFAULT_PROMPT_LIMITS,
     _build_compilation_prompt,
     _build_update_prompt,
     _count_tokens,
@@ -119,6 +120,11 @@ def _patch_rs(rs=None):
     return patch.object(compilation_mod, "_get_right_sizing", return_value=rs or DEFAULT_RS)
 
 
+def _patch_pl(pl=None):
+    """Return a patch context for _get_prompt_limits returning pl (defaults to DEFAULT_PROMPT_LIMITS)."""
+    return patch.object(compilation_mod, "_get_prompt_limits", return_value=pl or DEFAULT_PROMPT_LIMITS)
+
+
 # ---------------------------------------------------------------------------
 # Unit: _count_tokens
 # ---------------------------------------------------------------------------
@@ -181,40 +187,45 @@ class TestParseLlmJson:
 
 class TestBuildCompilationPrompt:
     def test_includes_all_source_content(self):
-        sources = [
-            {"id": SOURCE_ID_1, "title": "Alpha", "content": "Content A"},
-            {"id": SOURCE_ID_2, "title": "Beta", "content": "Content B"},
-        ]
-        prompt = _build_compilation_prompt(sources, None, 2000)
-        assert "Alpha" in prompt
-        assert "Content A" in prompt
-        assert "Beta" in prompt
-        assert "Content B" in prompt
+        with _patch_pl():
+            sources = [
+                {"id": SOURCE_ID_1, "title": "Alpha", "content": "Content A"},
+                {"id": SOURCE_ID_2, "title": "Beta", "content": "Content B"},
+            ]
+            prompt = _build_compilation_prompt(sources, None, 2000)
+            assert "Alpha" in prompt
+            assert "Content A" in prompt
+            assert "Beta" in prompt
+            assert "Content B" in prompt
 
     def test_includes_title_hint(self):
-        sources = [{"id": SOURCE_ID_1, "title": "S", "content": "C"}]
-        prompt = _build_compilation_prompt(sources, "My Custom Title", 2000)
-        assert "My Custom Title" in prompt
+        with _patch_pl():
+            sources = [{"id": SOURCE_ID_1, "title": "S", "content": "C"}]
+            prompt = _build_compilation_prompt(sources, "My Custom Title", 2000)
+            assert "My Custom Title" in prompt
 
     def test_includes_target_tokens(self):
-        sources = [{"id": SOURCE_ID_1, "title": "S", "content": "C"}]
-        prompt = _build_compilation_prompt(sources, None, 1500)
-        assert "1500" in prompt
+        with _patch_pl():
+            sources = [{"id": SOURCE_ID_1, "title": "S", "content": "C"}]
+            prompt = _build_compilation_prompt(sources, None, 1500)
+            assert "1500" in prompt
 
     def test_no_title_hint_omits_title_instruction(self):
-        sources = [{"id": SOURCE_ID_1, "title": "S", "content": "C"}]
-        prompt = _build_compilation_prompt(sources, None, 2000)
-        assert "title should be" not in prompt
+        with _patch_pl():
+            sources = [{"id": SOURCE_ID_1, "title": "S", "content": "C"}]
+            prompt = _build_compilation_prompt(sources, None, 2000)
+            assert "title should be" not in prompt
 
     def test_numbered_sources(self):
-        sources = [
-            {"id": SOURCE_ID_1, "title": "A", "content": "ca"},
-            {"id": SOURCE_ID_2, "title": "B", "content": "cb"},
-        ]
-        prompt = _build_compilation_prompt(sources, None, 2000)
-        # Prompt lists sources by id (format: "Source id=<uuid>: Title")
-        assert SOURCE_ID_1 in prompt
-        assert SOURCE_ID_2 in prompt
+        with _patch_pl():
+            sources = [
+                {"id": SOURCE_ID_1, "title": "A", "content": "ca"},
+                {"id": SOURCE_ID_2, "title": "B", "content": "cb"},
+            ]
+            prompt = _build_compilation_prompt(sources, None, 2000)
+            # Prompt lists sources by id (format: "Source id=<uuid>: Title")
+            assert SOURCE_ID_1 in prompt
+            assert SOURCE_ID_2 in prompt
 
 
 # ---------------------------------------------------------------------------
@@ -328,7 +339,7 @@ class TestCompileArticle:
         assert "source_id" in result.error.lower()
 
     async def test_source_not_found_returns_error(self):
-        cur = _make_cursor(fetchone_seq=[None])
+        cur = _make_cursor(fetchall_seq=[[]])
         with patch("valence.core.compilation.get_cursor", return_value=cur), _patch_rs():
             result = await compile_article([SOURCE_ID_1])
         assert result.success is False
@@ -342,7 +353,7 @@ class TestCompileArticle:
             content="Compiled content.",
             rels=[{"source_id": SOURCE_ID_1, "relationship": "originates"}],
         )
-        cur = _make_cursor(fetchone_seq=[src, art])
+        cur = _make_cursor(fetchall_seq=[[src]], fetchone_seq=[art])
 
         async def mock_llm(prompt, **_kw):
             return llm_resp
@@ -350,6 +361,7 @@ class TestCompileArticle:
         with (
             patch("valence.core.compilation.get_cursor", return_value=cur),
             _patch_rs(),
+            _patch_pl(),
             patch.object(compilation_mod, "_call_llm", side_effect=mock_llm),
         ):
             result = await compile_article([SOURCE_ID_1])
@@ -371,7 +383,7 @@ class TestCompileArticle:
                 {"source_id": SOURCE_ID_2, "relationship": "confirms"},
             ],
         )
-        cur = _make_cursor(fetchone_seq=[src1, src2, art])
+        cur = _make_cursor(fetchall_seq=[[src1, src2]], fetchone_seq=[art])
 
         async def mock_llm(prompt, **_kw):
             return llm_resp
@@ -379,6 +391,7 @@ class TestCompileArticle:
         with (
             patch("valence.core.compilation.get_cursor", return_value=cur),
             _patch_rs(),
+            _patch_pl(),
             patch.object(compilation_mod, "_call_llm", side_effect=mock_llm),
         ):
             result = await compile_article([SOURCE_ID_1, SOURCE_ID_2])
@@ -392,7 +405,7 @@ class TestCompileArticle:
         """compile_article records a 'created' mutation row."""
         src = _source_row()
         art = _article_row()
-        cur = _make_cursor(fetchone_seq=[src, art])
+        cur = _make_cursor(fetchall_seq=[[src]], fetchone_seq=[art])
 
         async def mock_llm(prompt, **_kw):
             return _llm_ok()
@@ -400,6 +413,7 @@ class TestCompileArticle:
         with (
             patch("valence.core.compilation.get_cursor", return_value=cur),
             _patch_rs(),
+            _patch_pl(),
             patch.object(compilation_mod, "_call_llm", side_effect=mock_llm),
         ):
             await compile_article([SOURCE_ID_1])
@@ -412,7 +426,7 @@ class TestCompileArticle:
         """When LLM raises NotImplementedError, falls back to source concatenation."""
         src = _source_row(SOURCE_ID_1, "Source A", "Short content.")
         art = _article_row(ARTICLE_ID, "## Source A\nShort content.")
-        cur = _make_cursor(fetchone_seq=[src, art])
+        cur = _make_cursor(fetchall_seq=[[src]], fetchone_seq=[art])
 
         async def fail_llm(prompt, **_kw):
             raise NotImplementedError("no backend")
@@ -420,6 +434,7 @@ class TestCompileArticle:
         with (
             patch("valence.core.compilation.get_cursor", return_value=cur),
             _patch_rs(),
+            _patch_pl(),
             patch.object(compilation_mod, "_call_llm", side_effect=fail_llm),
         ):
             result = await compile_article([SOURCE_ID_1], title_hint="Fallback Title")
@@ -430,7 +445,7 @@ class TestCompileArticle:
         """When LLM returns invalid JSON, falls back gracefully."""
         src = _source_row()
         art = _article_row()
-        cur = _make_cursor(fetchone_seq=[src, art])
+        cur = _make_cursor(fetchall_seq=[[src]], fetchone_seq=[art])
 
         async def bad_llm(prompt, **_kw):
             return "this is not json"
@@ -438,6 +453,7 @@ class TestCompileArticle:
         with (
             patch("valence.core.compilation.get_cursor", return_value=cur),
             _patch_rs(),
+            _patch_pl(),
             patch.object(compilation_mod, "_call_llm", side_effect=bad_llm),
         ):
             result = await compile_article([SOURCE_ID_1])
@@ -448,7 +464,7 @@ class TestCompileArticle:
         """Title hint is forwarded in the LLM prompt."""
         src = _source_row()
         art = _article_row()
-        cur = _make_cursor(fetchone_seq=[src, art])
+        cur = _make_cursor(fetchall_seq=[[src]], fetchone_seq=[art])
         prompts_seen: list[str] = []
 
         async def capturing_llm(prompt, **_kw):
@@ -458,6 +474,7 @@ class TestCompileArticle:
         with (
             patch("valence.core.compilation.get_cursor", return_value=cur),
             _patch_rs(),
+            _patch_pl(),
             patch.object(compilation_mod, "_call_llm", side_effect=capturing_llm),
         ):
             await compile_article([SOURCE_ID_1], title_hint="Specific Title")
@@ -485,7 +502,7 @@ class TestCompileArticleRightSizing:
             }
         )
 
-        cur = _make_cursor(fetchone_seq=[src, art])
+        cur = _make_cursor(fetchall_seq=[[src]], fetchone_seq=[art])
         queued_ops: list[str] = []
 
         def track_execute(sql, params=None):
@@ -524,7 +541,7 @@ class TestCompileArticleRightSizing:
             }
         )
 
-        cur = _make_cursor(fetchone_seq=[src, art])
+        cur = _make_cursor(fetchall_seq=[[src]], fetchone_seq=[art])
         split_queued: list[bool] = []
 
         def track_execute(sql, params=None):
@@ -539,6 +556,7 @@ class TestCompileArticleRightSizing:
         with (
             patch("valence.core.compilation.get_cursor", return_value=cur),
             _patch_rs(),
+            _patch_pl(),
             patch.object(compilation_mod, "_call_llm", side_effect=mock_llm),
         ):
             result = await compile_article([SOURCE_ID_1])
@@ -580,6 +598,7 @@ class TestUpdateArticleFromSource:
         with (
             patch("valence.core.compilation.get_cursor", return_value=cur),
             _patch_rs(),
+            _patch_pl(),
             patch.object(compilation_mod, "_call_llm", side_effect=mock_llm),
         ):
             result = await update_article_from_source(ARTICLE_ID, SOURCE_ID_1)
@@ -599,6 +618,7 @@ class TestUpdateArticleFromSource:
         with (
             patch("valence.core.compilation.get_cursor", return_value=cur),
             _patch_rs(),
+            _patch_pl(),
             patch.object(compilation_mod, "_call_llm", side_effect=mock_llm),
         ):
             result = await update_article_from_source(ARTICLE_ID, SOURCE_ID_1)
@@ -617,6 +637,7 @@ class TestUpdateArticleFromSource:
         with (
             patch("valence.core.compilation.get_cursor", return_value=cur),
             _patch_rs(),
+            _patch_pl(),
             patch.object(compilation_mod, "_call_llm", side_effect=mock_llm),
         ):
             result = await update_article_from_source(ARTICLE_ID, SOURCE_ID_1)
@@ -635,6 +656,7 @@ class TestUpdateArticleFromSource:
         with (
             patch("valence.core.compilation.get_cursor", return_value=cur),
             _patch_rs(),
+            _patch_pl(),
             patch.object(compilation_mod, "_call_llm", side_effect=mock_llm),
         ):
             result = await update_article_from_source(ARTICLE_ID, SOURCE_ID_1)
@@ -654,6 +676,7 @@ class TestUpdateArticleFromSource:
         with (
             patch("valence.core.compilation.get_cursor", return_value=cur),
             _patch_rs(),
+            _patch_pl(),
             patch.object(compilation_mod, "_call_llm", side_effect=mock_llm),
         ):
             result = await update_article_from_source(ARTICLE_ID, SOURCE_ID_1)
@@ -674,6 +697,7 @@ class TestUpdateArticleFromSource:
         with (
             patch("valence.core.compilation.get_cursor", return_value=cur),
             _patch_rs(),
+            _patch_pl(),
             patch.object(compilation_mod, "_call_llm", side_effect=fail_llm),
         ):
             result = await update_article_from_source(ARTICLE_ID, SOURCE_ID_1)
@@ -694,6 +718,7 @@ class TestUpdateArticleFromSource:
         with (
             patch("valence.core.compilation.get_cursor", return_value=cur),
             _patch_rs(),
+            _patch_pl(),
             patch.object(compilation_mod, "_call_llm", side_effect=mock_llm),
         ):
             await update_article_from_source(ARTICLE_ID, SOURCE_ID_1)
@@ -761,8 +786,8 @@ class TestProcessMutationQueue:
         art = _article_row()
 
         cur = _make_cursor(
-            fetchone_seq=[src, art],
-            fetchall_seq=[[item], [source_link]],
+            fetchall_seq=[[item], [source_link], [src]],
+            fetchone_seq=[art],
         )
 
         async def mock_llm(prompt, **_kw):
@@ -771,6 +796,7 @@ class TestProcessMutationQueue:
         with (
             patch("valence.core.compilation.get_cursor", return_value=cur),
             _patch_rs(),
+            _patch_pl(),
             patch.object(compilation_mod, "_call_llm", side_effect=mock_llm),
         ):
             count = await process_mutation_queue()
@@ -888,8 +914,8 @@ class TestProcessMutationQueue:
         src = _source_row()
         art = _article_row()
         cur = _make_cursor(
-            fetchone_seq=[src, art],
-            fetchall_seq=[[item], [source_link]],
+            fetchall_seq=[[item], [source_link], [src]],
+            fetchone_seq=[art],
         )
 
         async def mock_llm(prompt, **_kw):
@@ -898,6 +924,7 @@ class TestProcessMutationQueue:
         with (
             patch("valence.core.compilation.get_cursor", return_value=cur),
             _patch_rs(),
+            _patch_pl(),
             patch.object(compilation_mod, "_call_llm", side_effect=mock_llm),
         ):
             await process_mutation_queue()

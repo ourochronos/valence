@@ -25,16 +25,24 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
     restart: unless-stopped
 
   server:
     build: .
     environment:
-      VKB_DB_HOST: postgres
-      VKB_DB_PORT: 5432
-      VKB_DB_NAME: ${VALENCE_DB_NAME:-valence}
-      VKB_DB_USER: ${VALENCE_DB_USER:-valence}
-      VKB_DB_PASSWORD: ${VALENCE_DB_PASSWORD:-valence}
+      VALENCE_DB_HOST: postgres
+      VALENCE_DB_PORT: 5432
+      VALENCE_DB_NAME: ${VALENCE_DB_NAME:-valence}
+      VALENCE_DB_USER: ${VALENCE_DB_USER:-valence}
+      VALENCE_DB_PASSWORD: ${VALENCE_DB_PASSWORD:-valence}
       VALENCE_HOST: 0.0.0.0
       VALENCE_PORT: 8420
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -43,6 +51,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
     restart: unless-stopped
 
 volumes:

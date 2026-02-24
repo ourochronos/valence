@@ -76,6 +76,11 @@ class CoreSettings(BaseSettings):
         description="Maximum pool connections",
         validation_alias="VALENCE_DB_POOL_MAX",
     )
+    db_pool_timeout: int = Field(
+        default=30,
+        description="Connection pool timeout in seconds",
+        validation_alias="VALENCE_DB_POOL_TIMEOUT",
+    )
 
     # ==========================================================================
     # EMBEDDING SETTINGS

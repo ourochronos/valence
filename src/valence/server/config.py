@@ -191,6 +191,8 @@ class ServerSettings(CoreSettings):
 
         In production (when host is not localhost/127.0.0.1 or external_url is set),
         require explicit JWT secret configuration.
+
+        Issue #465: Missing JWT secret in production now raises an error.
         """
         is_production = (
             self.external_url is not None
@@ -200,12 +202,11 @@ class ServerSettings(CoreSettings):
 
         if is_production and self.oauth_enabled:
             if not self.oauth_jwt_secret:
-                logger.warning(
-                    "VALENCE_OAUTH_JWT_SECRET not set — disabling OAuth. "
-                    "Bearer token auth still works. Generate a secret with: "
-                    "python -c 'import secrets; print(secrets.token_hex(32))'"
+                # #465: Raise error instead of silently disabling OAuth
+                raise ValueError(
+                    "VALENCE_OAUTH_JWT_SECRET is required when OAuth is enabled in production mode. "
+                    "Generate a secure secret with: python -c 'import secrets; print(secrets.token_hex(32))'"
                 )
-                object.__setattr__(self, "oauth_enabled", False)
             elif len(self.oauth_jwt_secret) < 32:
                 raise ValueError(
                     "VALENCE_OAUTH_JWT_SECRET must be at least 32 characters. "

@@ -31,45 +31,48 @@ class TestJWTSecretRequirement:
             assert len(settings.oauth_jwt_secret) >= 64  # 32 bytes = 64 hex chars
 
     def test_production_mode_disables_oauth_without_secret(self):
-        """In production mode without JWT secret, OAuth is disabled gracefully."""
+        """In production mode without JWT secret, ValueError is raised."""
         with patch.dict(os.environ, {}, clear=True):
-            settings = ServerSettings(
-                external_url="https://valence.example.com",
-                oauth_enabled=True,
-                oauth_jwt_secret=None,
-            )
+            with pytest.raises(ValueError) as exc_info:
+                ServerSettings(
+                    external_url="https://valence.example.com",
+                    oauth_enabled=True,
+                    oauth_jwt_secret=None,
+                )
 
-            # OAuth should be disabled, not crash
-            assert settings.oauth_enabled is False
+            assert "VALENCE_OAUTH_JWT_SECRET is required" in str(exc_info.value)
 
     def test_production_mode_via_non_localhost_host(self):
-        """Non-localhost host triggers production mode, disables OAuth without secret."""
+        """Non-localhost host triggers production mode, raises ValueError without secret."""
         with patch.dict(os.environ, {}, clear=True):
-            settings = ServerSettings(
-                host="192.168.1.100",  # External IP = production
-                oauth_enabled=True,
-                oauth_jwt_secret=None,
-            )
-            assert settings.oauth_enabled is False
+            with pytest.raises(ValueError) as exc_info:
+                ServerSettings(
+                    host="192.168.1.100",  # External IP = production
+                    oauth_enabled=True,
+                    oauth_jwt_secret=None,
+                )
+            assert "VALENCE_OAUTH_JWT_SECRET is required" in str(exc_info.value)
 
         # Also test with a public IP
         with patch.dict(os.environ, {}, clear=True):
-            settings = ServerSettings(
-                host="203.0.113.50",  # Public IP = definitely production
-                oauth_enabled=True,
-                oauth_jwt_secret=None,
-            )
-            assert settings.oauth_enabled is False
+            with pytest.raises(ValueError) as exc_info:
+                ServerSettings(
+                    host="203.0.113.50",  # Public IP = definitely production
+                    oauth_enabled=True,
+                    oauth_jwt_secret=None,
+                )
+            assert "VALENCE_OAUTH_JWT_SECRET is required" in str(exc_info.value)
 
     def test_production_mode_via_env_var(self):
-        """VALENCE_PRODUCTION=true triggers production mode, disables OAuth without secret."""
+        """VALENCE_PRODUCTION=true triggers production mode, raises ValueError without secret."""
         with patch.dict(os.environ, {"VALENCE_PRODUCTION": "true"}, clear=False):
-            settings = ServerSettings(
-                host="127.0.0.1",  # Even localhost
-                oauth_enabled=True,
-                oauth_jwt_secret=None,
-            )
-            assert settings.oauth_enabled is False
+            with pytest.raises(ValueError) as exc_info:
+                ServerSettings(
+                    host="127.0.0.1",  # Even localhost
+                    oauth_enabled=True,
+                    oauth_jwt_secret=None,
+                )
+            assert "VALENCE_OAUTH_JWT_SECRET is required" in str(exc_info.value)
 
     def test_weak_secret_rejected(self):
         """Weak (short) secrets should be rejected in production."""

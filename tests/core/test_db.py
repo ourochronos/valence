@@ -76,8 +76,8 @@ class TestConnectionPool:
         assert result is mock_pool
         mock_pool_class.assert_called_once()
         call_kwargs = mock_pool_class.call_args[1]
-        assert call_kwargs["minconn"] == 2
-        assert call_kwargs["maxconn"] == 10
+        assert call_kwargs["minconn"] == 5
+        assert call_kwargs["maxconn"] == 20
 
     @patch("valence.core.db.psycopg2_pool.ThreadedConnectionPool")
     def test_pool_singleton(self, mock_pool_class):
@@ -175,8 +175,9 @@ class TestConnectionPool:
 class TestGetCursor:
     """Test cursor context manager."""
 
+    @patch("valence.core.db._get_healthy_connection")
     @patch("valence.core.db._get_pool")
-    def test_cursor_commit_on_success(self, mock_get_pool):
+    def test_cursor_commit_on_success(self, mock_get_pool, mock_get_healthy_conn):
         """Test cursor commits on successful execution."""
         from valence.core.db import get_cursor
 
@@ -187,8 +188,8 @@ class TestGetCursor:
         mock_conn.cursor.return_value = mock_cursor
 
         mock_pool = MagicMock()
-        mock_pool.getconn.return_value = mock_conn
         mock_get_pool.return_value = mock_pool
+        mock_get_healthy_conn.return_value = mock_conn
 
         with get_cursor() as cur:
             assert cur is mock_cursor
@@ -197,8 +198,9 @@ class TestGetCursor:
         mock_conn.rollback.assert_not_called()
         mock_pool.putconn.assert_called_once_with(mock_conn)
 
+    @patch("valence.core.db._get_healthy_connection")
     @patch("valence.core.db._get_pool")
-    def test_cursor_rollback_on_error(self, mock_get_pool):
+    def test_cursor_rollback_on_error(self, mock_get_pool, mock_get_healthy_conn):
         """Test cursor rolls back on exception."""
         from valence.core.db import get_cursor
 
@@ -209,8 +211,8 @@ class TestGetCursor:
         mock_conn.cursor.return_value = mock_cursor
 
         mock_pool = MagicMock()
-        mock_pool.getconn.return_value = mock_conn
         mock_get_pool.return_value = mock_pool
+        mock_get_healthy_conn.return_value = mock_conn
 
         with pytest.raises(ValueError):
             with get_cursor() as cur:
@@ -220,10 +222,12 @@ class TestGetCursor:
         mock_conn.commit.assert_not_called()
         mock_pool.putconn.assert_called_once_with(mock_conn)
 
+    @patch("valence.core.db._get_healthy_connection")
     @patch("valence.core.db._get_pool")
-    def test_cursor_uses_realdict_factory(self, mock_get_pool):
+    def test_cursor_uses_realdict_factory(self, mock_get_pool, mock_get_healthy_conn):
         """Test cursor uses RealDictCursor factory."""
         from psycopg2.extras import RealDictCursor
+
         from valence.core.db import get_cursor
 
         mock_conn = MagicMock()
@@ -233,8 +237,8 @@ class TestGetCursor:
         mock_conn.cursor.return_value = mock_cursor
 
         mock_pool = MagicMock()
-        mock_pool.getconn.return_value = mock_conn
         mock_get_pool.return_value = mock_pool
+        mock_get_healthy_conn.return_value = mock_conn
 
         with get_cursor():
             pass
@@ -245,30 +249,32 @@ class TestGetCursor:
 class TestGetConnection:
     """Test connection context manager."""
 
+    @patch("valence.core.db._get_healthy_connection")
     @patch("valence.core.db._get_pool")
-    def test_connection_returned(self, mock_get_pool):
+    def test_connection_returned(self, mock_get_pool, mock_get_healthy_conn):
         """Test connection is returned to pool."""
         from valence.core.db import get_connection
 
         mock_conn = MagicMock()
         mock_pool = MagicMock()
-        mock_pool.getconn.return_value = mock_conn
         mock_get_pool.return_value = mock_pool
+        mock_get_healthy_conn.return_value = mock_conn
 
         with get_connection() as conn:
             assert conn is mock_conn
 
         mock_pool.putconn.assert_called_once_with(mock_conn)
 
+    @patch("valence.core.db._get_healthy_connection")
     @patch("valence.core.db._get_pool")
-    def test_connection_returned_on_error(self, mock_get_pool):
+    def test_connection_returned_on_error(self, mock_get_pool, mock_get_healthy_conn):
         """Test connection is returned even when error occurs."""
         from valence.core.db import get_connection
 
         mock_conn = MagicMock()
         mock_pool = MagicMock()
-        mock_pool.getconn.return_value = mock_conn
         mock_get_pool.return_value = mock_pool
+        mock_get_healthy_conn.return_value = mock_conn
 
         with pytest.raises(ValueError):
             with get_connection():
