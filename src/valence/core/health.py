@@ -22,21 +22,21 @@ class DatabaseStats:
     """Statistics about the valence database tables."""
 
     def __init__(self):
-        self.beliefs_count: int = 0
+        self.articles_count: int = 0
         self.entities_count: int = 0
         self.sessions_count: int = 0
         self.exchanges_count: int = 0
         self.patterns_count: int = 0
-        self.tensions_count: int = 0
+        self.contentions_count: int = 0
 
     def to_dict(self) -> dict[str, int]:
         return {
-            "beliefs_count": self.beliefs_count,
+            "articles_count": self.articles_count,
             "entities_count": self.entities_count,
             "sessions_count": self.sessions_count,
             "exchanges_count": self.exchanges_count,
             "patterns_count": self.patterns_count,
-            "tensions_count": self.tensions_count,
+            "contentions_count": self.contentions_count,
         }
 
     @classmethod
@@ -46,9 +46,9 @@ class DatabaseStats:
 
         stats = cls()
         tables = [
-            ("articles", "beliefs_count"),
+            ("articles", "articles_count"),
             ("entities", "entities_count"),
-            ("contentions", "tensions_count"),
+            ("contentions", "contentions_count"),
         ]
         for table, attr in tables:
             try:
@@ -343,7 +343,7 @@ def startup_checks(fail_fast: bool = True) -> HealthStatus:
         logger.info(f"  pgvector: {'available' if status.pgvector_available else 'not available'}")
 
         if status.stats:
-            logger.info(f"  Beliefs: {status.stats.get('beliefs', 0)}")
+            logger.info(f"  Articles: {status.stats.get('articles', 0)}")
             logger.info(f"  Entities: {status.stats.get('entities', 0)}")
             logger.info(f"  Sessions: {status.stats.get('sessions', 0)}")
 

@@ -143,15 +143,15 @@ class TestMetricsCollector:
         """Prometheus output includes database metrics."""
         mock_db.return_value = [
             "",
-            "# HELP valence_beliefs_total Total number of beliefs",
-            "# TYPE valence_beliefs_total gauge",
-            "valence_beliefs_total 42",
+            "# HELP valence_articles_total Total number of articles",
+            "# TYPE valence_articles_total gauge",
+            "valence_articles_total 42",
         ]
 
         collector = MetricsCollector()
         output = collector.format_prometheus()
 
-        assert "valence_beliefs_total 42" in output
+        assert "valence_articles_total 42" in output
 
 
 class TestDatabaseMetrics:
@@ -162,19 +162,19 @@ class TestDatabaseMetrics:
         """Database metrics are collected when available."""
         mock_stats = MagicMock()
         mock_stats.to_dict.return_value = {
-            "beliefs": 100,
+            "articles": 100,
             "entities": 50,
             "sessions": 10,
             "exchanges": 200,
             "patterns": 5,
-            "tensions": 2,
+            "contentions": 2,
         }
         mock_stats_class.collect.return_value = mock_stats
 
         collector = MetricsCollector()
         lines = collector._collect_database_metrics()
 
-        assert any("valence_beliefs_total 100" in line for line in lines)
+        assert any("valence_articles_total 100" in line for line in lines)
         assert any("valence_entities_total 50" in line for line in lines)
 
     def test_collect_database_metrics_error(self):

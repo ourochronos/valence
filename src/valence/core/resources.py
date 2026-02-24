@@ -1,7 +1,7 @@
 """Resource models for shared operational knowledge.
 
 Resources represent shareable operational knowledge like prompts, configs,
-and patterns. Unlike beliefs (which are true/false claims), resources are
+and patterns. Unlike articles (which are true/false claims), resources are
 measured by usefulness and carry risks like prompt injection and data
 exfiltration rather than misinformation.
 
@@ -60,7 +60,7 @@ class UsageAttestation:
     """Record of a resource being used, with optional feedback.
 
     Usage attestations serve the same role for resources that
-    corroboration does for beliefs — they validate quality through use.
+    corroboration does for articles — they validate quality through use.
     """
 
     id: UUID
@@ -86,10 +86,10 @@ class UsageAttestation:
 class Resource:
     """A shareable piece of operational knowledge.
 
-    Resources differ from beliefs:
-    - Beliefs are true/false claims; resources are useful/harmful artifacts.
-    - Beliefs risk misinformation; resources risk prompt injection & data exfil.
-    - Beliefs are validated by corroboration; resources by usage attestations.
+    Resources differ from articles:
+    - Articles are true/false claims; resources are useful/harmful artifacts.
+    - Articles risk misinformation; resources risk prompt injection & data exfil.
+    - Articles are validated by corroboration; resources by usage attestations.
     """
 
     id: UUID

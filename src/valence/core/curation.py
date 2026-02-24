@@ -33,7 +33,7 @@ def _get_min_capture_confidence() -> float:
     return get_config().min_capture_confidence
 
 
-# Maximum beliefs auto-created per session to prevent spam
+# Maximum articles auto-created per session to prevent spam
 MAX_AUTO_BELIEFS_PER_SESSION = 10
 
 # Minimum content length for capture
