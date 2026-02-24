@@ -41,6 +41,17 @@ from .handlers.contention import contention_detect, contention_list, contention_
 from .handlers.entities import entity_get, entity_search
 from .handlers.memory import memory_forget, memory_recall, memory_status, memory_store
 from .handlers.provenance import provenance_get, provenance_link, provenance_trace
+from .handlers.sessions import (
+    session_append,
+    session_compile,
+    session_finalize,
+    session_flush,
+    session_flush_stale,
+    session_get,
+    session_list,
+    session_search,
+    session_start,
+)
 from .handlers.sources import source_get, source_ingest, source_list, source_search
 from .tools import SUBSTRATE_TOOLS
 
@@ -90,6 +101,16 @@ TOOL_HANDLERS: dict[str, Any] = {
     "memory_recall": memory_recall,
     "memory_status": memory_status,
     "memory_forget": memory_forget,
+    # Session tools
+    "session_start": session_start,
+    "session_append": session_append,
+    "session_flush": session_flush,
+    "session_finalize": session_finalize,
+    "session_search": session_search,
+    "session_list": session_list,
+    "session_get": session_get,
+    "session_compile": session_compile,
+    "session_flush_stale": session_flush_stale,
 }
 
 

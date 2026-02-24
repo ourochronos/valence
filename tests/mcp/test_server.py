@@ -691,6 +691,16 @@ def test_tool_handlers_registry_complete():
         "memory_recall",
         "memory_status",
         "memory_forget",
+        # Session tools
+        "session_start",
+        "session_append",
+        "session_flush",
+        "session_finalize",
+        "session_search",
+        "session_list",
+        "session_get",
+        "session_compile",
+        "session_flush_stale",
     }
 
     assert set(TOOL_HANDLERS.keys()) == expected_tools

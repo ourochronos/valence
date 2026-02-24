@@ -57,6 +57,19 @@ from .endpoints.sources import (
     sources_search_endpoint,
 )
 from .metrics import MetricsMiddleware, metrics_endpoint
+from .session_endpoints import (
+    append_messages_endpoint,
+    compile_session_endpoint,
+    finalize_session_endpoint,
+    flush_session_endpoint,
+    flush_stale_sessions_endpoint,
+    get_messages_endpoint,
+    get_session_endpoint,
+    list_sessions_endpoint,
+    search_sessions_endpoint,
+    update_session_endpoint,
+    upsert_session_endpoint,
+)
 from .substrate_endpoints import (
     beliefs_create_endpoint,
     beliefs_get_endpoint,
@@ -1094,6 +1107,20 @@ def create_app() -> Starlette:
         Route(f"{API_V1}/entities/{{id}}", entities_get_endpoint, methods=["GET"]),
         Route(f"{API_V1}/tensions", tensions_list_endpoint, methods=["GET"]),
         Route(f"{API_V1}/tensions/{{id}}/resolve", tensions_resolve_endpoint, methods=["POST"]),
+        # -----------------------------------------------------------------------
+        # Session endpoints (Issue #470)
+        # -----------------------------------------------------------------------
+        Route(f"{API_V1}/sessions", list_sessions_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/sessions", upsert_session_endpoint, methods=["POST"]),
+        Route(f"{API_V1}/sessions/search", search_sessions_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/sessions/flush-stale", flush_stale_sessions_endpoint, methods=["POST"]),
+        Route(f"{API_V1}/sessions/{{session_id}}", get_session_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/sessions/{{session_id}}", update_session_endpoint, methods=["PATCH"]),
+        Route(f"{API_V1}/sessions/{{session_id}}/messages", append_messages_endpoint, methods=["POST"]),
+        Route(f"{API_V1}/sessions/{{session_id}}/messages", get_messages_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/sessions/{{session_id}}/flush", flush_session_endpoint, methods=["POST"]),
+        Route(f"{API_V1}/sessions/{{session_id}}/compile", compile_session_endpoint, methods=["POST"]),
+        Route(f"{API_V1}/sessions/{{session_id}}/finalize", finalize_session_endpoint, methods=["POST"]),
         # Stats (Issue #396)
         Route(f"{API_V1}/stats", stats_endpoint, methods=["GET"]),
         # Admin endpoints (Issue #396)
@@ -1114,7 +1141,7 @@ def create_app() -> Starlette:
         Middleware(
             CORSMiddleware,
             allow_origins=settings.allowed_origins,
-            allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+            allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
             allow_headers=["Authorization", "Content-Type", "Mcp-Session-Id"],
             expose_headers=["Mcp-Session-Id"],
         ),
