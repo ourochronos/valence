@@ -36,6 +36,7 @@ from .handlers.articles import (
 )
 from .handlers.contention import contention_detect, contention_list, contention_resolve
 from .handlers.entities import entity_get, entity_search
+from .handlers.memory import memory_forget, memory_recall, memory_status, memory_store
 from .handlers.provenance import provenance_get, provenance_link, provenance_trace
 from .handlers.sources import source_get, source_ingest, source_list, source_search
 from .tools import SUBSTRATE_TOOLS
@@ -81,6 +82,11 @@ TOOL_HANDLERS: dict[str, Any] = {
     "admin_forget": admin_forget,
     "admin_stats": admin_stats,
     "admin_maintenance": admin_maintenance,
+    # Memory tools
+    "memory_store": memory_store,
+    "memory_recall": memory_recall,
+    "memory_status": memory_status,
+    "memory_forget": memory_forget,
 }
 
 
@@ -304,6 +310,19 @@ def run() -> None:
         logger.info("Schema initialized")
     except (DatabaseException, Exception) as e:
         logger.warning(f"Schema initialization skipped (may already exist): {e}")
+
+    # Check and run scheduled maintenance if needed
+    try:
+        from valence.core.maintenance import check_and_run_maintenance
+
+        with get_cursor() as cur:
+            result = check_and_run_maintenance(cur)
+            if result:
+                logger.info(f"Scheduled maintenance completed: {result['timestamp']}")
+            else:
+                logger.debug("Scheduled maintenance check: no action needed")
+    except Exception as e:
+        logger.warning(f"Scheduled maintenance check failed: {e}")
 
     async def main():
         async with stdio_server() as (read_stream, write_stream):

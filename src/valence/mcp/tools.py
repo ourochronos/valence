@@ -1,9 +1,9 @@
 """Substrate tool definitions — Valence v2 knowledge system (WU-11).
 
-Contains SUBSTRATE_TOOLS — exactly the 16 MCP tool definitions for the v2
+Contains SUBSTRATE_TOOLS — the MCP tool definitions for the v2
 knowledge surface as specified in IMPL-SPEC.md §3.WU-11.
 
-Final tool list:
+Tool list:
     source_ingest      C1 — Ingest a new source
     source_get         C1 — Get source by ID
     source_search      C1 — Full-text search over sources
@@ -20,6 +20,10 @@ Final tool list:
     admin_forget       C10 — Remove a source or article
     admin_stats        —   Health and capacity statistics
     admin_maintenance  —   Trigger maintenance operations
+    memory_store       —   Store a memory (agent-friendly wrapper)
+    memory_recall      —   Search memories (agent-friendly wrapper)
+    memory_status      —   Get memory system stats
+    memory_forget      —   Mark a memory as forgotten (soft delete)
 """
 
 from __future__ import annotations
@@ -479,6 +483,124 @@ SUBSTRATE_TOOLS = [
                     "description": "Maximum articles to evict per run (default 10)",
                 },
             },
+        },
+    ),
+    # =========================================================================
+    # Memory tools (agent-friendly interface)
+    # =========================================================================
+    Tool(
+        name="memory_store",
+        description=(
+            "Store a memory for later recall (agent-friendly wrapper).\n\n"
+            "Memories are stored as observation sources with special metadata "
+            "that makes them easy for agents to search and manage. Use this to "
+            "remember important facts, learnings, decisions, or observations.\n\n"
+            "Memories can supersede previous memories and are tagged with importance "
+            "and optional context tags for better retrieval."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "description": "The memory content (required)",
+                },
+                "context": {
+                    "type": "string",
+                    "description": "Where this memory came from (e.g., 'session:main', 'conversation:user', 'observation:system')",
+                },
+                "importance": {
+                    "type": "number",
+                    "default": 0.5,
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                    "description": "How important this memory is (0.0-1.0, default 0.5)",
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional categorization tags (e.g., ['infrastructure', 'decision'])",
+                },
+                "supersedes_id": {
+                    "type": "string",
+                    "description": "UUID of a previous memory this replaces",
+                },
+            },
+            "required": ["content"],
+        },
+    ),
+    Tool(
+        name="memory_recall",
+        description=(
+            "Search and recall memories (agent-friendly wrapper).\n\n"
+            "Returns memories ranked by relevance, confidence, and freshness. "
+            "Results are filtered to only include observation sources marked as memories. "
+            "Optionally filter by tags or minimum confidence threshold.\n\n"
+            "Use this to retrieve relevant past knowledge before making decisions "
+            "or answering questions."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "What to recall (natural language query)",
+                },
+                "limit": {
+                    "type": "integer",
+                    "default": 5,
+                    "description": "Maximum results to return (default 5, max 50)",
+                },
+                "min_confidence": {
+                    "type": "number",
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                    "description": "Optional minimum confidence threshold (0.0-1.0)",
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional tag filter — only return memories with at least one matching tag",
+                },
+            },
+            "required": ["query"],
+        },
+    ),
+    Tool(
+        name="memory_status",
+        description=(
+            "Get statistics about the memory system.\n\n"
+            "Returns count of stored memories, articles compiled from them, "
+            "last memory timestamp, and top tags. Use this to understand "
+            "the current state of the memory system."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {},
+        },
+    ),
+    Tool(
+        name="memory_forget",
+        description=(
+            "Mark a memory as forgotten (soft delete).\n\n"
+            "Sets the memory's metadata to include a 'forgotten' flag and optional reason. "
+            "The memory is not actually deleted from the database, but will be filtered "
+            "out of future recall results.\n\n"
+            "Use this to mark outdated or incorrect memories without losing the audit trail."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "memory_id": {
+                    "type": "string",
+                    "description": "UUID of the memory (source) to forget",
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "Optional reason why this memory is being forgotten",
+                },
+            },
+            "required": ["memory_id"],
         },
     ),
 ]
