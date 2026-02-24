@@ -510,6 +510,58 @@ ALTER TABLE ONLY public.mutation_queue
     ADD CONSTRAINT mutation_queue_article_id_fkey FOREIGN KEY (article_id) REFERENCES public.articles(id) ON DELETE CASCADE;
 
 -- ============================================================================
+-- Session Ingestion Tables (Migration 004)
+-- ============================================================================
+
+--
+-- sessions: Active conversation sessions with message buffering
+--
+CREATE TABLE public.sessions (
+    session_id text NOT NULL,
+    platform text NOT NULL,
+    channel text,
+    participants text[] DEFAULT '{}'::text[],
+    started_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_activity_at timestamp with time zone DEFAULT now() NOT NULL,
+    ended_at timestamp with time zone,
+    status text DEFAULT 'active'::text NOT NULL,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    parent_session_id text,
+    subagent_label text,
+    subagent_model text,
+    subagent_task text,
+    current_chunk_index integer DEFAULT 0 NOT NULL,
+    CONSTRAINT sessions_pkey PRIMARY KEY (session_id),
+    CONSTRAINT sessions_parent_session_id_fkey FOREIGN KEY (parent_session_id) REFERENCES public.sessions(session_id)
+);
+
+ALTER TABLE public.sessions OWNER TO valence;
+
+--
+-- session_messages: Message buffer (unflushed messages)
+--
+CREATE TABLE public.session_messages (
+    id bigserial NOT NULL,
+    session_id text NOT NULL,
+    chunk_index integer DEFAULT 0 NOT NULL,
+    timestamp timestamp with time zone DEFAULT now() NOT NULL,
+    speaker text NOT NULL,
+    role text NOT NULL,
+    content text NOT NULL,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    flushed_at timestamp with time zone,
+    CONSTRAINT session_messages_pkey PRIMARY KEY (id),
+    CONSTRAINT session_messages_role_check CHECK ((role = ANY (ARRAY['user'::text, 'assistant'::text, 'system'::text, 'tool'::text]))),
+    CONSTRAINT session_messages_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.sessions(session_id)
+);
+
+ALTER TABLE public.session_messages OWNER TO valence;
+
+CREATE INDEX idx_session_messages_unflushed ON public.session_messages USING btree (session_id) WHERE (flushed_at IS NULL);
+CREATE INDEX idx_sessions_stale ON public.sessions USING btree (last_activity_at) WHERE (status = 'active'::text);
+CREATE INDEX idx_sessions_parent ON public.sessions USING btree (parent_session_id) WHERE (parent_session_id IS NOT NULL);
+
+-- ============================================================================
 -- Initial Data
 -- ============================================================================
 
