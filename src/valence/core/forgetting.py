@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Explicit and organic forgetting for the Valence v2 knowledge system.
 
 Sources are append-only — use supersession for corrections.

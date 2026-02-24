@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Prometheus metrics for Valence server.
 
 Provides /metrics endpoint with Prometheus text format.

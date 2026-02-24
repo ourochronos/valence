@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Core configuration - centralized config for the valence package.
 
 All environment-based configuration should flow through this module.

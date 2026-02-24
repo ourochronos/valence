@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Gemini CLI subprocess backend for Valence inference.
 
 Uses the ``gemini`` CLI tool (installed separately, already authenticated)

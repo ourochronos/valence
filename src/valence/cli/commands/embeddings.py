@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Embeddings management commands: backfill, migrate, status."""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """REST API endpoints for the Valence knowledge substrate (v2).
 
 Provides RESTful access to articles, sources, entities, contentions, and stats.

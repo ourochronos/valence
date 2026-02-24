@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """CLI configuration — server URL, auth token, output format.
 
 Loads from ~/.valence/cli.toml with environment variable and flag overrides.

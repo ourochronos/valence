@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """LLM backend implementations for the Valence v2 inference layer.
 
 Provides async callables suitable for ``InferenceProvider.configure()``.

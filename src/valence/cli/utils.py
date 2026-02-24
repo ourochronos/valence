@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Utility functions for Valence CLI."""
 
 from __future__ import annotations
@@ -8,7 +11,7 @@ from datetime import UTC, datetime
 logger = logging.getLogger(__name__)
 
 
-def get_db_connection():
+def get_db_connection():  # type: ignore[no-untyped-def]
     """Get a database connection from the pool.
 
     This is a thin wrapper around core.db.get_connection() for backward compatibility.

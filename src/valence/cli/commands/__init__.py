@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """CLI command modules for Valence.
 
 Each module exposes a ``register(subparsers)`` function that wires up

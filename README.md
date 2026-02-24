@@ -308,6 +308,12 @@ Valence is free to self-host. Optional costs:
 
 ---
 
+## Known Limitations
+
+- **Article splitting and merging**: The `split_article` and `merge_articles` operations referenced in the work unit system are not yet implemented. These features are planned for a future release to support automated article reorganization based on usage patterns.
+
+---
+
 ## Development
 
 ```bash

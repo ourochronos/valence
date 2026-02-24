@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Database connection management for Valence.
 
 Config via VALENCE_DB_* environment variables.

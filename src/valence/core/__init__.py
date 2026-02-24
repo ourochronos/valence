@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Valence Core - Shared primitives for the knowledge substrate."""
 
 from .config import (

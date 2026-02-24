@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Health check utilities for Valence services.
 
 Provides startup validation, health probes, and diagnostic information.
@@ -30,6 +33,11 @@ class DatabaseStats:
         self.contentions_count: int = 0
 
     def to_dict(self) -> dict[str, int]:
+        """Convert database statistics to dictionary.
+
+        Returns:
+            Dictionary with counts for articles, entities, sessions, exchanges, patterns, and contentions.
+        """
         return {
             "articles_count": self.articles_count,
             "entities_count": self.entities_count,

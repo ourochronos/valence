@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Server-side text/table formatters for REST responses.
 
 Each formatter takes a response data dict and returns a human-readable string.

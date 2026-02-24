@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Unified MCP Server for Valence v2.
 
 Provides 24 knowledge substrate tools via MCP protocol.
@@ -96,7 +99,7 @@ TOOL_HANDLERS: dict[str, Any] = {
 
 
 @server.list_tools()
-async def list_tools():
+async def list_tools() -> list[Any]:
     """List all available tools."""
     return SUBSTRATE_TOOLS
 
@@ -324,7 +327,7 @@ def run() -> None:
     except Exception as e:
         logger.warning(f"Scheduled maintenance check failed: {e}")
 
-    async def main():
+    async def main() -> None:
         async with stdio_server() as (read_stream, write_stream):
             await server.run(read_stream, write_stream, server.create_initialization_options())
 

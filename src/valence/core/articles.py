@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Article CRUD and versioning for the Valence v2 knowledge system.
 
 Articles are the core knowledge unit — compiled from one or more sources,

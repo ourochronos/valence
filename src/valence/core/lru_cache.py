@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """LRU (Least Recently Used) cache utilities for bounded in-memory caching.
 
 Issue #147: Prevent unbounded memory growth in in-memory caches.

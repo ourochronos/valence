@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """REST endpoints for article CRUD and provenance operations (WU-04).
 
 Routes:
@@ -16,6 +19,7 @@ import json
 import logging
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from starlette.requests import Request
@@ -29,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 class _Encoder(json.JSONEncoder):
-    def default(self, o):
+    def default(self, o: Any) -> Any:
         if isinstance(o, Decimal):
             return float(o)
         if isinstance(o, (datetime, date)):

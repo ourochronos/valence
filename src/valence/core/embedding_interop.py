@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Embedding interoperability for federation (#356).
 
 Ensures articles federate as text only — embeddings are never sent.
@@ -30,6 +33,11 @@ class EmbeddingCapability:
     normalization: str = "l2"
 
     def to_dict(self) -> dict[str, Any]:
+        """Convert embedding capability to dictionary.
+
+        Returns:
+            Dictionary with model, dimensions, type_id, and normalization.
+        """
         return {
             "model": self.model,
             "dimensions": self.dimensions,

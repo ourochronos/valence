@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Starlette ASGI application for the Valence HTTP MCP server.
 
 Provides HTTP transport for the unified MCP server with authentication,
@@ -14,6 +17,7 @@ import json
 import logging
 import time
 from collections import defaultdict
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -342,10 +346,14 @@ async def _handle_rpc_request(request: dict[str, Any]) -> dict[str, Any] | None:
 
 
 class MethodNotFoundError(Exception):
+    """Raised when an MCP method is not found."""
+
     pass
 
 
 class InvalidParamsError(Exception):
+    """Raised when MCP method parameters are invalid."""
+
     pass
 
 
@@ -863,7 +871,7 @@ async def _embedding_backfill_loop(interval_seconds: int = 300) -> None:
 
 
 @asynccontextmanager
-async def lifespan(app: Starlette):
+async def lifespan(app: Starlette) -> AsyncGenerator[None, None]:
     """Application lifespan handler."""
     import asyncio
 

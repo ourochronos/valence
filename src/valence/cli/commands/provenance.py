@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Provenance commands — trace claims and view source provenance (C5).
 
 Commands:

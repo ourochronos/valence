@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Standardized REST error responses for Valence API.
 
 All REST endpoints should use these helpers for consistent error format:

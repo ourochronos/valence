@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Shared helpers for MCP tool handlers."""
 
 from __future__ import annotations

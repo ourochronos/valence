@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Articles commands — search, get, create, and manage knowledge articles (C2, C3).
 
 Commands:

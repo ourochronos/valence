@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Token authentication for the HTTP MCP server."""
 
 from __future__ import annotations
@@ -93,7 +96,7 @@ class TokenStore:
                 data = json.load(f)
             self._tokens = {t["token_hash"]: Token.from_dict(t) for t in data.get("tokens", [])}
             logger.info(f"Loaded {len(self._tokens)} tokens from {self.token_file}")
-        except Exception as e:
+        except (OSError, json.JSONDecodeError, KeyError, ValueError) as e:
             logger.error(f"Failed to load tokens from {self.token_file}: {e}")
             self._tokens = {}
 

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """Admin REST endpoints for database management operations.
 
 All endpoints require admin:write scope (bearer tokens get full access automatically).

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Ourochronos Contributors
+
 """HTTP client for the Valence REST API.
 
 All CLI commands use this module to communicate with the server.
