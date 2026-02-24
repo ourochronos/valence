@@ -117,7 +117,7 @@ class TestServerSettings:
 
         settings = ServerSettings()
 
-        assert settings.database_url == "postgresql://myuser:secret@db.example.com:5432/mydb"
+        assert settings.database_url == "postgresql://myuser:secret@db.example.com:5433/mydb"
 
     def test_oauth_jwt_secret_auto_generated(self, clean_env):
         """Test JWT secret auto-generation."""

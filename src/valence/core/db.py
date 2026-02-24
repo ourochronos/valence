@@ -18,7 +18,7 @@ def _get_db_config() -> dict[str, Any]:
     """Get database connection parameters from environment."""
     return {
         "host": os.environ.get("VALENCE_DB_HOST", "127.0.0.1"),
-        "port": int(os.environ.get("VALENCE_DB_PORT", "5432")),
+        "port": int(os.environ.get("VALENCE_DB_PORT", "5433")),
         "dbname": os.environ.get("VALENCE_DB_NAME", "valence"),
         "user": os.environ.get("VALENCE_DB_USER", "valence"),
         "password": os.environ.get("VALENCE_DB_PASSWORD", "valence"),

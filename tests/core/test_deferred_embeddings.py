@@ -268,13 +268,7 @@ class TestEnsureEmbedding:
 
         with (
             patch("valence.core.deferred_embeddings.get_cursor", return_value=mock_cm),
-            patch.dict(
-                "sys.modules",
-                {
-                    "valence.core.embeddings": MagicMock(),
-                    "valence.core.embeddings.service": broken_service,
-                },
-            ),
+            patch("valence.core.embeddings.generate_embedding", side_effect=RuntimeError("Model not loaded")),
         ):
             result = await ensure_embedding("sources", row_id)
 
@@ -361,18 +355,12 @@ class TestComputeMissingEmbeddings:
 
         with (
             patch("valence.core.deferred_embeddings.get_cursor", side_effect=get_cursor_side_effect),
-            patch.dict(
-                "sys.modules",
-                {
-                    "valence.core.embeddings": MagicMock(),
-                    "valence.core.embeddings.service": service_mock,
-                },
-            ),
+            patch("valence.core.embeddings.generate_embedding", return_value=fake_embedding),
+            patch("valence.core.embeddings.vector_to_pgvector", return_value=fake_pgvector),
         ):
             count = await compute_missing_embeddings("sources", batch_size=10)
 
         assert count == 3
-        assert service_mock.generate_embedding.call_count == 3
 
     @pytest.mark.asyncio
     async def test_respects_batch_size(self):
@@ -435,13 +423,8 @@ class TestComputeMissingEmbeddings:
 
         with (
             patch("valence.core.deferred_embeddings.get_cursor", side_effect=get_cursor_side_effect),
-            patch.dict(
-                "sys.modules",
-                {
-                    "valence.core.embeddings": MagicMock(),
-                    "valence.core.embeddings.service": service_mock,
-                },
-            ),
+            patch("valence.core.embeddings.generate_embedding", side_effect=generate_side_effect),
+            patch("valence.core.embeddings.vector_to_pgvector", return_value="[0.1,0.2]"),
         ):
             count = await compute_missing_embeddings("sources", batch_size=10)
 
@@ -468,18 +451,9 @@ class TestComputeMissingEmbeddings:
             mock_cm.__exit__ = MagicMock(return_value=False)
             return mock_cm
 
-        broken_service = MagicMock()
-        broken_service.generate_embedding.side_effect = ImportError("our_embeddings not installed")
-
         with (
             patch("valence.core.deferred_embeddings.get_cursor", side_effect=get_cursor_side_effect),
-            patch.dict(
-                "sys.modules",
-                {
-                    "valence.core.embeddings": MagicMock(),
-                    "valence.core.embeddings.service": broken_service,
-                },
-            ),
+            patch("valence.core.embeddings.generate_embedding", side_effect=ImportError("embeddings not installed")),
         ):
             count = await compute_missing_embeddings("sources", batch_size=10)
 

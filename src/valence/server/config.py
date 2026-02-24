@@ -86,7 +86,7 @@ class ServerSettings(BaseSettings):
 
     # Database settings (inherited from existing VKB config)
     db_host: str = Field(default="localhost", alias="VALENCE_DB_HOST")
-    db_port: int = Field(default=5432, alias="VALENCE_DB_PORT")
+    db_port: int = Field(default=5433, alias="VALENCE_DB_PORT")
     db_name: str = Field(default="valence", alias="VALENCE_DB_NAME")
     db_user: str = Field(default="valence", alias="VALENCE_DB_USER")
     db_password: str = Field(default="", alias="VALENCE_DB_PASSWORD")
