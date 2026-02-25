@@ -48,12 +48,19 @@ from .endpoints.articles import (
     get_article_endpoint,
     get_provenance_endpoint,
     link_provenance_endpoint,
+    merge_articles_endpoint,
     search_articles_endpoint,
+    split_article_endpoint,
     trace_claim_endpoint,
     update_article_endpoint,
 )
+from .endpoints.contentions import (
+    list_contentions_endpoint,
+    resolve_contention_endpoint,
+)
 from .endpoints.sources import (
     sources_create_endpoint,
+    sources_delete_endpoint,
     sources_get_endpoint,
     sources_list_endpoint,
     sources_search_endpoint,
@@ -1185,14 +1192,22 @@ def create_app() -> Starlette:
         Route(f"{API_V1}/sources", sources_create_endpoint, methods=["POST"]),
         Route(f"{API_V1}/sources/search", sources_search_endpoint, methods=["POST"]),
         Route(f"{API_V1}/sources/{{source_id}}", sources_get_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/sources/{{source_id}}", sources_delete_endpoint, methods=["DELETE"]),
+        # -----------------------------------------------------------------------
+        # v2 Contentions endpoints
+        # -----------------------------------------------------------------------
+        Route(f"{API_V1}/contentions", list_contentions_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/contentions/{{contention_id}}/resolve", resolve_contention_endpoint, methods=["POST"]),
         # -----------------------------------------------------------------------
         # v2 Articles endpoints (C2, C3, C5)
         # -----------------------------------------------------------------------
         Route(f"{API_V1}/articles", search_articles_endpoint, methods=["GET"]),
         Route(f"{API_V1}/articles", create_article_endpoint, methods=["POST"]),
         Route(f"{API_V1}/articles/search", search_articles_endpoint, methods=["POST"]),
+        Route(f"{API_V1}/articles/merge", merge_articles_endpoint, methods=["POST"]),
         Route(f"{API_V1}/articles/{{article_id}}", get_article_endpoint, methods=["GET"]),
         Route(f"{API_V1}/articles/{{article_id}}", update_article_endpoint, methods=["PUT"]),
+        Route(f"{API_V1}/articles/{{article_id}}/split", split_article_endpoint, methods=["POST"]),
         Route(
             f"{API_V1}/articles/{{article_id}}/provenance",
             get_provenance_endpoint,

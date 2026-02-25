@@ -122,6 +122,15 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     )
     search_p.set_defaults(func=cmd_memory_search)
 
+    # --- forget ---
+    forget_p = memory_sub.add_parser("forget", help="Mark a memory as forgotten (soft delete)")
+    forget_p.add_argument("memory_id", help="UUID of the memory to forget")
+    forget_p.add_argument(
+        "--reason",
+        help="Optional reason for forgetting this memory",
+    )
+    forget_p.set_defaults(func=cmd_memory_forget)
+
 
 # ---------------------------------------------------------------------------
 # Command handlers
@@ -313,6 +322,19 @@ def cmd_memory_search(args: argparse.Namespace) -> int:
         limit=args.limit,
         min_confidence=args.min_confidence,
         tags=args.tags,
+    )
+
+    output_result(result)
+    return 0 if result.get("success") else 1
+
+
+def cmd_memory_forget(args: argparse.Namespace) -> int:
+    """Mark a memory as forgotten (soft delete)."""
+    from valence.mcp.handlers.memory import memory_forget
+
+    result = memory_forget(
+        memory_id=args.memory_id,
+        reason=getattr(args, "reason", None),
     )
 
     output_result(result)
