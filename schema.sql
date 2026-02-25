@@ -238,6 +238,22 @@ CREATE TABLE public.mutation_queue (
 
 ALTER TABLE public.mutation_queue OWNER TO valence;
 
+--
+-- compilation_queue: Queued compilations when inference unavailable (#491)
+--
+CREATE TABLE public.compilation_queue (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    source_ids text[] NOT NULL,
+    title_hint text,
+    queued_at timestamp with time zone DEFAULT now() NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    last_attempt timestamp with time zone,
+    status text DEFAULT 'pending'::text NOT NULL,
+    CONSTRAINT compilation_queue_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'processing'::text, 'failed'::text])))
+);
+
+ALTER TABLE public.compilation_queue OWNER TO valence;
+
 -- ============================================================================
 -- Views
 -- ============================================================================
@@ -388,6 +404,9 @@ ALTER TABLE ONLY public.article_mutations
 ALTER TABLE ONLY public.mutation_queue
     ADD CONSTRAINT mutation_queue_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.compilation_queue
+    ADD CONSTRAINT compilation_queue_pkey PRIMARY KEY (id);
+
 -- ============================================================================
 -- Indexes
 -- ============================================================================
@@ -445,6 +464,9 @@ CREATE INDEX idx_article_mutations_type ON public.article_mutations USING btree 
 -- mutation_queue
 CREATE INDEX idx_mutation_queue_status ON public.mutation_queue USING btree (status, priority);
 CREATE INDEX idx_mutation_queue_article ON public.mutation_queue USING btree (article_id);
+
+-- compilation_queue
+CREATE INDEX idx_compilation_queue_status ON public.compilation_queue USING btree (status, queued_at);
 
 -- ============================================================================
 -- Foreign Keys

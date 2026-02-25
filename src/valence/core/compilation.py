@@ -360,12 +360,35 @@ async def compile_article(
         # Prompt size limit exceeded (issue #460)
         return err(str(exc))
 
+    # #491: Compilation guard — if inference unavailable, queue instead of creating degraded article
+    if not _inference_provider.available:
+        logger.info("Inference unavailable, queueing compilation for later")
+        with get_cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO compilation_queue (source_ids, title_hint, status)
+                VALUES (%s, %s, 'pending')
+                RETURNING id
+                """,
+                ([str(sid) for sid in source_ids], title_hint),
+            )
+            queue_row = cur.fetchone()
+            queue_id = str(queue_row["id"]) if queue_row else "unknown"
+        # Return failure with queued flag
+        response = ValenceResponse(
+            success=False,
+            error=f"Inference unavailable, queued for later compilation (queue_id={queue_id})",
+            data={"queued": True, "queue_id": queue_id},
+        )
+        return response
+
     is_degraded = False
     try:
         llm_response = await _call_llm(prompt, task_type=TASK_COMPILE)
         parsed = validate_output(TASK_COMPILE, llm_response)
     except (NotImplementedError, InferenceSchemaError, json.JSONDecodeError) as exc:
-        logger.warning("LLM compilation unavailable (%s), using fallback concatenation", exc)
+        # Inference IS configured but returned bad output — create degraded article
+        logger.warning("LLM compilation failed (%s), using fallback concatenation", exc)
         is_degraded = True
         content_parts = [f"## {s.get('title') or 'Source'}\n{s.get('content', '')}" for s in sources]
         parsed = {
@@ -831,3 +854,303 @@ def _set_queue_item_status(item_id: str, status: str, error: str | None = None) 
                 "UPDATE mutation_queue SET status = %s, processed_at = NOW() WHERE id = %s",
                 (status, item_id),
             )
+
+
+# ---------------------------------------------------------------------------
+# Recompilation (#490)
+# ---------------------------------------------------------------------------
+
+
+async def recompile_article(article_id: str) -> ValenceResponse:
+    """Recompile an existing article from its linked sources.
+
+    Fetches the article's linked sources from the article_sources provenance table,
+    checks if inference is available, recompiles the article in-place, and clears
+    the degraded flag on success.
+
+    Args:
+        article_id: UUID of the article to recompile.
+
+    Returns:
+        ValenceResponse with success status and updated article data.
+    """
+    # Check if inference is available
+    if not _inference_provider.available:
+        return err("Inference unavailable, cannot recompile")
+
+    # Fetch article
+    with get_cursor() as cur:
+        cur.execute("SELECT * FROM articles WHERE id = %s", (article_id,))
+        row = cur.fetchone()
+        if not row:
+            return err(f"Article not found: {article_id}")
+        article = dict(row)
+
+        # Get linked sources from provenance table
+        cur.execute(
+            "SELECT source_id FROM article_sources WHERE article_id = %s ORDER BY added_at",
+            (article_id,),
+        )
+        source_rows = cur.fetchall()
+
+    if not source_rows:
+        return err(f"No sources linked to article {article_id}")
+
+    source_ids = [str(r["source_id"]) for r in source_rows]
+
+    # Recompile with the linked sources
+    right_sizing = _get_right_sizing()
+    target_tokens = right_sizing["target_tokens"]
+    max_tokens = right_sizing["max_tokens"]
+
+    # Fetch all sources
+    sources: list[dict] = []
+    with get_cursor() as cur:
+        cur.execute(
+            "SELECT id, type, title, url, content, reliability FROM sources WHERE id = ANY(%s::uuid[])",
+            (source_ids,),
+        )
+        rows = cur.fetchall()
+        fetched_by_id = {str(row["id"]): dict(row) for row in rows}
+        missing_ids = []
+        for sid in source_ids:
+            if sid in fetched_by_id:
+                src = fetched_by_id[sid]
+                src["id"] = str(src["id"])
+                sources.append(src)
+            else:
+                missing_ids.append(sid)
+        if missing_ids:
+            return err(f"Source(s) not found during recompile: {', '.join(missing_ids)}")
+
+    # Build prompt and call LLM
+    try:
+        prompt = _build_compilation_prompt(sources, article.get("title"), target_tokens)
+        llm_response = await _call_llm(prompt, task_type=TASK_COMPILE)
+        parsed = validate_output(TASK_COMPILE, llm_response)
+    except (NotImplementedError, InferenceSchemaError, json.JSONDecodeError) as exc:
+        logger.warning("LLM recompilation failed (%s), marking degraded", exc)
+        return err(f"Recompilation failed: {exc}")
+
+    article_content: str = parsed.get("content") or ""
+    article_title: str | None = parsed.get("title") or article.get("title")
+
+    # Map source relationships
+    relationships_by_source_id: dict[str, str] = {}
+    for rel_item in parsed.get("source_relationships", []):
+        sid = rel_item.get("source_id")
+        rel = rel_item.get("relationship", "originates")
+        if rel not in RELATIONSHIP_ENUM:
+            rel = "originates"
+        if sid:
+            relationships_by_source_id[str(sid)] = rel
+
+    token_count = _count_tokens(article_content)
+
+    # Update article in-place
+    with get_cursor() as cur:
+        cur.execute(
+            """
+            UPDATE articles
+            SET content      = %s,
+                title        = %s,
+                size_tokens  = %s,
+                content_hash = md5(%s),
+                version      = version + 1,
+                modified_at  = NOW(),
+                compiled_at  = NOW(),
+                degraded     = FALSE
+            WHERE id = %s
+            RETURNING *
+            """,
+            (article_content, article_title, token_count, article_content, article_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            return err(f"Article not found after recompile: {article_id}")
+        updated_article = _serialize_row(dict(row))
+
+        # Update source relationships
+        cur.execute("DELETE FROM article_sources WHERE article_id = %s", (article_id,))
+        for src in sources:
+            rel = relationships_by_source_id.get(src["id"], "originates")
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO article_sources (article_id, source_id, relationship)
+                    VALUES (%s, %s, %s)
+                    """,
+                    (article_id, src["id"], rel),
+                )
+            except Exception as exc:  # pragma: no cover
+                logger.warning("Failed to link source %s during recompile: %s", src["id"], exc)
+
+        # Record mutation
+        cur.execute(
+            """
+            INSERT INTO article_mutations (mutation_type, article_id, summary)
+            VALUES ('recompiled', %s, %s)
+            """,
+            (article_id, f"Recompiled from {len(sources)} source(s) via LLM"),
+        )
+
+        # Queue split if needed
+        if token_count > max_tokens:
+            cur.execute(
+                """
+                INSERT INTO mutation_queue (operation, article_id, priority, payload)
+                VALUES ('split', %s, 3, %s::jsonb)
+                """,
+                (
+                    article_id,
+                    json.dumps({"reason": "exceeds_max_tokens", "token_count": token_count}),
+                ),
+            )
+            logger.info("Article %s queued for split after recompile (tokens=%d > max=%d)", article_id, token_count, max_tokens)
+
+    return ok(data=updated_article)
+
+
+async def recompile_degraded_articles(limit: int = 10) -> ValenceResponse:
+    """Recompile all degraded articles.
+
+    Args:
+        limit: Maximum number of articles to recompile (default 10).
+
+    Returns:
+        Dict with counts of recompiled and remaining degraded articles.
+    """
+    # Check inference availability first
+    if not _inference_provider.available:
+        return err("Inference unavailable, skipping recompilation")
+
+    # Get degraded articles
+    with get_cursor() as cur:
+        cur.execute(
+            "SELECT id FROM articles WHERE degraded = true AND status = 'active' ORDER BY created_at LIMIT %s",
+            (limit,),
+        )
+        rows = cur.fetchall()
+
+    article_ids = [str(r["id"]) for r in rows]
+
+    recompiled = 0
+    failed = 0
+
+    for article_id in article_ids:
+        result = await recompile_article(article_id)
+        if result.success:
+            recompiled += 1
+            logger.info("Recompiled degraded article %s", article_id)
+        else:
+            failed += 1
+            logger.warning("Failed to recompile degraded article %s: %s", article_id, result.error)
+
+    # Get remaining count
+    with get_cursor() as cur:
+        cur.execute("SELECT COUNT(*) as count FROM articles WHERE degraded = true AND status = 'active'")
+        row = cur.fetchone()
+        remaining = row["count"] if row else 0
+
+    return ok(
+        data={
+            "recompiled": recompiled,
+            "failed": failed,
+            "remaining": remaining,
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
+# Compilation queue (#491)
+# ---------------------------------------------------------------------------
+
+
+async def drain_compilation_queue(limit: int = 10) -> ValenceResponse:
+    """Process pending items from the compilation queue.
+
+    Args:
+        limit: Maximum number of items to process (default 10).
+
+    Returns:
+        Dict with counts of processed, failed, and remaining items.
+    """
+    # Check inference availability first
+    if not _inference_provider.available:
+        logger.info("Inference unavailable, skipping compilation queue drain")
+        return ok(data={"processed": 0, "failed": 0, "remaining": 0, "skipped": "inference_unavailable"})
+
+    # Get pending items
+    with get_cursor() as cur:
+        cur.execute(
+            "SELECT id, source_ids, title_hint, attempts FROM compilation_queue WHERE status = 'pending' ORDER BY queued_at LIMIT %s FOR UPDATE SKIP LOCKED",
+            (limit,),
+        )
+        rows = cur.fetchall()
+
+    if not rows:
+        return ok(data={"processed": 0, "failed": 0, "remaining": 0})
+
+    processed = 0
+    failed = 0
+
+    for row in rows:
+        item_id = str(row["id"])
+        source_ids = row["source_ids"]
+        title_hint = row.get("title_hint")
+        attempts = row.get("attempts", 0)
+
+        try:
+            # Compile the article
+            result = await compile_article(source_ids, title_hint=title_hint)
+
+            if result.success and not result.degraded:
+                # Success - remove from queue
+                with get_cursor() as cur:
+                    cur.execute("DELETE FROM compilation_queue WHERE id = %s", (item_id,))
+                processed += 1
+                logger.info("Compilation queue: processed item %s → article %s", item_id, result.data.get("id"))
+            else:
+                # Failed or degraded - increment attempts
+                with get_cursor() as cur:
+                    cur.execute(
+                        """
+                        UPDATE compilation_queue
+                        SET attempts = attempts + 1,
+                            last_attempt = NOW(),
+                            status = CASE WHEN attempts + 1 >= 5 THEN 'failed' ELSE 'pending' END
+                        WHERE id = %s
+                        """,
+                        (item_id,),
+                    )
+                failed += 1
+                logger.warning("Compilation queue: item %s failed (attempts=%d): %s", item_id, attempts + 1, result.error)
+
+        except Exception as exc:
+            logger.error("Compilation queue: error processing item %s: %s", item_id, exc)
+            with get_cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE compilation_queue
+                    SET attempts = attempts + 1,
+                        last_attempt = NOW(),
+                        status = CASE WHEN attempts + 1 >= 5 THEN 'failed' ELSE 'pending' END
+                    WHERE id = %s
+                    """,
+                    (item_id,),
+                )
+            failed += 1
+
+    # Get remaining count
+    with get_cursor() as cur:
+        cur.execute("SELECT COUNT(*) as count FROM compilation_queue WHERE status = 'pending'")
+        row = cur.fetchone()
+        remaining = row["count"] if row else 0
+
+    return ok(
+        data={
+            "processed": processed,
+            "failed": failed,
+            "remaining": remaining,
+        }
+    )

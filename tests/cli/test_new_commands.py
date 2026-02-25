@@ -267,6 +267,9 @@ class TestCompile:
             source_ids=["src1", "src2"],
             title="Test Article",
             auto=False,
+            recompile=None,
+            recompile_degraded=False,
+            drain_queue=False,
         )
 
         result = cmd_compile(args)
@@ -290,6 +293,9 @@ class TestCompile:
             source_ids=[],
             title=None,
             auto=True,
+            recompile=None,
+            recompile_degraded=False,
+            drain_queue=False,
         )
 
         result = cmd_compile(args)
@@ -303,6 +309,9 @@ class TestCompile:
             source_ids=[],
             title=None,
             auto=False,
+            recompile=None,
+            recompile_degraded=False,
+            drain_queue=False,
         )
 
         result = cmd_compile(args)

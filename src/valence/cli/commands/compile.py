@@ -25,7 +25,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     compile_p.add_argument(
         "source_ids",
         nargs="*",
-        help="Source IDs to compile (optional if --auto)",
+        help="Source IDs to compile (optional if --auto, --recompile-degraded, or --drain-queue)",
     )
     compile_p.add_argument(
         "--title",
@@ -36,12 +36,82 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         help="Auto-group and compile all unlinked sources",
     )
+    compile_p.add_argument(
+        "--recompile",
+        metavar="ARTICLE_ID",
+        help="Recompile a specific article from its linked sources (#490)",
+    )
+    compile_p.add_argument(
+        "--recompile-degraded",
+        action="store_true",
+        help="Recompile all degraded articles (#490)",
+    )
+    compile_p.add_argument(
+        "--drain-queue",
+        action="store_true",
+        help="Process pending items from compilation queue (#491)",
+    )
+    compile_p.add_argument(
+        "--limit",
+        type=int,
+        default=10,
+        help="Batch limit for --recompile-degraded or --drain-queue (default 10)",
+    )
     compile_p.set_defaults(func=cmd_compile)
 
 
 def cmd_compile(args: argparse.Namespace) -> int:
     """Compile sources into an article."""
     client = get_client()
+
+    # Handle --recompile <id>
+    if args.recompile:
+        try:
+            result = client.post("/articles/recompile", body={"article_id": args.recompile})
+            output_result(result)
+            return 0
+        except ValenceAPIError as e:
+            output_error(e.message)
+            return 1
+        except ValenceConnectionError as e:
+            output_error(str(e))
+            return 1
+
+    # Handle --recompile-degraded
+    if args.recompile_degraded:
+        try:
+            result = client.post("/articles/recompile-degraded", body={"limit": args.limit})
+            output_result(result)
+            # Show summary
+            if result.get("success") and "data" in result:
+                data = result["data"]
+                print(
+                    f"Recompiled {data.get('recompiled', 0)}/{data.get('recompiled', 0) + data.get('remaining', 0)} degraded articles ({data.get('remaining', 0)} remaining)"
+                )
+            return 0
+        except ValenceAPIError as e:
+            output_error(e.message)
+            return 1
+        except ValenceConnectionError as e:
+            output_error(str(e))
+            return 1
+
+    # Handle --drain-queue
+    if args.drain_queue:
+        try:
+            result = client.post("/articles/drain-queue", body={"limit": args.limit})
+            output_result(result)
+            # Show summary
+            if result.get("success") and "data" in result:
+                data = result["data"]
+                print(f"Processed {data.get('processed', 0)} items, {data.get('failed', 0)} failed, {data.get('remaining', 0)} remaining in queue")
+            return 0
+        except ValenceAPIError as e:
+            output_error(e.message)
+            return 1
+        except ValenceConnectionError as e:
+            output_error(str(e))
+            return 1
 
     if args.auto:
         # Auto-compilation mode: find unlinked sources and compile them
@@ -63,7 +133,7 @@ def cmd_compile(args: argparse.Namespace) -> int:
 
     # Manual compilation mode
     if not args.source_ids:
-        output_error("Must provide source_ids or use --auto")
+        output_error("Must provide source_ids or use --auto, --recompile, --recompile-degraded, or --drain-queue")
         return 1
 
     body: dict = {
