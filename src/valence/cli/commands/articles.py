@@ -54,6 +54,19 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     )
     create_p.set_defaults(func=cmd_articles_create)
 
+    # --- update ---
+    update_p = articles_sub.add_parser("update", help="Update an article's content")
+    update_p.add_argument("article_id", help="UUID of the article to update")
+    update_p.add_argument("--content", "-c", required=True, help="New content for the article")
+    update_p.add_argument("--source-id", help="Optional source ID that prompted this update")
+    update_p.set_defaults(func=cmd_articles_update)
+
+    # --- merge ---
+    merge_p = articles_sub.add_parser("merge", help="Merge two related articles into one")
+    merge_p.add_argument("article_id_1", help="UUID of the first article")
+    merge_p.add_argument("article_id_2", help="UUID of the second article")
+    merge_p.set_defaults(func=cmd_articles_merge)
+
     # --- list ---
     list_p = articles_sub.add_parser("list", help="List recent articles (search with empty-ish query)")
     list_p.add_argument("--limit", "-n", type=int, default=10, help="Max results (default 10)")
@@ -161,6 +174,47 @@ def cmd_articles_split(args: argparse.Namespace) -> int:
 
     try:
         result = client.post(f"/articles/{args.article_id}/split", body={})
+        output_result(result)
+        return 0
+    except ValenceConnectionError as e:
+        output_error(str(e))
+        return 1
+    except ValenceAPIError as e:
+        output_error(e.message)
+        return 1
+
+
+def cmd_articles_update(args: argparse.Namespace) -> int:
+    """Update an article's content."""
+    client = get_client()
+    body: dict = {
+        "content": args.content,
+    }
+    if getattr(args, "source_id", None):
+        body["source_id"] = args.source_id
+
+    try:
+        result = client.put(f"/articles/{args.article_id}", body=body)
+        output_result(result)
+        return 0
+    except ValenceConnectionError as e:
+        output_error(str(e))
+        return 1
+    except ValenceAPIError as e:
+        output_error(e.message)
+        return 1
+
+
+def cmd_articles_merge(args: argparse.Namespace) -> int:
+    """Merge two related articles into one."""
+    client = get_client()
+    body: dict = {
+        "article_id_a": args.article_id_1,
+        "article_id_b": args.article_id_2,
+    }
+
+    try:
+        result = client.post("/articles/merge", body=body)
         output_result(result)
         return 0
     except ValenceConnectionError as e:

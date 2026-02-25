@@ -105,6 +105,10 @@ class ValenceClient:
         """HTTP POST request."""
         return self._request("POST", path, params=params, body=body)
 
+    def put(self, path: str, body: dict[str, Any] | None = None, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        """HTTP PUT request."""
+        return self._request("PUT", path, params=params, body=body)
+
     def delete(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         """HTTP DELETE request."""
         return self._request("DELETE", path, params=params)

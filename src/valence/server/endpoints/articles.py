@@ -309,3 +309,59 @@ async def trace_claim_endpoint(request: Request) -> JSONResponse:
     except Exception:
         logger.exception("Error tracing claim for article %s", article_id)
         return internal_error()
+
+
+# ---------------------------------------------------------------------------
+# Article split and merge endpoints
+# ---------------------------------------------------------------------------
+
+
+async def split_article_endpoint(request: Request) -> JSONResponse:
+    """POST /api/v1/articles/{article_id}/split — Split an oversized article."""
+    err, _ = _require_auth_write(request)
+    if err:
+        return err
+
+    article_id = request.path_params.get("article_id")
+    if not article_id:
+        return missing_field_error("article_id")
+
+    try:
+        from ...core.articles import split_article
+
+        result = await split_article(article_id=article_id)
+        status = 200 if result.success else 400
+        return JSONResponse(result.to_dict(), status_code=status)
+    except Exception:
+        logger.exception("Error splitting article %s", article_id)
+        return internal_error()
+
+
+async def merge_articles_endpoint(request: Request) -> JSONResponse:
+    """POST /api/v1/articles/merge — Merge two related articles."""
+    err, _ = _require_auth_write(request)
+    if err:
+        return err
+
+    try:
+        body = await request.json()
+    except Exception:
+        return invalid_json_error()
+
+    article_id_a = body.get("article_id_a")
+    article_id_b = body.get("article_id_b")
+
+    if not article_id_a:
+        return missing_field_error("article_id_a")
+    if not article_id_b:
+        return missing_field_error("article_id_b")
+
+    try:
+        from ...core.articles import merge_articles
+
+        result = await merge_articles(article_id_a=article_id_a, article_id_b=article_id_b)
+        status = 200 if result.success else 400
+        return JSONResponse(result.to_dict(), status_code=status)
+    except Exception:
+        logger.exception("Error merging articles %s and %s", article_id_a, article_id_b)
+        return internal_error()

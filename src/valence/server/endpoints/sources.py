@@ -217,3 +217,32 @@ async def sources_search_endpoint(request: Request) -> JSONResponse:
     except Exception:
         logger.exception("Error searching sources")
         return internal_error()
+
+
+# ---------------------------------------------------------------------------
+# DELETE /api/v1/sources/{source_id} — delete (admin_forget)
+# ---------------------------------------------------------------------------
+
+
+async def sources_delete_endpoint(request: Request) -> JSONResponse:
+    """DELETE /api/v1/sources/{source_id} — Permanently remove a source."""
+    client = authenticate(request)
+    if isinstance(client, JSONResponse):
+        return client
+    if err := require_scope(client, "substrate:write"):
+        return err
+
+    source_id = request.path_params.get("source_id")
+    if not source_id:
+        return missing_field_error("source_id")
+
+    try:
+        from ...core.forgetting import remove_source
+
+        result = await remove_source(source_id)
+        status = 200 if result.success else 404
+        return JSONResponse(result.to_dict(), status_code=status)
+
+    except Exception:
+        logger.exception("Error deleting source %s", source_id)
+        return internal_error()

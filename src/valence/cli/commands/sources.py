@@ -56,6 +56,11 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     search_p.add_argument("--limit", "-n", type=int, default=20, help="Max results (default 20)")
     search_p.set_defaults(func=cmd_sources_search)
 
+    # --- delete ---
+    delete_p = sources_sub.add_parser("delete", help="Permanently remove a source")
+    delete_p.add_argument("source_id", help="UUID of the source to delete")
+    delete_p.set_defaults(func=cmd_sources_delete)
+
 
 # ---------------------------------------------------------------------------
 # Command handlers
@@ -133,6 +138,22 @@ def cmd_sources_search(args: argparse.Namespace) -> int:
 
     try:
         result = client.post("/sources/search", body=body)
+        output_result(result)
+        return 0
+    except ValenceConnectionError as e:
+        output_error(str(e))
+        return 1
+    except ValenceAPIError as e:
+        output_error(e.message)
+        return 1
+
+
+def cmd_sources_delete(args: argparse.Namespace) -> int:
+    """Permanently remove a source."""
+    client = get_client()
+
+    try:
+        result = client.delete(f"/sources/{args.source_id}")
         output_result(result)
         return 0
     except ValenceConnectionError as e:
