@@ -26,7 +26,7 @@ def run_async(coro: Any) -> Any:
         if loop.is_running():
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 future = pool.submit(asyncio.run, coro)
-                return future.result(timeout=60)
+                return future.result(timeout=120)
         return loop.run_until_complete(coro)
     except RuntimeError:
         return asyncio.run(coro)

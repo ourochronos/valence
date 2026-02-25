@@ -335,7 +335,7 @@ async def compile_article(
     with get_cursor() as cur:
         # Batch fetch all sources to avoid N+1 query (issue #456)
         cur.execute(
-            "SELECT id, type, title, url, content, reliability FROM sources WHERE id = ANY(%s)",
+            "SELECT id, type, title, url, content, reliability FROM sources WHERE id = ANY(%s::uuid[])",
             (source_ids,),
         )
         rows = cur.fetchall()
