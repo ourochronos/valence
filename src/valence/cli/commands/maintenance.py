@@ -31,6 +31,11 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     run_parser.add_argument("--dry-run", action="store_true", help="Report what would happen without making changes")
     run_parser.set_defaults(func=cmd_maintenance_run)
 
+    # Compile maintenance (#492)
+    compile_parser = maint_subparsers.add_parser("compile", help="Run background compilation maintenance (#492)")
+    compile_parser.add_argument("--limit", type=int, default=10, help="Batch limit for each operation (default 10)")
+    compile_parser.set_defaults(func=cmd_maintenance_compile)
+
     # Schedule maintenance
     schedule_parser = maint_subparsers.add_parser("schedule", help="Configure or view maintenance schedule")
     schedule_parser.add_argument("--interval", type=int, metavar="HOURS", help="Set maintenance interval in hours")
@@ -167,3 +172,89 @@ def cmd_maintenance_compat(args: argparse.Namespace) -> int:
 def cmd_maintenance(args: argparse.Namespace) -> int:
     """Legacy entry point - redirects to appropriate handler."""
     return cmd_maintenance_compat(args)
+
+
+def cmd_maintenance_compile(args: argparse.Namespace) -> int:
+    """Run background compilation maintenance cycle (#492).
+
+    This runs the full compilation maintenance cycle:
+    1. Check inference availability
+    2. Compile unlinked sources (auto mode)
+    3. Drain compilation queue
+    4. Recompile degraded articles
+
+    Designed to be called from cron or heartbeat. Idempotent and safe to run frequently.
+    """
+    import asyncio
+
+    from ...core.compilation import drain_compilation_queue, recompile_degraded_articles
+    from ...core.db import get_cursor
+    from ...core.inference import provider as inference_provider
+
+    limit = args.limit
+
+    # Check inference availability first
+    if not inference_provider.available:
+        print("Inference unavailable, skipping compilation maintenance")
+        return 0
+
+    print(f"Running compilation maintenance (limit={limit})...")
+
+    compiled_new = 0
+    drained = 0
+    recompiled = 0
+
+    # 1. Compile unlinked sources (auto mode)
+    # Check if there's an auto-compile endpoint or direct function
+    try:
+        from ...core.compilation import compile_article
+
+        # Get unlinked sources (sources not in article_sources)
+        with get_cursor() as cur:
+            cur.execute(
+                """
+                SELECT s.id FROM sources s
+                LEFT JOIN article_sources asrc ON s.id = asrc.source_id
+                WHERE asrc.source_id IS NULL
+                AND s.status = 'active'
+                ORDER BY s.created_at
+                LIMIT %s
+                """,
+                (limit,),
+            )
+            rows = cur.fetchall()
+
+        unlinked_source_ids = [str(r["id"]) for r in rows]
+
+        if unlinked_source_ids:
+            # Compile each unlinked source
+            for source_id in unlinked_source_ids:
+                try:
+                    result = asyncio.run(compile_article([source_id]))
+                    if result.success and not result.degraded:
+                        compiled_new += 1
+                except Exception as e:
+                    print(f"Failed to compile source {source_id}: {e}")
+    except Exception as e:
+        print(f"Error during auto-compile: {e}")
+
+    # 2. Drain compilation queue
+    try:
+        result = asyncio.run(drain_compilation_queue(limit=limit))
+        if result.success and result.data:
+            drained = result.data.get("processed", 0)
+    except Exception as e:
+        print(f"Error draining compilation queue: {e}")
+
+    # 3. Recompile degraded articles
+    try:
+        result = asyncio.run(recompile_degraded_articles(limit=limit))
+        if result.success and result.data:
+            recompiled = result.data.get("recompiled", 0)
+    except Exception as e:
+        print(f"Error recompiling degraded articles: {e}")
+
+    # Report summary
+    print(f"Compilation maintenance complete: Compiled {compiled_new} new, drained {drained} queued, recompiled {recompiled} degraded")
+
+    return 0
