@@ -457,9 +457,9 @@ def _get_current_right_sizing() -> dict[str, int]:
 
     # Return defaults (matching compilation.py DEFAULT_RIGHT_SIZING)
     return {
-        "target_tokens": 2000,
-        "max_tokens": 4000,
-        "min_tokens": 200,
+        "target_tokens": 550,
+        "max_tokens": 800,
+        "min_tokens": 300,
     }
 
 
@@ -484,9 +484,9 @@ def _show_right_sizing() -> int:
             updated = row.get("updated_at", "?")
             print(f"Right-sizing configuration (last updated: {updated}):")
 
-        print(f"  Target tokens: {config.get('target_tokens', 2000)}")
-        print(f"  Maximum tokens: {config.get('max_tokens', 4000)}")
-        print(f"  Minimum tokens: {config.get('min_tokens', 200)}")
+        print(f"  Target tokens: {config.get('target_tokens', 550)}")
+        print(f"  Maximum tokens: {config.get('max_tokens', 800)}")
+        print(f"  Minimum tokens: {config.get('min_tokens', 300)}")
         return 0
     except Exception as exc:
         output_error(f"Error reading right-sizing configuration: {exc}")

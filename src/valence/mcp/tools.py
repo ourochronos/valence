@@ -258,7 +258,7 @@ SUBSTRATE_TOOLS = [
             "All sources are linked to the resulting article with appropriate provenance "
             "relationship types (originates, confirms, supersedes, contradicts, contends).\n\n"
             "The compiled article respects right-sizing bounds from system_config "
-            "(default: 200–4000 tokens, target 2000)."
+            "(default: 300–800 tokens, target 550)."
         ),
         inputSchema={
             "type": "object",

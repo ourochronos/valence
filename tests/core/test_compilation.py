@@ -38,7 +38,7 @@ SOURCE_ID_2 = str(uuid4())
 QUEUE_ITEM_ID = str(uuid4())
 NOW = datetime.now()
 
-DEFAULT_RS = {"max_tokens": 4000, "min_tokens": 200, "target_tokens": 2000}
+DEFAULT_RS = {"max_tokens": 800, "min_tokens": 300, "target_tokens": 550}
 
 
 # ---------------------------------------------------------------------------
@@ -308,9 +308,9 @@ class TestGetRightSizing:
         cur = _make_cursor(fetchone_seq=[None])
         with patch("valence.core.compilation.get_cursor", return_value=cur):
             config = _get_right_sizing()
-        assert config["max_tokens"] == 4000
-        assert config["target_tokens"] == 2000
-        assert config["min_tokens"] == 200
+        assert config["max_tokens"] == 800
+        assert config["target_tokens"] == 550
+        assert config["min_tokens"] == 300
 
     def test_merges_db_values_over_defaults(self):
         cur = _make_cursor(fetchone_seq=[{"value": {"max_tokens": 3000, "min_tokens": 100, "target_tokens": 1500}}])
