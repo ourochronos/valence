@@ -20,9 +20,15 @@ class TestRunAsync:
         async def sample_coro():
             return "result"
 
-        with patch("asyncio.get_event_loop", side_effect=RuntimeError("no loop")):
-            with patch("asyncio.run", return_value="result") as mock_run:
-                result = run_async(sample_coro())
+        # Create coroutine and ensure it's closed to avoid RuntimeWarning
+        coro = sample_coro()
+        try:
+            with patch("asyncio.get_event_loop", side_effect=RuntimeError("no loop")):
+                with patch("asyncio.run", return_value="result") as mock_run:
+                    result = run_async(coro)
+        finally:
+            # Close the coroutine to prevent RuntimeWarning about unawaited coroutine
+            coro.close()
 
         assert result == "result"
         mock_run.assert_called_once()
@@ -37,8 +43,14 @@ class TestRunAsync:
         mock_loop.is_running.return_value = False
         mock_loop.run_until_complete.return_value = "result"
 
-        with patch("asyncio.get_event_loop", return_value=mock_loop):
-            result = run_async(sample_coro())
+        # Create coroutine and ensure it's closed to avoid RuntimeWarning
+        coro = sample_coro()
+        try:
+            with patch("asyncio.get_event_loop", return_value=mock_loop):
+                result = run_async(coro)
+        finally:
+            # Close the coroutine to prevent RuntimeWarning about unawaited coroutine
+            coro.close()
 
         assert result == "result"
         mock_loop.run_until_complete.assert_called_once()
@@ -60,9 +72,15 @@ class TestRunAsync:
         mock_pool.__exit__ = MagicMock(return_value=False)
         mock_pool.submit.return_value = mock_future
 
-        with patch("asyncio.get_event_loop", return_value=mock_loop):
-            with patch("concurrent.futures.ThreadPoolExecutor", return_value=mock_pool):
-                result = run_async(sample_coro())
+        # Create coroutine and ensure it's closed to avoid RuntimeWarning
+        coro = sample_coro()
+        try:
+            with patch("asyncio.get_event_loop", return_value=mock_loop):
+                with patch("concurrent.futures.ThreadPoolExecutor", return_value=mock_pool):
+                    result = run_async(coro)
+        finally:
+            # Close the coroutine to prevent RuntimeWarning about unawaited coroutine
+            coro.close()
 
         assert result == "result"
         mock_pool.submit.assert_called_once()
@@ -86,10 +104,16 @@ class TestRunAsync:
         mock_pool.__exit__ = MagicMock(return_value=False)
         mock_pool.submit.return_value = mock_future
 
-        with patch("asyncio.get_event_loop", return_value=mock_loop):
-            with patch("concurrent.futures.ThreadPoolExecutor", return_value=mock_pool):
-                with pytest.raises(concurrent.futures.TimeoutError):
-                    run_async(slow_coro())
+        # Create coroutine and ensure it's closed to avoid RuntimeWarning
+        coro = slow_coro()
+        try:
+            with patch("asyncio.get_event_loop", return_value=mock_loop):
+                with patch("concurrent.futures.ThreadPoolExecutor", return_value=mock_pool):
+                    with pytest.raises(concurrent.futures.TimeoutError):
+                        run_async(coro)
+        finally:
+            # Close the coroutine to prevent RuntimeWarning about unawaited coroutine
+            coro.close()
 
     def test_run_async_exception_in_coro(self):
         """Test run_async when coroutine raises exception."""
