@@ -42,7 +42,7 @@ class TestGetDbConfig:
     def test_environment_overrides(self, monkeypatch):
         """Test environment variables override defaults."""
         monkeypatch.setenv("VALENCE_DB_HOST", "postgres.example.com")
-        monkeypatch.setenv("VALENCE_DB_PORT", "5432")
+        monkeypatch.setenv("VALENCE_DB_PORT", "5433")
         monkeypatch.setenv("VALENCE_DB_NAME", "testdb")
         monkeypatch.setenv("VALENCE_DB_USER", "testuser")
         monkeypatch.setenv("VALENCE_DB_PASSWORD", "secret123")
@@ -51,7 +51,7 @@ class TestGetDbConfig:
 
         config = _get_db_config()
         assert config["host"] == "postgres.example.com"
-        assert config["port"] == 5432
+        assert config["port"] == 5433
         assert config["dbname"] == "testdb"
         assert config["user"] == "testuser"
         assert config["password"] == "secret123"
