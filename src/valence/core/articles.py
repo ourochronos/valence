@@ -85,6 +85,7 @@ async def create_article(
     source_ids: list[str] | None = None,
     author_type: str = "system",
     domain_path: list[str] | None = None,
+    epistemic_type: str = "semantic",
 ) -> ValenceResponse:
     """Create a new article.
 
@@ -97,6 +98,7 @@ async def create_article(
         source_ids: UUIDs of sources that originated this article.
         author_type: 'system', 'operator', or 'agent'.
         domain_path: Hierarchical domain tags (e.g. ['python', 'stdlib']).
+        epistemic_type: 'episodic', 'semantic', or 'procedural'.
 
     Returns:
         Dict with ``success``, ``article``, and optionally ``error``.
@@ -105,6 +107,9 @@ async def create_article(
         return err("content is required")
     if author_type not in VALID_AUTHOR_TYPES:
         return err(f"author_type must be one of {sorted(VALID_AUTHOR_TYPES)}")
+    valid_epistemic_types = ("episodic", "semantic", "procedural")
+    if epistemic_type not in valid_epistemic_types:
+        return err(f"epistemic_type must be one of {sorted(valid_epistemic_types)}")
 
     embedding_str = _compute_embedding(content)
     token_count = _count_tokens(content)
@@ -117,8 +122,8 @@ async def create_article(
             """
             INSERT INTO articles
                 (content, title, author_type, domain_path, size_tokens, confidence,
-                 content_hash, embedding, compiled_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s::vector, NOW())
+                 content_hash, epistemic_type, embedding, compiled_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::vector, NOW())
             RETURNING *
             """,
             (
@@ -129,6 +134,7 @@ async def create_article(
                 token_count,
                 json.dumps(confidence),
                 content_hash,
+                epistemic_type,
                 embedding_str,
             ),
         )
@@ -219,6 +225,7 @@ async def update_article(
     article_id: str,
     content: str,
     source_id: str | None = None,
+    epistemic_type: str | None = None,
 ) -> ValenceResponse:
     """Update article content, increment version, and record mutation.
 
@@ -226,32 +233,46 @@ async def update_article(
         article_id: UUID of the article to update.
         content: New article body text.
         source_id: Optional UUID of the source that triggered the update.
+        epistemic_type: Optional new epistemic type ('episodic', 'semantic', 'procedural').
 
     Returns:
         Dict with ``success`` and updated ``article``.
     """
     if not content or not content.strip():
         return err("content is required")
+    valid_epistemic_types = ("episodic", "semantic", "procedural")
+    if epistemic_type is not None and epistemic_type not in valid_epistemic_types:
+        return err(f"epistemic_type must be one of {sorted(valid_epistemic_types)}")
 
     embedding_str = _compute_embedding(content)
     token_count = _count_tokens(content)
     content_hash = _content_hash(content)
 
     with get_cursor() as cur:
+        set_clauses = [
+            "content      = %s",
+            "size_tokens  = %s",
+            "content_hash = %s",
+            "embedding    = %s::vector",
+            "version      = version + 1",
+            "modified_at  = NOW()",
+            "compiled_at  = NOW()",
+        ]
+        params: list[str | int | None] = [content, token_count, content_hash, embedding_str]
+
+        if epistemic_type is not None:
+            set_clauses.append("epistemic_type = %s")
+            params.append(epistemic_type)
+
+        params.append(article_id)
         cur.execute(
-            """
+            f"""
             UPDATE articles
-            SET content      = %s,
-                size_tokens  = %s,
-                content_hash = %s,
-                embedding    = %s::vector,
-                version      = version + 1,
-                modified_at  = NOW(),
-                compiled_at  = NOW()
+            SET {", ".join(set_clauses)}
             WHERE id = %s
             RETURNING *
             """,
-            (content, token_count, content_hash, embedding_str, article_id),
+            params,
         )
         row = cur.fetchone()
         if not row:

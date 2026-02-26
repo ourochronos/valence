@@ -41,6 +41,11 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         help="Search only sources",
     )
+    search_p.add_argument(
+        "--epistemic-type",
+        choices=["episodic", "semantic", "procedural"],
+        help="Filter article results by epistemic type",
+    )
     search_p.set_defaults(func=cmd_search)
 
 
@@ -58,6 +63,8 @@ def cmd_search(args: argparse.Namespace) -> int:
         # Search articles unless sources-only
         if not args.sources_only:
             article_body = {"query": args.query, "limit": args.limit}
+            if getattr(args, "epistemic_type", None):
+                article_body["epistemic_type"] = args.epistemic_type
             articles_result = client.post("/articles/search", body=article_body)
             results["articles"] = articles_result.get("articles", articles_result.get("results", []))
 

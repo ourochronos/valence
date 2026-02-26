@@ -34,6 +34,7 @@ class TestUnifiedSearch:
             limit=5,
             articles_only=False,
             sources_only=False,
+            epistemic_type=None,
         )
 
         result = cmd_search(args)
@@ -61,6 +62,7 @@ class TestUnifiedSearch:
             limit=5,
             articles_only=True,
             sources_only=False,
+            epistemic_type=None,
         )
 
         result = cmd_search(args)
@@ -84,6 +86,7 @@ class TestUnifiedSearch:
             limit=5,
             articles_only=False,
             sources_only=True,
+            epistemic_type=None,
         )
 
         result = cmd_search(args)
@@ -102,6 +105,7 @@ class TestUnifiedSearch:
             limit=5,
             articles_only=True,
             sources_only=True,
+            epistemic_type=None,
         )
 
         result = cmd_search(args)

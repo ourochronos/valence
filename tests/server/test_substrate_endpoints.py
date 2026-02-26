@@ -341,7 +341,7 @@ class TestBeliefsSupersede:
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
-        mock_update.assert_called_once_with(article_id="art1", content="updated belief")
+        mock_update.assert_called_once_with(article_id="art1", content="updated belief", epistemic_type=None)
 
 
 # =============================================================================

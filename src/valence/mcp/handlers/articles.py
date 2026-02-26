@@ -20,6 +20,7 @@ def knowledge_search(
     limit: int = 10,
     include_sources: bool = False,
     session_id: str | None = None,
+    epistemic_type: str | None = None,
 ) -> dict[str, Any]:
     """Unified knowledge retrieval."""
     if not query or not query.strip():
@@ -42,6 +43,10 @@ def knowledge_search(
     else:
         result_list = results
 
+    # Filter by epistemic_type if specified
+    if epistemic_type:
+        result_list = [r for r in result_list if r.get("epistemic_type") == epistemic_type]
+
     return {
         "success": True,
         "results": result_list,
@@ -56,6 +61,7 @@ def article_create(
     source_ids: list[str] | None = None,
     author_type: str = "system",
     domain_path: list[str] | None = None,
+    epistemic_type: str = "semantic",
 ) -> dict[str, Any]:
     """Create a new article."""
     from valence.core.articles import create_article
@@ -67,6 +73,7 @@ def article_create(
             source_ids=source_ids,
             author_type=author_type,
             domain_path=domain_path,
+            epistemic_type=epistemic_type,
         )
     )
     if not result.success:
@@ -91,6 +98,7 @@ def article_update(
     article_id: str,
     content: str,
     source_id: str | None = None,
+    epistemic_type: str | None = None,
 ) -> dict[str, Any]:
     """Update an article's content."""
     from valence.core.articles import update_article
@@ -100,6 +108,7 @@ def article_update(
             article_id=article_id,
             content=content,
             source_id=source_id,
+            epistemic_type=epistemic_type,
         )
     )
     if not result.success:

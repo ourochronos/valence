@@ -28,6 +28,11 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     search_p.add_argument("query", help="Search query")
     search_p.add_argument("--limit", "-n", type=int, default=10, help="Max results (default 10)")
     search_p.add_argument("--domain", "-d", action="append", dest="domain_filter", help="Domain path filter (repeatable)")
+    search_p.add_argument(
+        "--epistemic-type",
+        choices=["episodic", "semantic", "procedural"],
+        help="Filter results by epistemic type",
+    )
     search_p.set_defaults(func=cmd_articles_search)
 
     # --- get ---
@@ -52,6 +57,12 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         default="agent",
         help="Author type (default: agent)",
     )
+    create_p.add_argument(
+        "--epistemic-type",
+        choices=["episodic", "semantic", "procedural"],
+        default="semantic",
+        help="Knowledge type: episodic (decays), semantic (persists), procedural (pinned)",
+    )
     create_p.set_defaults(func=cmd_articles_create)
 
     # --- update ---
@@ -59,6 +70,11 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     update_p.add_argument("article_id", help="UUID of the article to update")
     update_p.add_argument("--content", "-c", required=True, help="New content for the article")
     update_p.add_argument("--source-id", help="Optional source ID that prompted this update")
+    update_p.add_argument(
+        "--epistemic-type",
+        choices=["episodic", "semantic", "procedural"],
+        help="Optional new epistemic type classification",
+    )
     update_p.set_defaults(func=cmd_articles_update)
 
     # --- merge ---
@@ -92,6 +108,8 @@ def cmd_articles_search(args: argparse.Namespace) -> int:
     }
     if getattr(args, "domain_filter", None):
         body["domain_filter"] = args.domain_filter
+    if getattr(args, "epistemic_type", None):
+        body["epistemic_type"] = args.epistemic_type
 
     try:
         result = client.post("/articles/search", body=body)
@@ -135,6 +153,8 @@ def cmd_articles_create(args: argparse.Namespace) -> int:
         body["title"] = args.title
     if getattr(args, "domain_path", None):
         body["domain_path"] = args.domain_path
+    if getattr(args, "epistemic_type", None):
+        body["epistemic_type"] = args.epistemic_type
 
     try:
         result = client.post("/articles", body=body)
@@ -192,6 +212,8 @@ def cmd_articles_update(args: argparse.Namespace) -> int:
     }
     if getattr(args, "source_id", None):
         body["source_id"] = args.source_id
+    if getattr(args, "epistemic_type", None):
+        body["epistemic_type"] = args.epistemic_type
 
     try:
         result = client.put(f"/articles/{args.article_id}", body=body)

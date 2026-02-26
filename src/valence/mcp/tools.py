@@ -169,6 +169,11 @@ SUBSTRATE_TOOLS = [
                     "type": "string",
                     "description": "Optional session ID for usage trace attribution",
                 },
+                "epistemic_type": {
+                    "type": "string",
+                    "enum": ["episodic", "semantic", "procedural"],
+                    "description": "Filter results by epistemic type",
+                },
             },
             "required": ["query"],
         },
@@ -235,6 +240,12 @@ SUBSTRATE_TOOLS = [
                     "items": {"type": "string"},
                     "description": "Hierarchical domain tags (e.g. ['python', 'stdlib'])",
                 },
+                "epistemic_type": {
+                    "type": "string",
+                    "enum": ["episodic", "semantic", "procedural"],
+                    "default": "semantic",
+                    "description": "Knowledge type: episodic (decays), semantic (persists), procedural (pinned)",
+                },
             },
             "required": ["content"],
         },
@@ -287,6 +298,11 @@ SUBSTRATE_TOOLS = [
                 "source_id": {
                     "type": "string",
                     "description": "Optional UUID of the source that triggered this update",
+                },
+                "epistemic_type": {
+                    "type": "string",
+                    "enum": ["episodic", "semantic", "procedural"],
+                    "description": "Optional new epistemic type classification",
                 },
             },
             "required": ["article_id", "content"],
