@@ -4,7 +4,7 @@
 Prerequisites:
     - PostgreSQL running with valence database initialized
     - pip install -e .
-    - VKB_DB_HOST, VKB_DB_NAME, VKB_DB_USER env vars set (or defaults)
+    - VALENCE_DB_HOST, VALENCE_DB_NAME, VALENCE_DB_USER env vars set (or defaults)
 
 Usage:
     python examples/demo.py

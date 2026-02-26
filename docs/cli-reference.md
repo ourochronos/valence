@@ -512,11 +512,11 @@ These commands are preserved from v1 for compatibility. New code should prefer `
 | `VALENCE_SERVER_URL` | `http://127.0.0.1:8420` | Server URL |
 | `VALENCE_TOKEN` | — | Auth token |
 | `VALENCE_OUTPUT` | `text` | Output format (`json`, `text`, `table`) |
-| `VKB_DB_HOST` | `localhost` | PostgreSQL host |
-| `VKB_DB_PORT` | `5433` | PostgreSQL port |
-| `VKB_DB_NAME` | `valence` | Database name |
-| `VKB_DB_USER` | `valence` | Database user |
-| `VKB_DB_PASSWORD` | `valence` | Database password |
+| `VALENCE_DB_HOST` | `localhost` | PostgreSQL host |
+| `VALENCE_DB_PORT` | `5433` | PostgreSQL port |
+| `VALENCE_DB_NAME` | `valence` | Database name |
+| `VALENCE_DB_USER` | `valence` | Database user |
+| `VALENCE_DB_PASSWORD` | `valence` | Database password |
 | `VALENCE_HOST` | `127.0.0.1` | Server bind host |
 | `VALENCE_PORT` | `8420` | Server bind port |
 

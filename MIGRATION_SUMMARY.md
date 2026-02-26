@@ -153,11 +153,11 @@ Ready to merge after backfill is complete and verified.
 
 ```bash
 # Database (already set)
-VKB_DB_HOST=127.0.0.1
-VKB_DB_USER=valence
-VKB_DB_PASSWORD=valence
-VKB_DB_NAME=valence
-VKB_DB_PORT=5433
+VALENCE_DB_HOST=127.0.0.1
+VALENCE_DB_USER=valence
+VALENCE_DB_PASSWORD=valence
+VALENCE_DB_NAME=valence
+VALENCE_DB_PORT=5433
 
 # Embedding configuration (newly added)
 VALENCE_EMBEDDING_PROVIDER=openai

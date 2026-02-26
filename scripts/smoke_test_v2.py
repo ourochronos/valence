@@ -18,11 +18,11 @@ import os
 import sys
 
 # Point at v2 database (can be overridden by environment variables)
-os.environ.setdefault("VKB_DB_HOST", "localhost")
-os.environ.setdefault("VKB_DB_PORT", "5434")
-os.environ.setdefault("VKB_DB_NAME", "valence_v2")
-os.environ.setdefault("VKB_DB_USER", "valence")
-os.environ.setdefault("VKB_DB_PASSWORD", "valence")
+os.environ.setdefault("VALENCE_DB_HOST", "localhost")
+os.environ.setdefault("VALENCE_DB_PORT", "5434")
+os.environ.setdefault("VALENCE_DB_NAME", "valence_v2")
+os.environ.setdefault("VALENCE_DB_USER", "valence")
+os.environ.setdefault("VALENCE_DB_PASSWORD", "valence")
 
 from valence.core import sources, articles, provenance, retrieval, compilation, contention, usage, forgetting
 from valence.core.inference import provider as inference_provider

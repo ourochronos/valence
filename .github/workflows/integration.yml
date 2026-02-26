@@ -67,11 +67,11 @@ jobs:
 
       - name: Run database integration tests
         env:
-          VKB_DB_HOST: localhost
-          VKB_DB_PORT: 5432
-          VKB_DB_NAME: valence_test
-          VKB_DB_USER: valence
-          VKB_DB_PASSWORD: testpass
+          VALENCE_DB_HOST: localhost
+          VALENCE_DB_PORT: 5432
+          VALENCE_DB_NAME: valence_test
+          VALENCE_DB_USER: valence
+          VALENCE_DB_PASSWORD: testpass
         run: |
           pytest tests/integration/test_deployment.py \
                  tests/integration/test_belief_lifecycle.py \
@@ -141,12 +141,12 @@ jobs:
         env:
           VALENCE_PRIMARY_URL: http://localhost:8080
           VALENCE_PEER_URL: http://localhost:8081
-          VKB_DB_HOST: localhost
-          VKB_DB_PORT: 5433
-          VKB_DB_NAME: valence_test
-          VKB_DB_USER: valence
-          VKB_DB_PASSWORD: testpass
-          VKB_PEER_DB_PORT: 5434
+          VALENCE_DB_HOST: localhost
+          VALENCE_DB_PORT: 5433
+          VALENCE_DB_NAME: valence_test
+          VALENCE_DB_USER: valence
+          VALENCE_DB_PASSWORD: testpass
+          VALENCE_PEER_DB_PORT: 5434
         run: |
           ~/.local/bin/uv pip install -e ".[dev]" --system
           pytest tests/integration/test_federation_sync.py \
@@ -231,11 +231,11 @@ jobs:
 
       - name: Start Valence server
         env:
-          VKB_DB_HOST: localhost
-          VKB_DB_PORT: 5432
-          VKB_DB_NAME: valence_test
-          VKB_DB_USER: valence
-          VKB_DB_PASSWORD: testpass
+          VALENCE_DB_HOST: localhost
+          VALENCE_DB_PORT: 5432
+          VALENCE_DB_NAME: valence_test
+          VALENCE_DB_USER: valence
+          VALENCE_DB_PASSWORD: testpass
           VALENCE_HOST: 0.0.0.0
           VALENCE_PORT: 8080
         run: |
@@ -246,11 +246,11 @@ jobs:
       - name: Run API tests
         env:
           VALENCE_PRIMARY_URL: http://localhost:8080
-          VKB_DB_HOST: localhost
-          VKB_DB_PORT: 5432
-          VKB_DB_NAME: valence_test
-          VKB_DB_USER: valence
-          VKB_DB_PASSWORD: testpass
+          VALENCE_DB_HOST: localhost
+          VALENCE_DB_PORT: 5432
+          VALENCE_DB_NAME: valence_test
+          VALENCE_DB_USER: valence
+          VALENCE_DB_PASSWORD: testpass
         run: |
           pytest tests/server/ tests/integration/ \
                  -m "integration" \

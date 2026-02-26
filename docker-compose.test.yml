@@ -49,11 +49,11 @@ services:
       context: .
       dockerfile: Dockerfile.test
     environment:
-      VKB_DB_HOST: postgres
-      VKB_DB_PORT: 5432
-      VKB_DB_NAME: valence_test
-      VKB_DB_USER: valence
-      VKB_DB_PASSWORD: testpass
+      VALENCE_DB_HOST: postgres
+      VALENCE_DB_PORT: 5432
+      VALENCE_DB_NAME: valence_test
+      VALENCE_DB_USER: valence
+      VALENCE_DB_PASSWORD: testpass
       VALENCE_HOST: 0.0.0.0
       VALENCE_PORT: 8080
       VALENCE_NODE_ID: primary-node
@@ -80,11 +80,11 @@ services:
       context: .
       dockerfile: Dockerfile.test
     environment:
-      VKB_DB_HOST: postgres-peer
-      VKB_DB_PORT: 5432
-      VKB_DB_NAME: valence_test
-      VKB_DB_USER: valence
-      VKB_DB_PASSWORD: testpass
+      VALENCE_DB_HOST: postgres-peer
+      VALENCE_DB_PORT: 5432
+      VALENCE_DB_NAME: valence_test
+      VALENCE_DB_USER: valence
+      VALENCE_DB_PASSWORD: testpass
       VALENCE_HOST: 0.0.0.0
       VALENCE_PORT: 8080
       VALENCE_NODE_ID: peer-node
@@ -114,11 +114,11 @@ services:
       context: .
       dockerfile: Dockerfile.test
     environment:
-      VKB_DB_HOST: postgres
-      VKB_DB_PORT: 5432
-      VKB_DB_NAME: valence_test
-      VKB_DB_USER: valence
-      VKB_DB_PASSWORD: testpass
+      VALENCE_DB_HOST: postgres
+      VALENCE_DB_PORT: 5432
+      VALENCE_DB_NAME: valence_test
+      VALENCE_DB_USER: valence
+      VALENCE_DB_PASSWORD: testpass
       VALENCE_PRIMARY_URL: http://valence-primary:8080
       VALENCE_PEER_URL: http://valence-peer:8080
       PYTHONPATH: /app/src

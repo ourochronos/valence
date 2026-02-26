@@ -16,12 +16,11 @@ from pathlib import Path
 
 # Set DB config before imports
 for key in ['HOST', 'PORT', 'NAME', 'USER', 'PASSWORD']:
-    val = os.environ.get(f'VKB_DB_{key}') or {
+    val = os.environ.get(f'VALENCE_DB_{key}') or {
         'HOST': '127.0.0.1', 'PORT': '5433', 'NAME': 'valence',
         'USER': 'valence', 'PASSWORD': 'valence'
     }[key]
-    os.environ[f'VKB_DB_{key}'] = val
-    os.environ[f'ORO_DB_{key}'] = val
+    os.environ[f'VALENCE_DB_{key}'] = val
 
 from valence.core import sources, compilation
 from valence.core.inference import provider

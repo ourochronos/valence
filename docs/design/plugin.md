@@ -300,9 +300,9 @@ Present tensions for review and help resolve them.
       "command": "python",
       "args": ["-m", "valence.mcp_server"],
       "env": {
-        "VKB_DB_HOST": "localhost",
-        "VKB_DB_NAME": "valence",
-        "VKB_DB_USER": "valence",
+        "VALENCE_DB_HOST": "localhost",
+        "VALENCE_DB_NAME": "valence",
+        "VALENCE_DB_USER": "valence",
       }
     }
   }
@@ -327,8 +327,8 @@ claude --plugin-dir /path/to/valence/plugin
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `VKB_DB_HOST` | PostgreSQL host | localhost |
-| `VKB_DB_NAME` | Database name | valence |
-| `VKB_DB_USER` | Database user | valence |
-| `VKB_DB_PASSWORD` | Database password | (none) |
+| `VALENCE_DB_HOST` | PostgreSQL host | localhost |
+| `VALENCE_DB_NAME` | Database name | valence |
+| `VALENCE_DB_USER` | Database user | valence |
+| `VALENCE_DB_PASSWORD` | Database password | (none) |
 | `OPENAI_API_KEY` | For embeddings | (required) |

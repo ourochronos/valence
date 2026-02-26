@@ -224,7 +224,7 @@ src/valence/
 - `VALENCE_MIN_CAPTURE_CONFIDENCE`, `VALENCE_USAGE_DECAY_RATE`, `VALENCE_BACKFILL_INTERVAL`
 - `OPENAI_API_KEY` (external, not prefixed)
 
-No `VKB_*`. No `ORO_*`. No shims. No backward compat.
+No `VKB_*`. No `ORO_*`. Clean break for v2.0.0.
 
 Update `.env.example` to be the single source of truth.
 

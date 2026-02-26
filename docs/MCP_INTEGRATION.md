@@ -26,11 +26,11 @@ Add Valence to your Claude Desktop configuration file:
       "command": "python",
       "args": ["-m", "valence.mcp_server"],
       "env": {
-        "VKB_DB_HOST": "localhost",
-        "VKB_DB_PORT": "5432",
-        "VKB_DB_NAME": "valence",
-        "VKB_DB_USER": "valence",
-        "VKB_DB_PASSWORD": "your-password",
+        "VALENCE_DB_HOST": "localhost",
+        "VALENCE_DB_PORT": "5432",
+        "VALENCE_DB_NAME": "valence",
+        "VALENCE_DB_USER": "valence",
+        "VALENCE_DB_PASSWORD": "your-password",
         "OPENAI_API_KEY": "sk-..."
       }
     }
@@ -46,10 +46,10 @@ Add Valence to your Claude Desktop configuration file:
       "command": "python",
       "args": ["-m", "valence.substrate.mcp_server"],
       "env": {
-        "VKB_DB_HOST": "localhost",
-        "VKB_DB_NAME": "valence",
-        "VKB_DB_USER": "valence",
-        "VKB_DB_PASSWORD": "your-password",
+        "VALENCE_DB_HOST": "localhost",
+        "VALENCE_DB_NAME": "valence",
+        "VALENCE_DB_USER": "valence",
+        "VALENCE_DB_PASSWORD": "your-password",
         "OPENAI_API_KEY": "sk-..."
       }
     },
@@ -57,10 +57,10 @@ Add Valence to your Claude Desktop configuration file:
       "command": "python",
       "args": ["-m", "valence.vkb.mcp_server"],
       "env": {
-        "VKB_DB_HOST": "localhost",
-        "VKB_DB_NAME": "valence",
-        "VKB_DB_USER": "valence",
-        "VKB_DB_PASSWORD": "your-password"
+        "VALENCE_DB_HOST": "localhost",
+        "VALENCE_DB_NAME": "valence",
+        "VALENCE_DB_USER": "valence",
+        "VALENCE_DB_PASSWORD": "your-password"
       }
     }
   }

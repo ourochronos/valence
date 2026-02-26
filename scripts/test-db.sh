@@ -122,11 +122,11 @@ cmd_status() {
 
 cmd_env() {
     cat <<EOF
-export VKB_DB_HOST=localhost
-export VKB_DB_PORT=$PORT
-export VKB_DB_NAME=$DB_NAME
-export VKB_DB_USER=$DB_USER
-export VKB_DB_PASSWORD=$DB_PASS
+export VALENCE_DB_HOST=localhost
+export VALENCE_DB_PORT=$PORT
+export VALENCE_DB_NAME=$DB_NAME
+export VALENCE_DB_USER=$DB_USER
+export VALENCE_DB_PASSWORD=$DB_PASS
 EOF
 }
 

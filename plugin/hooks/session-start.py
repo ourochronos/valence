@@ -27,10 +27,10 @@ def get_db_connection():
 
     try:
         return psycopg2.connect(
-            host=os.environ.get("VKB_DB_HOST", "localhost"),
-            dbname=os.environ.get("VKB_DB_NAME", "valence"),
-            user=os.environ.get("VKB_DB_USER", "valence"),
-            password=os.environ.get("VKB_DB_PASSWORD", ""),
+            host=os.environ.get("VALENCE_DB_HOST", "localhost"),
+            dbname=os.environ.get("VALENCE_DB_NAME", "valence"),
+            user=os.environ.get("VALENCE_DB_USER", "valence"),
+            password=os.environ.get("VALENCE_DB_PASSWORD", ""),
         )
     except psycopg2.Error:
         return None

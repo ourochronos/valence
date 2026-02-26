@@ -8,7 +8,7 @@ This example demonstrates the core Valence v2 workflow:
 
 Requirements:
     - PostgreSQL with pgvector running (see README for Docker setup)
-    - Environment variable VKB_DB_PASSWORD set
+    - Environment variable VALENCE_DB_PASSWORD set
     - `pip install valence` or run from source
 
 Usage:
@@ -172,9 +172,9 @@ Next steps:
 
 if __name__ == "__main__":
     # Check for database connection
-    if not os.environ.get("VKB_DB_PASSWORD"):
-        print("Warning: VKB_DB_PASSWORD not set. Using default 'valence'.")
-        os.environ["VKB_DB_PASSWORD"] = "valence"
+    if not os.environ.get("VALENCE_DB_PASSWORD"):
+        print("Warning: VALENCE_DB_PASSWORD not set. Using default 'valence'.")
+        os.environ["VALENCE_DB_PASSWORD"] = "valence"
 
     try:
         main()
