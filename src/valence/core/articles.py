@@ -504,6 +504,7 @@ async def merge_articles(
         return err("Neither article has linked sources; cannot merge from ground truth")
 
     # Build a title hint from the two originals
+    title_hint: str | None
     if title_a and title_b and title_a != title_b:
         title_hint = f"{title_a} + {title_b}"
     else:
