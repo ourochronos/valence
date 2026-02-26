@@ -395,7 +395,7 @@ class TestMutationQueueSplitIntegration:
             patch("valence.core.articles.split_article", mock_split),
             patch("valence.core.compilation._set_queue_item_status", mock_status),
         ):
-            count = await process_mutation_queue()
+            await process_mutation_queue()
 
         mock_split.assert_called_once_with(ARTICLE_ID)
 
