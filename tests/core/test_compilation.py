@@ -108,7 +108,7 @@ def _make_cursor(fetchone_seq=None, fetchall_seq=None):
 def _llm_ok(title="Compiled Title", content="Compiled content.", rels=None) -> str:
     if rels is None:
         rels = [{"source_id": SOURCE_ID_1, "relationship": "originates"}]
-    return json.dumps({"title": title, "content": content, "source_relationships": rels})
+    return json.dumps({"articles": [{"title": title, "content": content, "source_relationships": rels}]})
 
 
 def _llm_update_ok(content="Updated content.", relationship="confirms", summary="Updated.") -> str:
@@ -496,9 +496,13 @@ class TestCompileArticleRightSizing:
         art = _article_row(ARTICLE_ID, big_content)
         llm_resp = json.dumps(
             {
-                "title": "Big Article",
-                "content": big_content,
-                "source_relationships": [{"source_id": SOURCE_ID_1, "relationship": "originates"}],
+                "articles": [
+                    {
+                        "title": "Big Article",
+                        "content": big_content,
+                        "source_relationships": [{"source_id": SOURCE_ID_1, "relationship": "originates"}],
+                    }
+                ],
             }
         )
 
@@ -535,9 +539,13 @@ class TestCompileArticleRightSizing:
         art = _article_row(ARTICLE_ID, short_content)
         llm_resp = json.dumps(
             {
-                "title": "Short",
-                "content": short_content,
-                "source_relationships": [{"source_id": SOURCE_ID_1, "relationship": "originates"}],
+                "articles": [
+                    {
+                        "title": "Short",
+                        "content": short_content,
+                        "source_relationships": [{"source_id": SOURCE_ID_1, "relationship": "originates"}],
+                    }
+                ],
             }
         )
 
