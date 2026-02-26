@@ -32,7 +32,7 @@ def _get_db_params() -> dict:
     """Get database connection parameters from environment."""
     return {
         "host": os.environ.get("VALENCE_DB_HOST", "localhost"),
-        "port": int(os.environ.get("VALENCE_DB_PORT", "5432")),
+        "port": int(os.environ.get("VALENCE_DB_PORT", "5433")),
         "database": os.environ.get("VALENCE_DB_NAME", "valence"),
         "user": os.environ.get("VALENCE_DB_USER", "valence"),
         "password": os.environ.get("VALENCE_DB_PASSWORD", ""),
