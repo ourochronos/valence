@@ -198,9 +198,9 @@ class TestGetCurrentRightSizing:
 
         config = _get_current_right_sizing()
 
-        assert config["target_tokens"] == 2000
-        assert config["max_tokens"] == 4000
-        assert config["min_tokens"] == 200
+        assert config["target_tokens"] == 550
+        assert config["max_tokens"] == 800
+        assert config["min_tokens"] == 300
 
     @patch("valence.core.db.get_cursor")
     def test_handles_db_error(self, mock_get_cursor):
@@ -209,9 +209,9 @@ class TestGetCurrentRightSizing:
 
         config = _get_current_right_sizing()
 
-        assert config["target_tokens"] == 2000
-        assert config["max_tokens"] == 4000
-        assert config["min_tokens"] == 200
+        assert config["target_tokens"] == 550
+        assert config["max_tokens"] == 800
+        assert config["min_tokens"] == 300
 
     @patch("valence.core.db.get_cursor")
     def test_handles_json_string_value(self, mock_get_cursor):

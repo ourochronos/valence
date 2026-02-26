@@ -108,9 +108,9 @@ def _ensure_degraded_column() -> None:
 # ---------------------------------------------------------------------------
 
 DEFAULT_RIGHT_SIZING: dict[str, int] = {
-    "max_tokens": 4000,
-    "min_tokens": 200,
-    "target_tokens": 2000,
+    "max_tokens": 800,
+    "min_tokens": 300,
+    "target_tokens": 550,
 }
 
 DEFAULT_PROMPT_LIMITS: dict[str, int] = {
