@@ -69,6 +69,7 @@ TASK_OUTPUT_SCHEMAS: dict[str, str] = {
     {
       "title": "<descriptive article title>",
       "content": "<article content>",
+      "epistemic_type": "episodic|semantic|procedural",
       "source_relationships": [
         {"source_id": "<source_id>", "relationship": "originates|confirms|supersedes|contradicts|contends"}
       ]
