@@ -52,10 +52,10 @@ psql -d valence -f src/valence/substrate/procedures.sql
 pip install -e .
 
 # Set connection (if not using defaults)
-export VKB_DB_HOST=localhost
-export VKB_DB_NAME=valence
-export VKB_DB_USER=valence
-export VKB_DB_PASSWORD=your_password
+export VALENCE_DB_HOST=localhost
+export VALENCE_DB_NAME=valence
+export VALENCE_DB_USER=valence
+export VALENCE_DB_PASSWORD=your_password
 
 # Verify
 valence-mcp --health-check
@@ -86,11 +86,11 @@ claude --plugin-dir /path/to/valence/plugin
 The plugin's `.mcp.json` configures a unified MCP server that provides all Valence tools. Claude Code will start it automatically when you launch with the plugin.
 
 The server connects to PostgreSQL using environment variables:
-- `VKB_DB_HOST` (default: localhost)
-- `VKB_DB_PORT` (default: 5433)
-- `VKB_DB_NAME` (default: valence)
-- `VKB_DB_USER` (default: valence)
-- `VKB_DB_PASSWORD` (default: empty)
+- `VALENCE_DB_HOST` (default: localhost)
+- `VALENCE_DB_PORT` (default: 5433)
+- `VALENCE_DB_NAME` (default: valence)
+- `VALENCE_DB_USER` (default: valence)
+- `VALENCE_DB_PASSWORD` (default: empty)
 
 ### Embeddings (Optional)
 

@@ -38,7 +38,7 @@ Covers:
 
 Covers:
 - `CoreSettings` defaults for all categories (db, embedding, logging, cache, federation)
-- Environment variable overrides with VKB_ and VALENCE_ prefixes
+- Environment variable overrides with VALENCE_ prefixes
 - Computed properties (`database_url`, `connection_params`, `pool_config`)
 - Singleton behavior (`get_config`, `clear_config_cache`)
 - Type coercion from environment variables

@@ -227,10 +227,10 @@ Key tables:
 
 ```bash
 # Database
-VKB_DB_HOST=localhost
-VKB_DB_NAME=valence
-VKB_DB_USER=valence
-VKB_DB_PASSWORD=
+VALENCE_DB_HOST=localhost
+VALENCE_DB_NAME=valence
+VALENCE_DB_USER=valence
+VALENCE_DB_PASSWORD=
 
 # HTTP Server
 VALENCE_HOST=127.0.0.1

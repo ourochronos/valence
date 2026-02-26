@@ -24,9 +24,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class CoreSettings(BaseSettings):
     """Core configuration settings for Valence.
 
-    Settings can be configured via environment variables.
-    Most use VALENCE_ prefix, but database settings also support
-    legacy VKB_ and PG* prefixes for backward compatibility.
+    Settings can be configured via environment variables using the VALENCE_ prefix.
     """
 
     model_config = SettingsConfigDict(

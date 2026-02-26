@@ -217,11 +217,11 @@ Create `/opt/valence/config/valence.env`:
 
 ```bash
 # Database
-VKB_DB_HOST=localhost
-VKB_DB_PORT=5432
-VKB_DB_NAME=valence
-VKB_DB_USER=valence
-VKB_DB_PASSWORD=your-secure-password
+VALENCE_DB_HOST=localhost
+VALENCE_DB_PORT=5432
+VALENCE_DB_NAME=valence
+VALENCE_DB_USER=valence
+VALENCE_DB_PASSWORD=your-secure-password
 
 # API Keys
 OPENAI_API_KEY=sk-...

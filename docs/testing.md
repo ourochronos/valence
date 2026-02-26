@@ -51,11 +51,11 @@ If you have PostgreSQL with pgvector installed locally:
 
 ```bash
 # Set environment variables
-export VKB_DB_HOST=localhost
-export VKB_DB_PORT=5432
-export VKB_DB_NAME=valence_test
-export VKB_DB_USER=valence
-export VKB_DB_PASSWORD=yourpassword
+export VALENCE_DB_HOST=localhost
+export VALENCE_DB_PORT=5432
+export VALENCE_DB_NAME=valence_test
+export VALENCE_DB_USER=valence
+export VALENCE_DB_PASSWORD=yourpassword
 
 # Initialize schema
 make db-init

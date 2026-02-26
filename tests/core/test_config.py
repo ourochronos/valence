@@ -88,7 +88,7 @@ class TestCoreSettingsEnvOverrides:
     """Test that environment variables properly override settings."""
 
     def test_database_env_overrides(self, monkeypatch, clean_env):
-        """Test database settings from VKB_ prefixed env vars."""
+        """Test database settings from VALENCE_ prefixed env vars."""
         monkeypatch.setenv("VALENCE_DB_HOST", "db.example.com")
         monkeypatch.setenv("VALENCE_DB_PORT", "5433")
         monkeypatch.setenv("VALENCE_DB_NAME", "test_db")
@@ -330,7 +330,7 @@ class TestCoreSettingsExtraIgnored:
     def test_unknown_env_vars_ignored(self, monkeypatch, clean_env):
         """Test that unknown VALENCE_ env vars don't cause errors."""
         monkeypatch.setenv("VALENCE_UNKNOWN_SETTING", "some_value")
-        monkeypatch.setenv("VKB_RANDOM_THING", "another_value")
+        monkeypatch.setenv("VALENCE_RANDOM_THING", "another_value")
 
         # Should not raise
         settings = CoreSettings()

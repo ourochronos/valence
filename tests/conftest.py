@@ -92,8 +92,8 @@ def pytest_collection_modifyitems(config, items):
 
 @pytest.fixture
 def clean_env(monkeypatch):
-    """Remove all VKB_ and VALENCE_ environment variables and prevent .env file loading."""
-    env_prefixes = ("VKB_", "VALENCE_", "OPENAI_")
+    """Remove all VALENCE_ environment variables and prevent .env file loading."""
+    env_prefixes = ("VALENCE_", "OPENAI_")
     for key in list(os.environ.keys()):
         if any(key.startswith(prefix) for prefix in env_prefixes):
             monkeypatch.delenv(key, raising=False)
