@@ -2,7 +2,7 @@
 
 *Database schema extensions for federation support*
 
-This document describes the database schema additions required for Valence federation. All new tables are designed to work alongside the existing schema in `src/valence/substrate/schema.sql`.
+This document describes the database schema additions required for Valence federation. All new tables are designed to work alongside the existing schema in `migrations/schema.sql`.
 
 ---
 

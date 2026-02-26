@@ -18,7 +18,7 @@ services:
       retries: 10
     volumes:
       # Initialize schema on startup
-      - ./src/valence/substrate/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./migrations/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
       - ./src/valence/substrate/procedures.sql:/docker-entrypoint-initdb.d/02-procedures.sql:ro
     networks:
       - valence-test
@@ -38,7 +38,7 @@ services:
       timeout: 5s
       retries: 10
     volumes:
-      - ./src/valence/substrate/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./migrations/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
       - ./src/valence/substrate/procedures.sql:/docker-entrypoint-initdb.d/02-procedures.sql:ro
     networks:
       - valence-test

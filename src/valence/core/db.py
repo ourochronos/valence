@@ -262,6 +262,7 @@ def init_schema(schema_path: str | None = None) -> None:
         candidates = [
             valence_dir / "schema.sql",
             valence_dir.parent / "schema.sql",
+            Path.cwd() / "migrations" / "schema.sql",
             Path.cwd() / "schema.sql",
         ]
 

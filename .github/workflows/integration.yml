@@ -62,7 +62,7 @@ jobs:
           PGPASSWORD: testpass
           PGDATABASE: valence_test
         run: |
-          psql -f src/valence/substrate/schema.sql
+          psql -f migrations/schema.sql
           psql -f src/valence/substrate/procedures.sql
 
       - name: Run database integration tests
@@ -226,7 +226,7 @@ jobs:
           PGPASSWORD: testpass
           PGDATABASE: valence_test
         run: |
-          psql -f src/valence/substrate/schema.sql
+          psql -f migrations/schema.sql
           psql -f src/valence/substrate/procedures.sql
 
       - name: Start Valence server

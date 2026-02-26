@@ -85,7 +85,7 @@ jobs:
           PGPASSWORD: testpass
           PGDATABASE: valence_test
         run: |
-          psql -f schema.sql
+          psql -f migrations/schema.sql
 
       - name: Run tests
         env:
@@ -147,7 +147,7 @@ jobs:
           PGPASSWORD: testpass
           PGDATABASE: valence_test
         run: |
-          psql -f schema.sql
+          psql -f migrations/schema.sql
 
       - name: Integration tests
         if: github.ref == 'refs/heads/main'

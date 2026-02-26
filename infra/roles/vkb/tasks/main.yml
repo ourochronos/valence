@@ -48,7 +48,7 @@
   shell: |
     source /opt/valence/venv/bin/activate
     cd /opt/valence/repo
-    psql -h localhost -U {{ postgres_user }} -d {{ postgres_db }} -f src/valence/substrate/schema.sql
+    psql -h localhost -U {{ postgres_user }} -d {{ postgres_db }} -f migrations/schema.sql
     psql -h localhost -U {{ postgres_user }} -d {{ postgres_db }} -f src/valence/substrate/procedures.sql
     for f in migrations/*.sql; do
       [ -f "$f" ] || continue

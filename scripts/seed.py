@@ -12,7 +12,7 @@ from pathlib import Path
 from uuid import uuid4
 
 DB_PATH = Path(__file__).parent.parent / "valence.kb.sqlite"
-SCHEMA_PATH = Path(__file__).parent.parent / "schema.sql"
+SCHEMA_PATH = Path(__file__).parent.parent / "migrations" / "schema.sql"
 DOCS_PATH = Path(__file__).parent.parent / "docs"
 
 def generate_id(prefix=""):

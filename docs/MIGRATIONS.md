@@ -3,11 +3,10 @@
 ## Structure
 
 ```
-src/valence/substrate/
+migrations/
 ├── schema.sql              # Complete schema for fresh installs
 ├── procedures.sql          # Stored procedures
-└── migrations/
-    └── NNN_description.sql # Incremental migrations
+└── NNN_description.sql     # Incremental migrations
 ```
 
 ## Fresh Install vs Upgrade
