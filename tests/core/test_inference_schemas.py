@@ -91,33 +91,39 @@ class TestValidateCompile:
         if source_relationships is _UNSET:
             source_relationships = [{"source_id": "abc-123", "relationship": "originates"}]
         return {
-            "title": "Test Article",
-            "content": "Some content.",
-            "source_relationships": source_relationships,
+            "articles": [
+                {
+                    "title": "Test Article",
+                    "content": "Some content.",
+                    "source_relationships": source_relationships,
+                }
+            ],
         }
 
     def test_valid_output_returns_dict(self):
         result = validate_output(TASK_COMPILE, _j(self._valid()))
-        assert result["title"] == "Test Article"
-        assert result["content"] == "Some content."
-        assert len(result["source_relationships"]) == 1
+        assert result["articles"][0]["title"] == "Test Article"
+        assert result["articles"][0]["content"] == "Some content."
+        assert len(result["articles"][0]["source_relationships"]) == 1
 
-    def test_missing_title_raises(self):
-        data = self._valid()
-        del data["title"]
+    def test_missing_articles_raises(self):
+        data = {"title": "T", "content": "C", "source_relationships": []}
+        with pytest.raises(InferenceSchemaError, match="articles"):
+            validate_output(TASK_COMPILE, _j(data))
+
+    def test_empty_articles_raises(self):
+        data = {"articles": []}
+        with pytest.raises(InferenceSchemaError, match="at least one"):
+            validate_output(TASK_COMPILE, _j(data))
+
+    def test_article_missing_title_raises(self):
+        data = {"articles": [{"content": "C"}]}
         with pytest.raises(InferenceSchemaError, match="title"):
             validate_output(TASK_COMPILE, _j(data))
 
-    def test_missing_content_raises(self):
-        data = self._valid()
-        del data["content"]
+    def test_article_missing_content_raises(self):
+        data = {"articles": [{"title": "T"}]}
         with pytest.raises(InferenceSchemaError, match="content"):
-            validate_output(TASK_COMPILE, _j(data))
-
-    def test_missing_source_relationships_raises(self):
-        data = self._valid()
-        del data["source_relationships"]
-        with pytest.raises(InferenceSchemaError, match="source_relationships"):
             validate_output(TASK_COMPILE, _j(data))
 
     def test_invalid_relationship_in_list_raises(self):
@@ -129,12 +135,12 @@ class TestValidateCompile:
         for rel in RELATIONSHIP_ENUM:
             data = self._valid(source_relationships=[{"source_id": "x", "relationship": rel}])
             result = validate_output(TASK_COMPILE, _j(data))
-            assert result["source_relationships"][0]["relationship"] == rel
+            assert result["articles"][0]["source_relationships"][0]["relationship"] == rel
 
     def test_empty_source_relationships_ok(self):
         data = self._valid(source_relationships=[])
         result = validate_output(TASK_COMPILE, _j(data))
-        assert result["source_relationships"] == []
+        assert result["articles"][0]["source_relationships"] == []
 
     def test_extra_fields_ignored(self):
         data = self._valid()
@@ -146,19 +152,28 @@ class TestValidateCompile:
         data = self._valid()
         fenced = f"```json\n{json.dumps(data)}\n```"
         result = validate_output(TASK_COMPILE, fenced)
-        assert result["title"] == "Test Article"
+        assert result["articles"][0]["title"] == "Test Article"
 
     def test_markdown_fence_without_lang_stripped(self):
         data = self._valid()
         fenced = f"```\n{json.dumps(data)}\n```"
         result = validate_output(TASK_COMPILE, fenced)
-        assert result["content"] == "Some content."
+        assert result["articles"][0]["content"] == "Some content."
 
     def test_source_relationships_not_list_raises(self):
-        data = self._valid()
-        data["source_relationships"] = "not a list"
+        data = {"articles": [{"title": "T", "content": "C", "source_relationships": "not a list"}]}
         with pytest.raises(InferenceSchemaError):
             validate_output(TASK_COMPILE, _j(data))
+
+    def test_multi_article_valid(self):
+        data = {
+            "articles": [
+                {"title": "A", "content": "Content A", "source_relationships": []},
+                {"title": "B", "content": "Content B", "source_relationships": []},
+            ]
+        }
+        result = validate_output(TASK_COMPILE, _j(data))
+        assert len(result["articles"]) == 2
 
     def test_invalid_json_raises(self):
         with pytest.raises(InferenceSchemaError, match="not valid JSON"):
@@ -480,12 +495,14 @@ class TestValidateCommon:
 class TestInferenceProviderSchemaValidation:
     async def test_valid_compile_response_populates_parsed(self):
         p = InferenceProvider()
-        response = json.dumps({"title": "T", "content": "C", "source_relationships": [{"source_id": "x", "relationship": "originates"}]})
+        response = json.dumps(
+            {"articles": [{"title": "T", "content": "C", "source_relationships": [{"source_id": "x", "relationship": "originates"}]}]}
+        )
         p.configure(lambda prompt: response)
         result = await p.infer(TASK_COMPILE, "prompt")
         assert not result.degraded
         assert result.parsed is not None
-        assert result.parsed["title"] == "T"
+        assert result.parsed["articles"][0]["title"] == "T"
 
     async def test_invalid_compile_response_returns_content_but_no_parsed(self):
         p = InferenceProvider()

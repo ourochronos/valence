@@ -19,7 +19,7 @@ from typing import Any
 def create_ollama_backend(
     host: str = "http://localhost:11434",
     model: str = "qwen3:30b",
-    timeout: float = 120.0,
+    timeout: float = 600.0,
 ) -> Callable[[str], Coroutine[Any, Any, str]]:
     """Return an async callable that routes inference through a local Ollama server.
 
