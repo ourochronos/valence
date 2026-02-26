@@ -52,7 +52,7 @@ apply_schema() {
     dpsql "$DB_NAME" -c "CREATE EXTENSION IF NOT EXISTS vector;" 2>/dev/null || true
 
     # Core schema
-    docker cp "$PROJECT_DIR/src/valence/substrate/schema.sql" "$CONTAINER_NAME:/tmp/schema.sql"
+    docker cp "$PROJECT_DIR/migrations/schema.sql" "$CONTAINER_NAME:/tmp/schema.sql"
     dpsql "$DB_NAME" -f /tmp/schema.sql
 
     # Procedures

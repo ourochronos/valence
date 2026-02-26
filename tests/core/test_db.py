@@ -518,8 +518,11 @@ class TestInitSchema:
         from valence.core.db import init_schema
 
         cwd = Path.cwd()
-        schema_file = cwd / "schema.sql"
+        migrations_dir = cwd / "migrations"
+        schema_file = migrations_dir / "schema.sql"
+        original_content = schema_file.read_text() if schema_file.exists() else None
         try:
+            migrations_dir.mkdir(exist_ok=True)
             schema_file.write_text("CREATE TABLE auto_test (id UUID);")
 
             mock_conn = MagicMock()
@@ -537,7 +540,9 @@ class TestInitSchema:
             sql = mock_cursor.execute.call_args[0][0]
             assert "CREATE TABLE auto_test" in sql
         finally:
-            if schema_file.exists():
+            if original_content is not None:
+                schema_file.write_text(original_content)
+            elif schema_file.exists():
                 schema_file.unlink()
 
     def test_init_schema_auto_detect_not_found(self):
@@ -548,19 +553,21 @@ class TestInitSchema:
 
         # Ensure no schema.sql exists in search paths
         cwd = Path.cwd()
-        schema_file = cwd / "schema.sql"
-        if schema_file.exists():
-            # Temporarily rename it
-            schema_file.rename(cwd / "schema.sql.bak")
+        backups = []
+        for candidate in [cwd / "schema.sql", cwd / "migrations" / "schema.sql"]:
+            if candidate.exists():
+                bak = candidate.with_suffix(".sql.bak")
+                candidate.rename(bak)
+                backups.append((bak, candidate))
 
         try:
             with pytest.raises(FileNotFoundError) as exc_info:
                 init_schema()
             assert "schema.sql not found" in str(exc_info.value)
         finally:
-            # Restore if needed
-            if (cwd / "schema.sql.bak").exists():
-                (cwd / "schema.sql.bak").rename(schema_file)
+            for bak, original in backups:
+                if bak.exists():
+                    bak.rename(original)
 
 
 class TestCheckConnection:

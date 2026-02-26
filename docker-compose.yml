@@ -16,7 +16,7 @@ services:
       - "127.0.0.1:${VALENCE_DB_PORT:-5433}:5432"
     volumes:
       - valence-data:/var/lib/postgresql/data
-      - ./src/valence/substrate/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./migrations/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
       - ./src/valence/substrate/procedures.sql:/docker-entrypoint-initdb.d/02-procedures.sql:ro
       - ./migrations:/docker-entrypoint-initdb.d/migrations:ro
       - ./scripts/docker-apply-migrations.sh:/docker-entrypoint-initdb.d/03-migrations.sh:ro

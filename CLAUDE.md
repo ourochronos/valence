@@ -21,7 +21,7 @@ pip install -e .
 
 # Initialize database
 psql -c "CREATE DATABASE valence;"
-psql -d valence -f src/valence/substrate/schema.sql
+psql -d valence -f migrations/schema.sql
 psql -d valence -f src/valence/substrate/procedures.sql
 
 # Run HTTP MCP server (recommended for remote access)
@@ -210,7 +210,7 @@ All tools are served by the unified `valence` MCP server. All tools are always a
 
 ## Database
 
-PostgreSQL with pgvector. See `src/valence/substrate/schema.sql`.
+PostgreSQL with pgvector. See `migrations/schema.sql`.
 
 Key tables:
 - `beliefs` - Knowledge claims with confidence

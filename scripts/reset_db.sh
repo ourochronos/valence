@@ -8,7 +8,7 @@ DB_USER="${VALENCE_DB_USER:-valence}"
 DB_PASSWORD="${VALENCE_DB_PASSWORD:-valence}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCHEMA_FILE="$SCRIPT_DIR/../schema.sql"
+SCHEMA_FILE="$SCRIPT_DIR/../migrations/schema.sql"
 
 if [[ ! -f "$SCHEMA_FILE" ]]; then
     echo "ERROR: schema.sql not found at $SCHEMA_FILE"

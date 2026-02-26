@@ -45,7 +45,7 @@ createdb valence
 psql -d valence -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
 # Initialize schema
-psql -d valence -f src/valence/substrate/schema.sql
+psql -d valence -f migrations/schema.sql
 psql -d valence -f src/valence/substrate/procedures.sql
 
 # Install
@@ -196,7 +196,7 @@ This walks through: create beliefs, query, supersede, search entities, check tru
 - **[Error Codes](ERROR-CODES.md)** — All error codes and response formats
 - **[Rate Limits](RATE-LIMITS.md)** — Rate limiting configuration
 - **Architecture**: See `CLAUDE.md` in the repo root for full architecture documentation
-- **Schema**: `src/valence/substrate/schema.sql` defines all tables
+- **Schema**: `migrations/schema.sql` defines all tables
 - **Confidence Model**: Beliefs have 6 confidence dimensions, not just one score
 - **Federation**: Valence supports peer-to-peer knowledge sharing (advanced)
 - **HTTP Server**: For remote access: `valence-server` starts on port 8420
