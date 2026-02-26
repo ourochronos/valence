@@ -62,8 +62,11 @@ from .endpoints.sources import (
     sources_create_endpoint,
     sources_delete_endpoint,
     sources_get_endpoint,
+    sources_index_endpoint,
     sources_list_endpoint,
+    sources_region_endpoint,
     sources_search_endpoint,
+    sources_tree_endpoint,
 )
 from .metrics import MetricsMiddleware, metrics_endpoint
 from .session_endpoints import (
@@ -1193,6 +1196,9 @@ def create_app() -> Starlette:
         Route(f"{API_V1}/sources/search", sources_search_endpoint, methods=["POST"]),
         Route(f"{API_V1}/sources/{{source_id}}", sources_get_endpoint, methods=["GET"]),
         Route(f"{API_V1}/sources/{{source_id}}", sources_delete_endpoint, methods=["DELETE"]),
+        Route(f"{API_V1}/sources/{{source_id}}/index", sources_index_endpoint, methods=["POST"]),
+        Route(f"{API_V1}/sources/{{source_id}}/tree", sources_tree_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/sources/{{source_id}}/region", sources_region_endpoint, methods=["GET"]),
         # -----------------------------------------------------------------------
         # v2 Contentions endpoints
         # -----------------------------------------------------------------------

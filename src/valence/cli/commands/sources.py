@@ -61,6 +61,24 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     delete_p.add_argument("source_id", help="UUID of the source to delete")
     delete_p.set_defaults(func=cmd_sources_delete)
 
+    # --- index ---
+    index_p = sources_sub.add_parser("index", help="Build tree index for a source")
+    index_p.add_argument("source_id", help="UUID of the source to index")
+    index_p.add_argument("--force", action="store_true", help="Rebuild existing index")
+    index_p.set_defaults(func=cmd_sources_index)
+
+    # --- tree ---
+    tree_p = sources_sub.add_parser("tree", help="Get tree index for a source")
+    tree_p.add_argument("source_id", help="UUID of the source")
+    tree_p.set_defaults(func=cmd_sources_tree)
+
+    # --- region ---
+    region_p = sources_sub.add_parser("region", help="Get text region from a source by char offsets")
+    region_p.add_argument("source_id", help="UUID of the source")
+    region_p.add_argument("--start", type=int, required=True, help="Start character offset")
+    region_p.add_argument("--end", type=int, required=True, help="End character offset")
+    region_p.set_defaults(func=cmd_sources_region)
+
 
 # ---------------------------------------------------------------------------
 # Command handlers
@@ -161,4 +179,89 @@ def cmd_sources_delete(args: argparse.Namespace) -> int:
         return 1
     except ValenceAPIError as e:
         output_error(e.message)
+        return 1
+
+
+def cmd_sources_index(args: argparse.Namespace) -> int:
+    """Build tree index for a source."""
+    client = get_client()
+    try:
+        body = {"force": args.force}
+        result = client.post(f"/sources/{args.source_id}/index", json=body)
+        output_result(result)
+        data = result.get("data", {})
+        if data:
+            print(f"\n  Nodes: {data.get('node_count', '?')}")
+            print(f"  Method: {data.get('method', '?')}")
+            print(f"  Source tokens: ~{data.get('token_estimate', '?')}")
+            issues = data.get("issues", [])
+            if issues:
+                print(f"  Issues: {len(issues)}")
+                for issue in issues:
+                    print(f"    ⚠️  {issue}")
+        return 0
+    except ValenceConnectionError as exc:
+        output_error(f"Connection error: {exc}")
+        return 1
+    except ValenceAPIError as exc:
+        output_error(str(exc))
+        return 1
+
+
+def cmd_sources_tree(args: argparse.Namespace) -> int:
+    """Get tree index for a source."""
+
+    client = get_client()
+    try:
+        result = client.get(f"/sources/{args.source_id}/tree")
+        data = result.get("data", {})
+        if data:
+            # Pretty-print the tree structure
+            def print_tree(nodes, indent=0):
+                for node in nodes:
+                    prefix = "  " * indent
+                    title = node.get("title", "<untitled>")
+                    start = node.get("start_char", "?")
+                    end = node.get("end_char", "?")
+                    summary = node.get("summary", "")
+                    children = node.get("children", [])
+                    marker = "├──" if children else "└──"
+                    print(f"{prefix}{marker} [{start}:{end}] {title}")
+                    if summary:
+                        print(f"{prefix}    {summary}")
+                    if children:
+                        print_tree(children, indent + 1)
+
+            print_tree(data.get("nodes", []))
+        else:
+            output_result(result)
+        return 0
+    except ValenceConnectionError as exc:
+        output_error(f"Connection error: {exc}")
+        return 1
+    except ValenceAPIError as exc:
+        output_error(str(exc))
+        return 1
+
+
+def cmd_sources_region(args: argparse.Namespace) -> int:
+    """Get text region from a source by char offsets."""
+    client = get_client()
+    try:
+        result = client.get(
+            f"/sources/{args.source_id}/region",
+            params={"start": args.start, "end": args.end},
+        )
+        data = result.get("data", {})
+        if data:
+            print(data.get("text", ""))
+            print(f"\n--- [{data.get('start_char')}:{data.get('end_char')}] ~{data.get('token_estimate', '?')} tokens ---")
+        else:
+            output_result(result)
+        return 0
+    except ValenceConnectionError as exc:
+        output_error(f"Connection error: {exc}")
+        return 1
+    except ValenceAPIError as exc:
+        output_error(str(exc))
         return 1
