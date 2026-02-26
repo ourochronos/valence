@@ -106,7 +106,6 @@ jobs:
 
   integration:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
 
     services:
       postgres:
@@ -127,17 +126,21 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Set up Python 3.11
+        if: github.ref == 'refs/heads/main'
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
       - name: Install uv
+        if: github.ref == 'refs/heads/main'
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
 
       - name: Install dependencies
+        if: github.ref == 'refs/heads/main'
         run: ~/.local/bin/uv pip install -e ".[dev]" --system
 
       - name: Initialize test database
+        if: github.ref == 'refs/heads/main'
         env:
           PGHOST: localhost
           PGUSER: valence
@@ -147,6 +150,7 @@ jobs:
           psql -f schema.sql
 
       - name: Integration tests
+        if: github.ref == 'refs/heads/main'
         env:
           VALENCE_DB_HOST: localhost
           VALENCE_DB_PORT: "5432"
@@ -155,3 +159,7 @@ jobs:
           VALENCE_DB_NAME: valence_test
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: pytest tests/ -m "integration" -v --tb=short --timeout=60
+
+      - name: Skip notice
+        if: github.ref != 'refs/heads/main'
+        run: echo "Integration tests only run on main branch pushes"
