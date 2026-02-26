@@ -85,22 +85,37 @@ class TestMaintenance:
         resp = client.post("/api/v1/admin/maintenance", json={})
         assert resp.status_code == 400
 
-    @patch("valence.cli.utils.get_db_connection")
+    @patch("psycopg2.connect")
+    @patch("valence.core.db.get_connection_params")
     @patch("valence.core.maintenance.run_full_maintenance")
-    def test_run_all(self, mock_full, mock_conn, client):
+    @patch("valence.core.compilation.process_mutation_queue")
+    @patch("valence.core.usage.compute_usage_scores")
+    def test_run_all(self, mock_scores, mock_queue, mock_full, mock_params, mock_connect, client):
         from valence.core.maintenance import MaintenanceResult
+        from valence.core.response import ValenceResponse
 
-        mock_full.return_value = [
-            MaintenanceResult(operation="vacuum_analyze", details={}),
-        ]
+        # Mock v2 ops
+        mock_scores.return_value = ValenceResponse(success=True, data=10)
+        mock_queue.return_value = ValenceResponse(success=True, data=0)
+
+        # Mock legacy DB ops
+        mock_params.return_value = {"host": "localhost", "port": 5433, "dbname": "valence", "user": "valence", "password": "valence"}
         conn = MagicMock()
         conn.autocommit = False
         conn.cursor.return_value = MagicMock()
-        mock_conn.return_value = conn
+        mock_connect.return_value = conn
+        mock_full.return_value = [
+            MaintenanceResult(operation="vacuum_analyze", details={}),
+        ]
 
         resp = client.post("/api/v1/admin/maintenance", json={"all": True})
         assert resp.status_code == 200
-        assert resp.json()["count"] == 1
+        data = resp.json()
+        # 2 v2 ops + legacy results
+        assert data["count"] >= 3
+        ops = [r["operation"] for r in data["results"]]
+        assert "recompute_scores" in ops
+        assert "process_queue" in ops
 
 
 # =============================================================================

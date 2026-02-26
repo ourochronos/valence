@@ -33,7 +33,12 @@ async def admin_maintenance(request: Request) -> Response:
     """POST /api/v1/admin/maintenance — Run maintenance operations.
 
     JSON body fields (all optional booleans):
-        retention, archive, tombstones, compact, views, vacuum, all, dry_run
+        views, vacuum, all — legacy DB maintenance
+        recompute_scores — batch-recompute usage_score for all articles
+        process_queue — process pending mutation queue entries
+        evict_if_over_capacity — run organic forgetting
+        evict_count — max articles to evict (default 10)
+        dry_run — preview without changes
     """
     client = authenticate(request)
     if isinstance(client, JSONResponse):
@@ -50,53 +55,118 @@ async def admin_maintenance(request: Request) -> Response:
     dry_run = body.get("dry_run", False)
     run_all = body.get("all", False)
 
-    ops_requested = any(body.get(op) for op in ("views", "vacuum"))
-    if not run_all and not ops_requested:
-        return missing_field_error("at least one operation (views, vacuum, all)")
+    # v2 knowledge operations
+    v2_ops = any(body.get(op) for op in ("recompute_scores", "process_queue", "evict_if_over_capacity"))
+    # Legacy DB operations
+    legacy_ops = any(body.get(op) for op in ("views", "vacuum"))
+
+    if not run_all and not v2_ops and not legacy_ops:
+        return missing_field_error("at least one operation (all, views, vacuum, recompute_scores, process_queue, evict_if_over_capacity)")
 
     try:
-        from ..cli.utils import get_db_connection
-        from ..core.maintenance import (
-            MaintenanceResult,
-            refresh_views,
-            run_full_maintenance,
-            vacuum_analyze,
-        )
+        from ..core.maintenance import MaintenanceResult
 
-        conn = get_db_connection()
-        results: list[MaintenanceResult] = []
+        results: list[dict] = []
 
-        try:
-            if run_all:
-                if not dry_run:
-                    conn.autocommit = True
-                cur = conn.cursor()
-                results = run_full_maintenance(cur, dry_run=dry_run)
+        # --- v2 knowledge operations ---
+        if run_all or body.get("recompute_scores"):
+            if dry_run:
+                results.append({"operation": "recompute_scores", "dry_run": True, "note": "skipped in dry-run"})
             else:
-                cur = conn.cursor()
+                from ..core.usage import compute_usage_scores
 
-                if body.get("views") and not dry_run:
-                    results.append(refresh_views(cur))
-                elif body.get("views"):
-                    results.append(MaintenanceResult(operation="refresh_views", details={"note": "skipped in dry-run"}, dry_run=True))
-                if body.get("vacuum") and not dry_run:
-                    conn.autocommit = True
-                    results.append(vacuum_analyze(cur))
-                elif body.get("vacuum"):
-                    results.append(MaintenanceResult(operation="vacuum_analyze", details={"note": "skipped in dry-run"}, dry_run=True))
+                res = await compute_usage_scores()
+                results.append(
+                    {
+                        "operation": "recompute_scores",
+                        "dry_run": False,
+                        "success": res.success,
+                        **(res.data if isinstance(res.data, dict) and res.success else {"result": res.data} if res.success else {"error": res.error}),
+                    }
+                )
 
-                if not conn.autocommit:
-                    conn.commit()
-        finally:
-            cur.close()
-            conn.close()
+        if run_all or body.get("process_queue"):
+            if dry_run:
+                results.append({"operation": "process_queue", "dry_run": True, "note": "skipped in dry-run"})
+            else:
+                from ..core.compilation import process_mutation_queue
 
-        result_dicts = [{"operation": r.operation, "dry_run": r.dry_run, **r.details} for r in results]
+                res = await process_mutation_queue()
+                results.append(
+                    {
+                        "operation": "process_queue",
+                        "dry_run": False,
+                        "success": res.success,
+                        **(res.data if isinstance(res.data, dict) and res.success else {"result": res.data} if res.success else {"error": res.error}),
+                    }
+                )
+
+        if body.get("evict_if_over_capacity"):
+            evict_count = body.get("evict_count", 10)
+            if dry_run:
+                results.append({"operation": "evict_if_over_capacity", "dry_run": True, "note": "skipped in dry-run"})
+            else:
+                from ..core.forgetting import evict_lowest
+
+                res = await evict_lowest(count=evict_count)
+                results.append(
+                    {
+                        "operation": "evict_if_over_capacity",
+                        "dry_run": False,
+                        "success": res.success,
+                        **(res.data if isinstance(res.data, dict) and res.success else {"result": res.data} if res.success else {"error": res.error}),
+                    }
+                )
+
+        # --- Legacy DB maintenance ---
+        if run_all or legacy_ops:
+            import psycopg2
+            import psycopg2.extras
+
+            from ..core.db import get_connection_params
+            from ..core.maintenance import (
+                refresh_views,
+                run_full_maintenance,
+                vacuum_analyze,
+            )
+
+            params = get_connection_params()
+            conn = psycopg2.connect(
+                cursor_factory=psycopg2.extras.RealDictCursor,
+                **params,
+            )
+            legacy_results: list[MaintenanceResult] = []
+            try:
+                if run_all:
+                    if not dry_run:
+                        conn.autocommit = True
+                    cur = conn.cursor()
+                    legacy_results = run_full_maintenance(cur, dry_run=dry_run)
+                    cur.close()
+                else:
+                    cur = conn.cursor()
+                    if body.get("views") and not dry_run:
+                        legacy_results.append(refresh_views(cur))
+                    elif body.get("views"):
+                        legacy_results.append(MaintenanceResult(operation="refresh_views", details={"note": "skipped in dry-run"}, dry_run=True))
+                    if body.get("vacuum") and not dry_run:
+                        conn.autocommit = True
+                        legacy_results.append(vacuum_analyze(cur))
+                    elif body.get("vacuum"):
+                        legacy_results.append(MaintenanceResult(operation="vacuum_analyze", details={"note": "skipped in dry-run"}, dry_run=True))
+                    if not conn.autocommit:
+                        conn.commit()
+                    cur.close()
+
+                for r in legacy_results:
+                    results.append({"operation": r.operation, "dry_run": r.dry_run, **r.details})
+            finally:
+                conn.close()
 
         result = {
             "success": True,
-            "results": result_dicts,
-            "count": len(result_dicts),
+            "results": results,
+            "count": len(results),
             "dry_run": dry_run,
         }
         return format_response(result, output_format, text_formatter=format_maintenance_text)
