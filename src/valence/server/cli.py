@@ -209,7 +209,7 @@ def main() -> int:
     parser.add_argument(
         "--token-file",
         type=Path,
-        default=Path("/opt/valence/config/tokens.json"),
+        default=Path.home() / ".valence" / "tokens.json",
         help="Path to token storage file",
     )
 
