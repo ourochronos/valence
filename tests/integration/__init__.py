@@ -23,7 +23,7 @@ Running Integration Tests:
 
 Environment Variables:
     VALENCE_DB_HOST: Database host (default: localhost)
-    VALENCE_DB_PORT: Database port (default: 5433 for docker, 5432 for CI)
+    VALENCE_DB_PORT: Database port (default: 5433)
     VALENCE_DB_NAME: Database name (default: valence_test)
     VALENCE_DB_USER: Database user (default: valence)
     VALENCE_DB_PASSWORD: Database password (default: testpass)
