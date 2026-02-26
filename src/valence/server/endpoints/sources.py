@@ -246,3 +246,89 @@ async def sources_delete_endpoint(request: Request) -> JSONResponse:
     except Exception:
         logger.exception("Error deleting source %s", source_id)
         return internal_error()
+
+
+async def sources_index_endpoint(request: Request) -> JSONResponse:
+    """POST /api/v1/sources/{source_id}/index — Build tree index for a source."""
+    client = authenticate(request)
+    if isinstance(client, JSONResponse):
+        return client
+    if err := require_scope(client, "substrate:write"):
+        return err
+
+    source_id = request.path_params.get("source_id")
+    if not source_id:
+        return missing_field_error("source_id")
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    force = body.get("force", False)
+    window_tokens = body.get("window_tokens")
+
+    try:
+        from ...core.tree_index import build_tree_index
+
+        kwargs: dict = {"source_id": source_id, "force": force}
+        if window_tokens is not None:
+            kwargs["window_tokens"] = int(window_tokens)
+
+        result = await build_tree_index(**kwargs)
+        status = 200 if result.success else 400
+        return JSONResponse(result.to_dict(), status_code=status)
+
+    except Exception:
+        logger.exception("Error building tree index for source %s", source_id)
+        return internal_error()
+
+
+async def sources_tree_endpoint(request: Request) -> JSONResponse:
+    """GET /api/v1/sources/{source_id}/tree — Get tree index for a source."""
+    client = authenticate(request)
+    if isinstance(client, JSONResponse):
+        return client
+
+    source_id = request.path_params.get("source_id")
+    if not source_id:
+        return missing_field_error("source_id")
+
+    try:
+        from ...core.tree_index import get_tree_index
+
+        result = await get_tree_index(source_id)
+        status = 200 if result.success else 404
+        return JSONResponse(result.to_dict(), status_code=status)
+
+    except Exception:
+        logger.exception("Error getting tree index for source %s", source_id)
+        return internal_error()
+
+
+async def sources_region_endpoint(request: Request) -> JSONResponse:
+    """GET /api/v1/sources/{source_id}/region — Get text region by char offsets."""
+    client = authenticate(request)
+    if isinstance(client, JSONResponse):
+        return client
+
+    source_id = request.path_params.get("source_id")
+    if not source_id:
+        return missing_field_error("source_id")
+
+    try:
+        start_char = int(request.query_params.get("start", 0))
+        end_char = int(request.query_params.get("end", 0))
+    except (TypeError, ValueError):
+        return missing_field_error("start and end must be integers")
+
+    try:
+        from ...core.tree_index import get_tree_region
+
+        result = await get_tree_region(source_id, start_char, end_char)
+        status = 200 if result.success else 400
+        return JSONResponse(result.to_dict(), status_code=status)
+
+    except Exception:
+        logger.exception("Error getting region for source %s", source_id)
+        return internal_error()
