@@ -59,13 +59,13 @@ def cmd_search(args: argparse.Namespace) -> int:
         if not args.sources_only:
             article_body = {"query": args.query, "limit": args.limit}
             articles_result = client.post("/articles/search", body=article_body)
-            results["articles"] = articles_result.get("results", [])
+            results["articles"] = articles_result.get("articles", articles_result.get("results", []))
 
         # Search sources unless articles-only
         if not args.articles_only:
             source_body = {"query": args.query, "limit": args.limit}
             sources_result = client.post("/sources/search", body=source_body)
-            results["sources"] = sources_result.get("results", [])
+            results["sources"] = sources_result.get("sources", sources_result.get("results", []))
 
         # Output combined results
         output_result(results)

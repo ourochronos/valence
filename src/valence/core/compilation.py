@@ -189,12 +189,18 @@ def _build_compilation_prompt(sources: list[dict], title_hint: str | None, targe
 
     schema = TASK_OUTPUT_SCHEMAS[TASK_COMPILE]
 
-    return f"""You are compiling a knowledge article from the following sources.{title_line}
+    return f"""You are compiling knowledge articles from the following sources.{title_line}
 
-Write a coherent, concise article that synthesizes the key information.
-Target approximately {target_tokens} tokens (words × 1.3). Stay under {target_tokens + 500} tokens.
+Produce ONE OR MORE coherent, concise articles that synthesize the key information.
+Each article should target approximately {target_tokens} tokens (words × 1.3).
+If the source material covers multiple distinct topics, split into separate articles — one per topic.
+If the material is focused on a single topic, produce exactly one article.
 
-IMPORTANT: Each article should cover ONE coherent topic. Use a descriptive title that reflects the article's actual content — never use generic titles like "part 1", "part 2", or sequential numbering.
+IMPORTANT:
+- Each article should cover ONE coherent topic.
+- Use descriptive titles that reflect each article's actual content.
+- Never use generic titles like "part 1", "part 2", or sequential numbering.
+- Every source_id must appear in at least one article's source_relationships.
 
 For each source, identify its relationship to the compiled article content:
 - "originates": source introduced the article's core information
@@ -392,111 +398,136 @@ async def compile_article(
         is_degraded = True
         content_parts = [f"## {s.get('title') or 'Source'}\n{s.get('content', '')}" for s in sources]
         parsed = {
-            "title": title_hint or (sources[0].get("title") if sources else "Compiled Article"),
-            "content": "\n\n".join(content_parts),
-            "source_relationships": [{"source_id": s["id"], "relationship": "originates"} for s in sources],
+            "articles": [
+                {
+                    "title": title_hint or (sources[0].get("title") if sources else "Compiled Article"),
+                    "content": "\n\n".join(content_parts),
+                    "source_relationships": [{"source_id": s["id"], "relationship": "originates"} for s in sources],
+                }
+            ],
         }
 
-    article_content: str = parsed.get("content") or ""
-    article_title: str | None = parsed.get("title") or title_hint
+    # Normalize: support both v2 (single article) and v3 (articles array) response formats
+    if "articles" in parsed:
+        articles_data = parsed["articles"]
+    else:
+        # Legacy single-article response
+        articles_data = [parsed]
 
-    # Map source_id → relationship from source_relationships list
-    relationships_by_source_id: dict[str, str] = {}
-    for rel_item in parsed.get("source_relationships", []):
-        sid = rel_item.get("source_id")
-        rel = rel_item.get("relationship", "originates")
-        if rel not in RELATIONSHIP_ENUM:
-            rel = "originates"
-        if sid:
-            relationships_by_source_id[str(sid)] = rel
+    if not articles_data:
+        return err("LLM returned empty articles array")
 
-    token_count = _count_tokens(article_content)
+    created_articles = []
 
-    # ---- Create article, link sources, record mutation ----
-    with get_cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO articles
-                (content, title, author_type, domain_path, size_tokens, confidence,
-                 content_hash, compiled_at)
-            VALUES (%s, %s, 'system', '{}', %s, %s::jsonb, md5(%s), NOW())
-            RETURNING *
-            """,
-            (
-                article_content,
-                article_title,
-                token_count,
-                json.dumps({"overall": 0.7}),
-                article_content,
-            ),
-        )
-        row = cur.fetchone()
-        article = _serialize_row(dict(row))
-        article_id = article["id"]
+    for article_data in articles_data:
+        article_content: str = article_data.get("content") or ""
+        article_title: str | None = article_data.get("title") or title_hint
 
-        # Link each source with its identified relationship
-        for src in sources:
-            rel = relationships_by_source_id.get(src["id"], "originates")
-            try:
-                cur.execute(
-                    """
-                    INSERT INTO article_sources (article_id, source_id, relationship)
-                    VALUES (%s, %s, %s)
-                    ON CONFLICT (article_id, source_id, relationship) DO NOTHING
-                    """,
-                    (article_id, src["id"], rel),
-                )
-            except Exception as exc:  # pragma: no cover
-                logger.warning("Failed to link source %s to article %s: %s", src["id"], article_id, exc)
+        # Map source_id → relationship from source_relationships list
+        relationships_by_source_id: dict[str, str] = {}
+        for rel_item in article_data.get("source_relationships", []):
+            sid = rel_item.get("source_id")
+            rel = rel_item.get("relationship", "originates")
+            if rel not in RELATIONSHIP_ENUM:
+                rel = "originates"
+            if sid:
+                relationships_by_source_id[str(sid)] = rel
 
-        # Record 'created' mutation
-        cur.execute(
-            """
-            INSERT INTO article_mutations (mutation_type, article_id, summary)
-            VALUES ('created', %s, %s)
-            """,
-            (article_id, f"Compiled from {len(sources)} source(s) via LLM"),
-        )
+        token_count = _count_tokens(article_content)
 
-        # Queue split if article exceeds max_tokens (DR-6: never split inline)
-        if token_count > max_tokens:
+        # ---- Create article, link sources, record mutation ----
+        with get_cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO mutation_queue (operation, article_id, priority, payload)
-                VALUES ('split', %s, 3, %s::jsonb)
+                INSERT INTO articles
+                    (content, title, author_type, domain_path, size_tokens, confidence,
+                     content_hash, compiled_at)
+                VALUES (%s, %s, 'system', '{}', %s, %s::jsonb, md5(%s), NOW())
+                RETURNING *
                 """,
                 (
-                    article_id,
-                    json.dumps({"reason": "exceeds_max_tokens", "token_count": token_count}),
+                    article_content,
+                    article_title,
+                    token_count,
+                    json.dumps({"overall": 0.7}),
+                    article_content,
                 ),
             )
-            logger.info("Article %s queued for split (tokens=%d > max=%d)", article_id, token_count, max_tokens)
+            row = cur.fetchone()
+            article = _serialize_row(dict(row))
+            article_id = article["id"]
 
-        # DR-9: Mark degraded articles and queue for reprocessing (WU-13).
-        if is_degraded:
-            try:
-                cur.execute(
-                    "UPDATE articles SET degraded = TRUE WHERE id = %s",
-                    (article_id,),
-                )
+            # Link each source with its identified relationship
+            for src in sources:
+                rel = relationships_by_source_id.get(src["id"], "originates")
+                try:
+                    cur.execute(
+                        """
+                        INSERT INTO article_sources (article_id, source_id, relationship)
+                        VALUES (%s, %s, %s)
+                        ON CONFLICT (article_id, source_id, relationship) DO NOTHING
+                        """,
+                        (article_id, src["id"], rel),
+                    )
+                except Exception as exc:  # pragma: no cover
+                    logger.warning("Failed to link source %s to article %s: %s", src["id"], article_id, exc)
+
+            # Record 'created' mutation
+            cur.execute(
+                """
+                INSERT INTO article_mutations (mutation_type, article_id, summary)
+                VALUES ('created', %s, %s)
+                """,
+                (article_id, f"Compiled from {len(sources)} source(s) via LLM"),
+            )
+
+            # Queue split if article exceeds max_tokens (DR-6: never split inline)
+            if token_count > max_tokens:
                 cur.execute(
                     """
                     INSERT INTO mutation_queue (operation, article_id, priority, payload)
-                    VALUES ('recompile_degraded', %s, 5, %s::jsonb)
+                    VALUES ('split', %s, 3, %s::jsonb)
                     """,
                     (
                         article_id,
-                        json.dumps({"reason": "inference_unavailable_at_compile_time"}),
+                        json.dumps({"reason": "exceeds_max_tokens", "token_count": token_count}),
                     ),
                 )
-                logger.info(
-                    "Article %s marked degraded; queued for recompile when inference available",
-                    article_id,
-                )
-            except Exception as exc:  # pragma: no cover
-                logger.warning("Failed to mark article %s as degraded: %s", article_id, exc)
+                logger.info("Article %s queued for split (tokens=%d > max=%d)", article_id, token_count, max_tokens)
 
-    return ok(data=article, degraded=is_degraded)
+            # DR-9: Mark degraded articles and queue for reprocessing (WU-13).
+            if is_degraded:
+                try:
+                    cur.execute(
+                        "UPDATE articles SET degraded = TRUE WHERE id = %s",
+                        (article_id,),
+                    )
+                    cur.execute(
+                        """
+                        INSERT INTO mutation_queue (operation, article_id, priority, payload)
+                        VALUES ('recompile_degraded', %s, 5, %s::jsonb)
+                        """,
+                        (
+                            article_id,
+                            json.dumps({"reason": "inference_unavailable_at_compile_time"}),
+                        ),
+                    )
+                    logger.info(
+                        "Article %s marked degraded; queued for recompile when inference available",
+                        article_id,
+                    )
+                except Exception as exc:  # pragma: no cover
+                    logger.warning("Failed to mark article %s as degraded: %s", article_id, exc)
+
+            created_articles.append(article)
+
+    # Return first article for backward compatibility, include all in data
+    first_article = created_articles[0]
+    if len(created_articles) > 1:
+        first_article["_all_articles"] = created_articles
+        logger.info("Compiled %d articles from %d sources", len(created_articles), len(sources))
+
+    return ok(data=first_article, degraded=is_degraded)
 
 
 async def update_article_from_source(
@@ -932,12 +963,23 @@ async def recompile_article(article_id: str) -> ValenceResponse:
         logger.warning("LLM recompilation failed (%s), marking degraded", exc)
         return err(f"Recompilation failed: {exc}")
 
-    article_content: str = parsed.get("content") or ""
-    article_title: str | None = parsed.get("title") or article.get("title")
+    # Normalize: support both v2 (single article) and v3 (articles array) response formats
+    if "articles" in parsed:
+        articles_data = parsed["articles"]
+    else:
+        articles_data = [parsed]
 
-    # Map source relationships
+    if not articles_data:
+        return err("LLM returned empty articles array during recompile")
+
+    # First article updates the existing article in-place
+    first = articles_data[0]
+    article_content: str = first.get("content") or ""
+    article_title: str | None = first.get("title") or article.get("title")
+
+    # Map source relationships for the first article
     relationships_by_source_id: dict[str, str] = {}
-    for rel_item in parsed.get("source_relationships", []):
+    for rel_item in first.get("source_relationships", []):
         sid = rel_item.get("source_id")
         rel = rel_item.get("relationship", "originates")
         if rel not in RELATIONSHIP_ENUM:
@@ -1007,6 +1049,63 @@ async def recompile_article(article_id: str) -> ValenceResponse:
                 ),
             )
             logger.info("Article %s queued for split after recompile (tokens=%d > max=%d)", article_id, token_count, max_tokens)
+
+    # Create additional articles if LLM produced multiple
+    extra_articles = []
+    for extra in articles_data[1:]:
+        extra_content = extra.get("content") or ""
+        extra_title = extra.get("title") or "Untitled"
+        extra_rels: dict[str, str] = {}
+        for rel_item in extra.get("source_relationships", []):
+            sid = rel_item.get("source_id")
+            rel = rel_item.get("relationship", "originates")
+            if rel not in RELATIONSHIP_ENUM:
+                rel = "originates"
+            if sid:
+                extra_rels[str(sid)] = rel
+
+        extra_tokens = _count_tokens(extra_content)
+        with get_cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO articles
+                    (content, title, author_type, domain_path, size_tokens, confidence,
+                     content_hash, compiled_at)
+                VALUES (%s, %s, 'system', '{}', %s, %s::jsonb, md5(%s), NOW())
+                RETURNING *
+                """,
+                (extra_content, extra_title, extra_tokens, json.dumps({"overall": 0.7}), extra_content),
+            )
+            row = cur.fetchone()
+            new_article = _serialize_row(dict(row))
+            new_id = new_article["id"]
+
+            for src in sources:
+                rel = extra_rels.get(src["id"], "originates")
+                try:
+                    cur.execute(
+                        "INSERT INTO article_sources (article_id, source_id, relationship) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+                        (new_id, src["id"], rel),
+                    )
+                except Exception:
+                    pass
+
+            cur.execute(
+                "INSERT INTO article_mutations (mutation_type, article_id, summary) VALUES ('created', %s, %s)",
+                (new_id, f"Created during recompile of {article_id} (multi-article output)"),
+            )
+
+            if extra_tokens > max_tokens:
+                cur.execute(
+                    "INSERT INTO mutation_queue (operation, article_id, priority, payload) VALUES ('split', %s, 3, %s::jsonb)",
+                    (new_id, json.dumps({"reason": "exceeds_max_tokens", "token_count": extra_tokens})),
+                )
+
+            extra_articles.append(new_article)
+
+    if extra_articles:
+        updated_article["_extra_articles"] = extra_articles
+        logger.info("Recompile of %s produced %d additional articles", article_id, len(extra_articles))
 
     return ok(data=updated_article)
 

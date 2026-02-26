@@ -46,7 +46,7 @@ RELATIONSHIP_ENUM = ["originates", "confirms", "supersedes", "contradicts", "con
 
 # Maps task_type → list of required output keys
 _TASK_REQUIRED_OUTPUT_FIELDS: dict[str, list[str]] = {
-    TASK_COMPILE: ["title", "content", "source_relationships"],
+    TASK_COMPILE: ["articles"],
     TASK_UPDATE: ["content", "relationship", "changes_summary"],
     TASK_CLASSIFY: ["relationship", "confidence", "reasoning"],
     TASK_CONTENTION: ["is_contention", "materiality", "explanation"],
@@ -65,10 +65,14 @@ _TASK_RELATIONSHIP_FIELDS: dict[str, list[str]] = {
 # Output schema descriptions — used in prompt builders
 TASK_OUTPUT_SCHEMAS: dict[str, str] = {
     TASK_COMPILE: """{
-  "title": "<article title>",
-  "content": "<article content>",
-  "source_relationships": [
-    {"source_id": "<source_id>", "relationship": "originates|confirms|supersedes|contradicts|contends"}
+  "articles": [
+    {
+      "title": "<descriptive article title>",
+      "content": "<article content>",
+      "source_relationships": [
+        {"source_id": "<source_id>", "relationship": "originates|confirms|supersedes|contradicts|contends"}
+      ]
+    }
   ]
 }""",
     TASK_UPDATE: """{
@@ -168,17 +172,28 @@ def validate_output(task_type: str, raw_json: str) -> dict:
 
     # Task-specific extra validation
     if task_type == TASK_COMPILE:
-        source_rels = parsed.get("source_relationships", [])
-        if not isinstance(source_rels, list):
-            raise InferenceSchemaError(f"[{task_type}] 'source_relationships' must be a list, got {type(source_rels).__name__}")
-        for i, item in enumerate(source_rels):
-            if not isinstance(item, dict):
-                raise InferenceSchemaError(f"[{task_type}] source_relationships[{i}] must be an object")
-            rel = item.get("relationship")
-            if rel is not None and rel not in RELATIONSHIP_ENUM:
-                raise InferenceSchemaError(
-                    f"[{task_type}] source_relationships[{i}].relationship has invalid value {rel!r}; must be one of {RELATIONSHIP_ENUM}"
-                )
+        articles_list = parsed.get("articles", [])
+        if not isinstance(articles_list, list):
+            raise InferenceSchemaError(f"[{task_type}] 'articles' must be a list, got {type(articles_list).__name__}")
+        if not articles_list:
+            raise InferenceSchemaError(f"[{task_type}] 'articles' must contain at least one article")
+        for ai, art in enumerate(articles_list):
+            if not isinstance(art, dict):
+                raise InferenceSchemaError(f"[{task_type}] articles[{ai}] must be an object")
+            for req in ("title", "content"):
+                if req not in art:
+                    raise InferenceSchemaError(f"[{task_type}] articles[{ai}] missing required field {req!r}")
+            source_rels = art.get("source_relationships", [])
+            if not isinstance(source_rels, list):
+                raise InferenceSchemaError(f"[{task_type}] articles[{ai}].source_relationships must be a list")
+            for i, item in enumerate(source_rels):
+                if not isinstance(item, dict):
+                    raise InferenceSchemaError(f"[{task_type}] articles[{ai}].source_relationships[{i}] must be an object")
+                rel = item.get("relationship")
+                if rel is not None and rel not in RELATIONSHIP_ENUM:
+                    raise InferenceSchemaError(
+                        f"[{task_type}] articles[{ai}].source_relationships[{i}].relationship has invalid value {rel!r}; must be one of {RELATIONSHIP_ENUM}"
+                    )
 
     if task_type == TASK_SPLIT:
         si = parsed.get("split_index")
