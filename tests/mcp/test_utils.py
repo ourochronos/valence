@@ -66,7 +66,7 @@ class TestRunAsync:
 
         assert result == "result"
         mock_pool.submit.assert_called_once()
-        mock_future.result.assert_called_once_with(timeout=120)
+        mock_future.result.assert_called_once_with(timeout=600)
 
     def test_run_async_timeout(self):
         """Test run_async with timeout."""
