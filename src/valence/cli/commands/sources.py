@@ -187,7 +187,7 @@ def cmd_sources_index(args: argparse.Namespace) -> int:
     client = get_client()
     try:
         body = {"force": args.force}
-        result = client.post(f"/sources/{args.source_id}/index", json=body)
+        result = client.post(f"/sources/{args.source_id}/index", body=body)
         output_result(result)
         data = result.get("data", {})
         if data:

@@ -213,7 +213,7 @@ async def _build_tree_windowed(source_text: str, window_tokens: int = DEFAULT_WI
     overlap_chars = int(window_chars * WINDOW_OVERLAP)
     step = window_chars - overlap_chars
 
-    local_trees = []
+    local_trees: list[dict] = []
     offset = 0
 
     while offset < len(source_text):
