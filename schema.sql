@@ -67,6 +67,7 @@ CREATE TABLE public.articles (
     title text,
     author_type text DEFAULT 'system'::text NOT NULL,
     pinned boolean DEFAULT false NOT NULL,
+    epistemic_type text DEFAULT 'semantic' NOT NULL,
     size_tokens integer,
     compiled_at timestamp with time zone,
     usage_score numeric(8,4) DEFAULT 0 NOT NULL,

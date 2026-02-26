@@ -201,6 +201,10 @@ IMPORTANT:
 - Use descriptive titles that reflect each article's actual content.
 - Never use generic titles like "part 1", "part 2", or sequential numbering.
 - Every source_id must appear in at least one article's source_relationships.
+- Classify each article's epistemic_type:
+  - "episodic": temporal/event-based — what happened, session logs, meeting notes (decays over time)
+  - "semantic": factual/persistent — what is true, config details, architecture decisions (persists until superseded)
+  - "procedural": instructional — how to do something, runbooks, setup guides (pinned, updated explicitly)
 
 For each source, identify its relationship to the compiled article content:
 - "originates": source introduced the article's core information
@@ -433,6 +437,11 @@ async def compile_article(
             if sid:
                 relationships_by_source_id[str(sid)] = rel
 
+        # Epistemic type classification
+        epistemic_type = article_data.get("epistemic_type", "semantic")
+        if epistemic_type not in ("episodic", "semantic", "procedural"):
+            epistemic_type = "semantic"
+
         token_count = _count_tokens(article_content)
 
         # ---- Create article, link sources, record mutation ----
@@ -441,8 +450,8 @@ async def compile_article(
                 """
                 INSERT INTO articles
                     (content, title, author_type, domain_path, size_tokens, confidence,
-                     content_hash, compiled_at)
-                VALUES (%s, %s, 'system', '{}', %s, %s::jsonb, md5(%s), NOW())
+                     content_hash, epistemic_type, compiled_at)
+                VALUES (%s, %s, 'system', '{}', %s, %s::jsonb, md5(%s), %s, NOW())
                 RETURNING *
                 """,
                 (
@@ -451,6 +460,7 @@ async def compile_article(
                     token_count,
                     json.dumps({"overall": 0.7}),
                     article_content,
+                    epistemic_type,
                 ),
             )
             row = cur.fetchone()
@@ -1064,17 +1074,21 @@ async def recompile_article(article_id: str) -> ValenceResponse:
             if sid:
                 extra_rels[str(sid)] = rel
 
+        extra_ep_type = extra.get("epistemic_type", "semantic")
+        if extra_ep_type not in ("episodic", "semantic", "procedural"):
+            extra_ep_type = "semantic"
+
         extra_tokens = _count_tokens(extra_content)
         with get_cursor() as cur:
             cur.execute(
                 """
                 INSERT INTO articles
                     (content, title, author_type, domain_path, size_tokens, confidence,
-                     content_hash, compiled_at)
-                VALUES (%s, %s, 'system', '{}', %s, %s::jsonb, md5(%s), NOW())
+                     content_hash, epistemic_type, compiled_at)
+                VALUES (%s, %s, 'system', '{}', %s, %s::jsonb, md5(%s), %s, NOW())
                 RETURNING *
                 """,
-                (extra_content, extra_title, extra_tokens, json.dumps({"overall": 0.7}), extra_content),
+                (extra_content, extra_title, extra_tokens, json.dumps({"overall": 0.7}), extra_content, extra_ep_type),
             )
             row = cur.fetchone()
             new_article = _serialize_row(dict(row))
