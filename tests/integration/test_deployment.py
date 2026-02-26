@@ -17,7 +17,7 @@ import psycopg2
 import pytest
 
 DB_HOST = os.environ.get("VALENCE_DB_HOST", "localhost")
-DB_PORT = int(os.environ.get("VALENCE_DB_PORT", "5432"))
+DB_PORT = int(os.environ.get("VALENCE_DB_PORT", "5433"))
 DB_NAME = os.environ.get("VALENCE_DB_NAME", "valence_test")
 DB_USER = os.environ.get("VALENCE_DB_USER", "valence")
 DB_PASS = os.environ.get("VALENCE_DB_PASSWORD", "")
