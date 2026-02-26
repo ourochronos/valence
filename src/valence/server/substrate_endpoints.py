@@ -95,6 +95,7 @@ async def beliefs_create_endpoint(request: Request) -> JSONResponse:
             title=body.get("title"),
             source_ids=body.get("source_ids"),
             domain_path=body.get("domain_path"),
+            epistemic_type=body.get("epistemic_type", "semantic"),
         )
         status_code = 201 if result.get("success") else 400
         return JSONResponse(result, status_code=status_code)
@@ -201,6 +202,7 @@ async def beliefs_supersede_endpoint(request: Request) -> JSONResponse:
         result = article_update(
             article_id=belief_id,
             content=new_content,
+            epistemic_type=body.get("epistemic_type"),
         )
         status_code = 200 if result.get("success") else 404
         return JSONResponse(result, status_code=status_code)
