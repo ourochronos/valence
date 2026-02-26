@@ -88,14 +88,16 @@ async def sources_create_endpoint(request: Request) -> JSONResponse:
         from ...core.exceptions import ConflictError, ValidationException
         from ...core.sources import ingest_source
 
-        source = await ingest_source(
+        result = await ingest_source(
             content=content,
             source_type=source_type,
             title=body.get("title"),
             url=body.get("url"),
             metadata=body.get("metadata"),
         )
-        return _json_response({"success": True, "source": source}, status_code=201)
+        if not result.success:
+            return _json_response({"success": False, "error": result.error}, status_code=400)
+        return _json_response({"success": True, "source": result.data}, status_code=201)
 
     except ConflictError as e:
         return conflict_error(e.message)
@@ -129,8 +131,8 @@ async def sources_get_endpoint(request: Request) -> JSONResponse:
         from ...core.exceptions import NotFoundError
         from ...core.sources import get_source
 
-        source = await get_source(source_id)
-        return _json_response({"success": True, "source": source})
+        result = await get_source(source_id)
+        return _json_response({"success": True, "source": result.data})
 
     except NotFoundError:
         return not_found_error(f"source {source_id}")
