@@ -127,11 +127,6 @@ export VKB_DB_PORT=$PORT
 export VKB_DB_NAME=$DB_NAME
 export VKB_DB_USER=$DB_USER
 export VKB_DB_PASSWORD=$DB_PASS
-export ORO_DB_HOST=localhost
-export ORO_DB_PORT=$PORT
-export ORO_DB_NAME=$DB_NAME
-export ORO_DB_USER=$DB_USER
-export ORO_DB_PASSWORD=$DB_PASS
 EOF
 }
 
