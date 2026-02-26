@@ -17,7 +17,7 @@ import json
 import logging
 from datetime import UTC
 
-from valence.core.compilation import _call_llm
+from valence.core.compilation import TASK_COMPILE, _call_llm
 from valence.core.db import get_cursor
 
 from .response import ValenceResponse, err, ok
@@ -41,7 +41,6 @@ WINDOW_OVERLAP = 0.20
 CHARS_PER_TOKEN = 3.5
 
 # Task type for inference provider routing
-TASK_INDEX = "tree_index"
 
 # ---------------------------------------------------------------------------
 # Prompts
@@ -150,6 +149,17 @@ Return ONLY valid JSON with the same node schema:
 # ---------------------------------------------------------------------------
 
 
+def _extract_json(text: str) -> dict:
+    """Extract JSON from LLM response, handling markdown code blocks."""
+    text = text.strip()
+    # Strip markdown code fences
+    if text.startswith("```"):
+        # Remove first line (```json or ```) and last line (```)
+        lines = text.split("\n")
+        text = "\n".join(lines[1:-1]).strip()
+    return json.loads(text)
+
+
 def _estimate_tokens(text: str) -> int:
     """Rough token estimate from character count."""
     return int(len(text) / CHARS_PER_TOKEN)
@@ -192,8 +202,8 @@ async def _build_tree_single(source_text: str) -> dict:
         source_text=source_text,
     )
 
-    response = await _call_llm(prompt, task_type=TASK_INDEX)
-    tree = json.loads(response)
+    response = await _call_llm(prompt, task_type=TASK_COMPILE)
+    tree = _extract_json(response)
     return tree
 
 
@@ -222,8 +232,8 @@ async def _build_tree_windowed(source_text: str, window_tokens: int = DEFAULT_WI
             window_text=window_text,
         )
 
-        response = await _call_llm(prompt, task_type=TASK_INDEX)
-        local_tree = json.loads(response)
+        response = await _call_llm(prompt, task_type=TASK_COMPILE)
+        local_tree = _extract_json(response)
         local_trees.append(local_tree)
 
         logger.info(
@@ -247,8 +257,8 @@ async def _build_tree_windowed(source_text: str, window_tokens: int = DEFAULT_WI
     # If merge input fits in context, single merge call
     if _estimate_tokens(local_trees_json) < window_tokens:
         prompt = MERGE_PROMPT.format(local_trees_json=local_trees_json)
-        response = await _call_llm(prompt, task_type=TASK_INDEX)
-        return json.loads(response)
+        response = await _call_llm(prompt, task_type=TASK_COMPILE)
+        return _extract_json(response)
 
     # Recursive merge for very large sources
     # Group local trees and merge in batches
@@ -258,14 +268,14 @@ async def _build_tree_windowed(source_text: str, window_tokens: int = DEFAULT_WI
         group = local_trees[i : i + group_size]
         group_json = json.dumps(group, indent=2)
         prompt = MERGE_PROMPT.format(local_trees_json=group_json)
-        response = await _call_llm(prompt, task_type=TASK_INDEX)
-        merged_groups.append(json.loads(response))
+        response = await _call_llm(prompt, task_type=TASK_COMPILE)
+        merged_groups.append(_extract_json(response))
 
     # Final merge of merged groups
     final_json = json.dumps(merged_groups, indent=2)
     prompt = MERGE_PROMPT.format(local_trees_json=final_json)
-    response = await _call_llm(prompt, task_type=TASK_INDEX)
-    return json.loads(response)
+    response = await _call_llm(prompt, task_type=TASK_COMPILE)
+    return _extract_json(response)
 
 
 # ---------------------------------------------------------------------------
