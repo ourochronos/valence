@@ -354,28 +354,27 @@ Respond ONLY with valid JSON matching this exact schema (no markdown fences):
 
 
 async def split_article(article_id: str) -> ValenceResponse:
-    """Split an oversized article into two articles using topic-aware splitting.
+    """Split an oversized article by recompiling from its original sources.
 
-    Uses LLM inference (TASK_SPLIT) to identify the best split point based on
-    topic boundaries, not mechanical character counts. The original article is
-    ARCHIVED (status='archived'), and two new articles are created with
-    descriptive titles.
+    Instead of mechanically dividing article content (which creates copies-of-
+    copies), this fetches the article's linked sources and recompiles them using
+    the v3 multi-article compilation prompt. The LLM decides natural topic
+    boundaries, producing multiple right-sized articles.
 
-    Both new articles inherit the full source set from the original. Mutations
-    of type 'split' are recorded on all three articles with cross-references.
+    The original article is ARCHIVED (status='archived'). New articles inherit
+    the source set with LLM-identified relationships. Mutations of type 'split'
+    are recorded.
 
-    Falls back to mechanical midpoint split if LLM is unavailable.
+    Falls back to mechanical midpoint split if inference is unavailable and
+    source content cannot be fetched.
 
     Args:
         article_id: UUID of the article to split.
 
     Returns:
-        Dict with ``success`` and ``data`` containing {"part_a": ..., "part_b": ...}.
-
-    Raises:
-        ValueError: If the article is not found or content is too short to split.
+        Dict with ``success`` and ``data`` containing {"articles": [...]}.
     """
-    from valence.core.inference import TASK_SPLIT, InferenceSchemaError, provider, validate_output
+    from valence.core.compilation import compile_article
 
     with get_cursor() as cur:
         # Fetch original article
@@ -389,333 +388,176 @@ async def split_article(article_id: str) -> ValenceResponse:
         if len(content.split()) < 4:
             return err(f"Article {article_id} content too short to split (< 4 words)")
 
-        # Fetch all sources for the original article
+        # Fetch linked source IDs
         cur.execute(
-            """
-            SELECT source_id, relationship, notes
-            FROM article_sources
-            WHERE article_id = %s
-            """,
+            "SELECT source_id::text FROM article_sources WHERE article_id = %s",
             (article_id,),
         )
-        sources = [dict(r) for r in cur.fetchall()]
+        source_ids = list({r["source_id"] for r in cur.fetchall()})
 
-        # --- LLM-based topic-aware split ---
-        target_tokens = _count_tokens(content) // 2
-        prompt = _build_split_prompt(content, target_tokens)
-        is_degraded = False
+    if not source_ids:
+        return err(f"Article {article_id} has no linked sources; cannot split from ground truth")
 
-        try:
-            result = await provider.infer(TASK_SPLIT, prompt)
-            if result.degraded:
-                raise InferenceSchemaError(result.error or "LLM unavailable")
-            parsed = validate_output(TASK_SPLIT, result.content)
-            split_index = parsed["split_index"]
-            part_a_title = parsed["part_a_title"]
-            part_b_title = parsed["part_b_title"]
-            reasoning = parsed.get("reasoning", "")
-            logger.info("Topic-aware split for article %s: %s", article_id, reasoning)
-        except (InferenceSchemaError, ValueError, KeyError) as exc:
-            logger.warning("LLM split unavailable (%s), using fallback midpoint split", exc)
-            is_degraded = True
-            # Fallback: mechanical split at paragraph boundary near midpoint
-            first_half, second_half = _split_content_at_midpoint(content)
-            split_index = len(first_half)
-            orig_title = original.get("title") or "Article"
-            part_a_title = f"{orig_title} (part 1)"
-            part_b_title = f"{orig_title} (part 2)"
+    # Recompile from sources — v3 prompt naturally produces multiple articles
+    compile_result = await compile_article(
+        source_ids,
+        title_hint=original.get("title"),
+    )
 
-        # Ensure valid split index
-        if split_index <= 0 or split_index >= len(content):
-            logger.warning("Invalid split_index=%d for content len=%d, using midpoint", split_index, len(content))
-            split_index = len(content) // 2
+    if not compile_result.success:
+        return err(f"Recompilation during split failed: {compile_result.error}")
 
-        # Split content at LLM-identified index
-        first_half = content[:split_index].rstrip()
-        second_half = content[split_index:].lstrip()
+    data = compile_result.data or {}
+    all_articles = data.get("_all_articles", [data])
 
-        if not first_half or not second_half:
-            # Safety fallback if split produced empty content
-            first_half, second_half = _split_content_at_midpoint(content)
+    if len(all_articles) < 2:
+        # LLM decided content is one coherent topic — nothing to split.
+        # Archive the new single article (we don't need a duplicate) and keep original.
+        with get_cursor() as cur:
+            for art in all_articles:
+                cur.execute(
+                    "UPDATE articles SET status = 'archived', modified_at = NOW() WHERE id = %s",
+                    (art["id"],),
+                )
+        return err(f"Article {article_id} content is topically coherent; LLM did not split")
 
-        # --- Archive the original article ---
+    # Archive the original
+    with get_cursor() as cur:
         cur.execute(
             "UPDATE articles SET status = 'archived', modified_at = NOW() WHERE id = %s",
             (article_id,),
         )
 
-        # --- Create first new article (part A) ---
-        first_token_count = _count_tokens(first_half)
-        first_hash = _content_hash(first_half)
-        first_embedding = _compute_embedding(first_half)
-
-        cur.execute(
-            """
-            INSERT INTO articles
-                (content, title, author_type, domain_path, size_tokens, confidence,
-                 content_hash, embedding, compiled_at)
-            VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s, %s::vector, NOW())
-            RETURNING *
-            """,
-            (
-                first_half,
-                part_a_title,
-                original.get("author_type", "system"),
-                original.get("domain_path") or [],
-                first_token_count,
-                '{"overall": 0.7}',
-                first_hash,
-                first_embedding,
-            ),
-        )
-        part_a_row = cur.fetchone()
-        part_a = _row_to_article(dict(part_a_row))
-        part_a_id = part_a["id"]
-
-        # --- Create second new article (part B) ---
-        second_token_count = _count_tokens(second_half)
-        second_hash = _content_hash(second_half)
-        second_embedding = _compute_embedding(second_half)
-
-        cur.execute(
-            """
-            INSERT INTO articles
-                (content, title, author_type, domain_path, size_tokens, confidence,
-                 content_hash, embedding, compiled_at)
-            VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s, %s::vector, NOW())
-            RETURNING *
-            """,
-            (
-                second_half,
-                part_b_title,
-                original.get("author_type", "system"),
-                original.get("domain_path") or [],
-                second_token_count,
-                '{"overall": 0.7}',
-                second_hash,
-                second_embedding,
-            ),
-        )
-        part_b_row = cur.fetchone()
-        part_b = _row_to_article(dict(part_b_row))
-        part_b_id = part_b["id"]
-
-        # --- Inherit full source set for both new articles ---
-        for src in sources:
-            src_id = str(src["source_id"])
-            rel = src["relationship"]
-            notes = src.get("notes")
-
-            # Link to part A
+        # Record split mutations
+        for art in all_articles:
             cur.execute(
                 """
-                INSERT INTO article_sources (article_id, source_id, relationship, notes)
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT (article_id, source_id, relationship) DO NOTHING
+                INSERT INTO article_mutations
+                    (mutation_type, article_id, related_article_id, summary)
+                VALUES ('split', %s, %s, 'Created from source-grounded split of original article')
                 """,
-                (part_a_id, src_id, rel, notes),
+                (art["id"], article_id),
             )
-            # Link to part B
-            cur.execute(
-                """
-                INSERT INTO article_sources (article_id, source_id, relationship, notes)
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT (article_id, source_id, relationship) DO NOTHING
-                """,
-                (part_b_id, src_id, rel, notes),
-            )
-
-        # --- Record 'split' mutations on all three articles ---
         cur.execute(
             """
             INSERT INTO article_mutations
-                (mutation_type, article_id, related_article_id, summary)
-            VALUES ('split', %s, %s, 'Article archived: split into two topic-aware parts')
+                (mutation_type, article_id, summary)
+            VALUES ('split', %s, %s)
             """,
-            (article_id, part_a_id),
-        )
-        cur.execute(
-            """
-            INSERT INTO article_mutations
-                (mutation_type, article_id, related_article_id, summary)
-            VALUES ('split', %s, %s, 'Article created from first topic section of original')
-            """,
-            (part_a_id, article_id),
-        )
-        cur.execute(
-            """
-            INSERT INTO article_mutations
-                (mutation_type, article_id, related_article_id, summary)
-            VALUES ('split', %s, %s, 'Article created from second topic section of original')
-            """,
-            (part_b_id, article_id),
+            (article_id, f"Article archived: split into {len(all_articles)} source-grounded articles"),
         )
 
-    logger.info("Split article %s → part_a=%s (%s), part_b=%s (%s)", article_id, part_a_id, part_a_title, part_b_id, part_b_title)
-    return ok(data={"part_a": part_a, "part_b": part_b}, degraded=is_degraded)
+    logger.info(
+        "Split article %s → %d new articles from %d sources",
+        article_id,
+        len(all_articles),
+        len(source_ids),
+    )
+    return ok(data={"articles": all_articles}, degraded=compile_result.degraded)
 
 
 async def merge_articles(
     article_id_a: str,
     article_id_b: str,
 ) -> ValenceResponse:
-    """Merge two related articles into a single new article.
+    """Merge two related articles by recompiling from their combined sources.
 
-    Creates a new article whose content is the concatenation of both source
-    articles. The source sets are combined (deduplicated by source_id +
-    relationship). Both original articles are archived (status='archived').
-    Mutations of type 'merged' are recorded on all three articles.
+    Instead of concatenating article text (which creates copies-of-copies),
+    this collects source IDs from both articles and recompiles from ground
+    truth. The LLM produces a coherent synthesis. Both original articles are
+    archived. Mutations of type 'merged' are recorded.
 
     Args:
         article_id_a: UUID of the first article to merge.
         article_id_b: UUID of the second article to merge.
 
     Returns:
-        The newly created merged article as a plain dict.
-
-    Raises:
-        ValueError: If either article is not found.
+        The newly created merged article(s) as a plain dict.
     """
+    from valence.core.compilation import compile_article
+
     with get_cursor() as cur:
-        # Fetch both articles
-        cur.execute("SELECT * FROM articles WHERE id = %s", (article_id_a,))
-        row_a = cur.fetchone()
-        if not row_a:
-            return err(f"Article not found: {article_id_a}")
-        article_a = _row_to_article(dict(row_a))
+        # Verify both articles exist
+        for aid in (article_id_a, article_id_b):
+            cur.execute("SELECT id FROM articles WHERE id = %s", (aid,))
+            if not cur.fetchone():
+                return err(f"Article not found: {aid}")
 
-        cur.execute("SELECT * FROM articles WHERE id = %s", (article_id_b,))
-        row_b = cur.fetchone()
-        if not row_b:
-            return err(f"Article not found: {article_id_b}")
-        article_b = _row_to_article(dict(row_b))
+        # Collect title hints
+        cur.execute("SELECT title FROM articles WHERE id = %s", (article_id_a,))
+        title_a = cur.fetchone()["title"] or ""
+        cur.execute("SELECT title FROM articles WHERE id = %s", (article_id_b,))
+        title_b = cur.fetchone()["title"] or ""
 
-        # Fetch sources for both articles
+        # Collect unique source IDs from both articles
         cur.execute(
             """
-            SELECT source_id, relationship, notes
+            SELECT DISTINCT source_id::text
             FROM article_sources
-            WHERE article_id = %s
+            WHERE article_id IN (%s, %s)
             """,
-            (article_id_a,),
+            (article_id_a, article_id_b),
         )
-        sources_a = [dict(r) for r in cur.fetchall()]
+        source_ids = [r["source_id"] for r in cur.fetchall()]
 
-        cur.execute(
-            """
-            SELECT source_id, relationship, notes
-            FROM article_sources
-            WHERE article_id = %s
-            """,
-            (article_id_b,),
-        )
-        sources_b = [dict(r) for r in cur.fetchall()]
+    if not source_ids:
+        return err("Neither article has linked sources; cannot merge from ground truth")
 
-        # Deduplicate sources by (source_id, relationship)
-        seen: set[tuple] = set()
-        combined_sources: list[dict] = []
-        for src in sources_a + sources_b:
-            key = (str(src["source_id"]), src["relationship"])
-            if key not in seen:
-                seen.add(key)
-                combined_sources.append(src)
+    # Build a title hint from the two originals
+    title_hint: str | None
+    if title_a and title_b and title_a != title_b:
+        title_hint = f"{title_a} + {title_b}"
+    else:
+        title_hint = title_a or title_b or None
 
-        # Build merged content
-        content_a = (article_a.get("content") or "").strip()
-        content_b = (article_b.get("content") or "").strip()
-        title_a = article_a.get("title") or ""
-        title_b = article_b.get("title") or ""
+    # Compile from combined sources
+    compile_result = await compile_article(source_ids, title_hint=title_hint)
 
-        if title_a and title_b and title_a != title_b:
-            merged_title = f"{title_a} + {title_b}"
-        elif title_a:
-            merged_title = title_a
-        elif title_b:
-            merged_title = title_b
-        else:
-            merged_title = None
+    if not compile_result.success:
+        return err(f"Recompilation during merge failed: {compile_result.error}")
 
-        separator = "\n\n---\n\n"
-        merged_content = f"{content_a}{separator}{content_b}"
+    data = compile_result.data or {}
+    all_articles = data.get("_all_articles", [data])
 
-        token_count = _count_tokens(merged_content)
-        content_hash = _content_hash(merged_content)
-        embedding_str = _compute_embedding(merged_content)
-        author_type = article_a.get("author_type", "system")
-
-        # --- Create merged article ---
-        cur.execute(
-            """
-            INSERT INTO articles
-                (content, title, author_type, domain_path, size_tokens, confidence,
-                 content_hash, embedding, compiled_at)
-            VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s, %s::vector, NOW())
-            RETURNING *
-            """,
-            (
-                merged_content,
-                merged_title,
-                author_type,
-                article_a.get("domain_path") or [],
-                token_count,
-                '{"overall": 0.7}',
-                content_hash,
-                embedding_str,
-            ),
-        )
-        merged_row = cur.fetchone()
-        merged_article = _row_to_article(dict(merged_row))
-        merged_id = merged_article["id"]
-
-        # --- Archive both originals ---
+    # Archive both originals and record mutations
+    with get_cursor() as cur:
         for aid in (article_id_a, article_id_b):
             cur.execute(
                 "UPDATE articles SET status = 'archived', modified_at = NOW() WHERE id = %s",
                 (aid,),
             )
 
-        # --- Link combined sources to merged article ---
-        for src in combined_sources:
-            src_id = str(src["source_id"])
-            rel = src["relationship"]
-            notes = src.get("notes")
+        for art in all_articles:
             cur.execute(
                 """
-                INSERT INTO article_sources (article_id, source_id, relationship, notes)
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT (article_id, source_id, relationship) DO NOTHING
+                INSERT INTO article_mutations
+                    (mutation_type, article_id, related_article_id, summary)
+                VALUES ('merged', %s, %s, 'Created by source-grounded merge')
                 """,
-                (merged_id, src_id, rel, notes),
+                (art["id"], article_id_a),
             )
 
-        # --- Record 'merged' mutations on all three articles ---
-        cur.execute(
-            """
-            INSERT INTO article_mutations
-                (mutation_type, article_id, related_article_id, summary)
-            VALUES ('merged', %s, %s, 'Article archived: merged into new article')
-            """,
-            (article_id_a, merged_id),
-        )
-        cur.execute(
-            """
-            INSERT INTO article_mutations
-                (mutation_type, article_id, related_article_id, summary)
-            VALUES ('merged', %s, %s, 'Article archived: merged into new article')
-            """,
-            (article_id_b, merged_id),
-        )
-        cur.execute(
-            """
-            INSERT INTO article_mutations
-                (mutation_type, article_id, related_article_id, summary)
-            VALUES ('merged', %s, %s, 'Article created by merging two source articles')
-            """,
-            (merged_id, article_id_a),
-        )
+        for aid in (article_id_a, article_id_b):
+            cur.execute(
+                """
+                INSERT INTO article_mutations
+                    (mutation_type, article_id, summary)
+                VALUES ('merged', %s, %s)
+                """,
+                (aid, f"Article archived: merged via source-grounded recompilation into {len(all_articles)} article(s)"),
+            )
 
-    logger.info("Merged articles %s + %s → new article %s", article_id_a, article_id_b, merged_id)
-    return ok(data=merged_article)
+    logger.info(
+        "Merged articles %s + %s → %d new article(s) from %d sources",
+        article_id_a,
+        article_id_b,
+        len(all_articles),
+        len(source_ids),
+    )
+
+    if len(all_articles) == 1:
+        return ok(data=all_articles[0])
+    return ok(data={"articles": all_articles, "primary": all_articles[0]})
 
 
 async def search_articles(
