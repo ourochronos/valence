@@ -119,18 +119,25 @@ class TestServerSettings:
 
         assert settings.database_url == "postgresql://myuser:secret@db.example.com:5433/mydb"
 
-    def test_oauth_jwt_secret_auto_generated(self, clean_env):
-        """Test JWT secret auto-generation."""
+    def test_oauth_jwt_secret_auto_generated(self, clean_env, tmp_path, monkeypatch):
+        """Test JWT secret auto-generation and persistence."""
         from valence.server.config import ServerSettings
+
+        # Use a temp dir so we don't pollute real ~/.valence
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setattr("pathlib.Path.home", lambda: fake_home)
 
         settings1 = ServerSettings()
         settings2 = ServerSettings()
 
-        # Each should generate a unique secret
+        # Each should get a valid secret
         assert len(settings1.oauth_jwt_secret) == 64  # 32 bytes hex encoded
         assert len(settings2.oauth_jwt_secret) == 64
-        # They should be different (random)
-        assert settings1.oauth_jwt_secret != settings2.oauth_jwt_secret
+        # They should be the SAME (persisted to disk)
+        assert settings1.oauth_jwt_secret == settings2.oauth_jwt_secret
+        # Secret file should exist
+        assert (fake_home / ".valence" / "jwt_secret").exists()
 
     def test_oauth_jwt_secret_from_env(self, monkeypatch, clean_env):
         """Test JWT secret from environment."""

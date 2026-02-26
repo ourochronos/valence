@@ -58,7 +58,7 @@ class ServerSettings(CoreSettings):
 
     # Token authentication (legacy Bearer tokens)
     token_file: Path = Field(
-        default=Path("/opt/valence/config/tokens.json"),
+        default=Path.home() / ".valence" / "tokens.json",
         description="Path to token storage file",
     )
 
@@ -213,10 +213,22 @@ class ServerSettings(CoreSettings):
                     "Generate a secure one with: python -c 'import secrets; print(secrets.token_hex(32))'"
                 )
 
-        # For development, generate a random secret if not provided
+        # For development, load or generate a persistent secret
         if not self.oauth_jwt_secret:
-            logger.warning("Auto-generating JWT secret - tokens will not persist across restarts")
-            object.__setattr__(self, "oauth_jwt_secret", secrets.token_hex(32))
+            secret_file = Path.home() / ".valence" / "jwt_secret"
+            if secret_file.exists():
+                stored = secret_file.read_text().strip()
+                if len(stored) >= 32:
+                    object.__setattr__(self, "oauth_jwt_secret", stored)
+                    logger.info("Loaded JWT secret from %s", secret_file)
+                    return self
+            # Generate and persist
+            new_secret = secrets.token_hex(32)
+            secret_file.parent.mkdir(parents=True, exist_ok=True)
+            secret_file.write_text(new_secret)
+            secret_file.chmod(0o600)
+            object.__setattr__(self, "oauth_jwt_secret", new_secret)
+            logger.info("Generated and saved JWT secret to %s", secret_file)
 
         return self
 
