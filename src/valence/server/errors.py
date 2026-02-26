@@ -18,7 +18,18 @@ Examples: VALIDATION_MISSING_FIELD, AUTH_INVALID_TOKEN, NOT_FOUND_BELIEF
 
 from __future__ import annotations
 
+import logging
+import os
+import traceback
+import uuid
+
 from starlette.responses import JSONResponse
+
+logger = logging.getLogger(__name__)
+
+# Debug mode: include exception details in error responses.
+# Set VALENCE_DEBUG=1 to enable (default: enabled for local development).
+_DEBUG = os.environ.get("VALENCE_DEBUG", "1") == "1"
 
 # =============================================================================
 # STANDARD ERROR CODES
@@ -152,9 +163,45 @@ def conflict_error(message: str, code: str = CONFLICT_ALREADY_EXISTS) -> JSONRes
     return error_response(code, message, status_code=409)
 
 
-def internal_error(message: str = "Internal server error") -> JSONResponse:
-    """Create a 500 internal error response."""
-    return error_response(INTERNAL_ERROR, message, status_code=500)
+def internal_error(
+    message: str = "Internal server error",
+    exc: BaseException | None = None,
+) -> JSONResponse:
+    """Create a 500 internal error response.
+
+    In debug mode (VALENCE_DEBUG=1, the default), includes exception type
+    and message for faster diagnosis. Always includes a request_id for
+    log correlation.
+
+    Args:
+        message: Base error message.
+        exc: Optional exception to extract detail from. If None and debug
+             mode is on, attempts to get the current exception from sys.
+    """
+    request_id = uuid.uuid4().hex[:12]
+
+    error_body: dict = {
+        "code": INTERNAL_ERROR,
+        "message": message,
+        "request_id": request_id,
+    }
+
+    if exc is None:
+        import sys
+
+        exc = sys.exc_info()[1]
+
+    if exc is not None:
+        logger.error("request_id=%s %s: %s", request_id, type(exc).__name__, exc)
+        if _DEBUG:
+            error_body["exception"] = type(exc).__name__
+            error_body["detail"] = str(exc)
+            error_body["traceback"] = traceback.format_exception_only(type(exc), exc)[0].strip()
+
+    return JSONResponse(
+        {"success": False, "error": error_body},
+        status_code=500,
+    )
 
 
 def service_unavailable_error(service: str) -> JSONResponse:
