@@ -18,30 +18,46 @@ def create_mock_cursor():
 
 
 class TestSourceIngest:
-    """Tests for source_ingest handler."""
+    """Tests for source_ingest handler.
+
+    source_ingest() delegates all logic to core/sources.ingest_source(); we
+    mock that function to test the handler's translation of ValenceResponse →
+    dict, validation short-circuits, and error mapping.
+    """
+
+    def _make_ok(self, data: dict):
+        from valence.core.response import ok
+
+        return ok(data=data)
+
+    def _make_err(self, message: str):
+        from valence.core.response import err
+
+        return err(message)
+
+    def _source_data(self, source_id, **overrides):
+        base = {
+            "id": str(source_id),
+            "type": "document",
+            "title": "Test Note",
+            "url": None,
+            "content": "Test content",
+            "fingerprint": "abc123",
+            "reliability": 0.8,
+            "content_hash": "abc123",
+            "metadata": {},
+            "created_at": None,
+            "supersedes_id": None,
+        }
+        base.update(overrides)
+        return base
 
     def test_ingest_success(self):
         """Test successful source ingestion."""
         source_id = uuid4()
-        mock_cursor, mock_get_cursor = create_mock_cursor()
-        mock_cursor.fetchone.side_effect = [
-            None,  # No duplicate
-            {  # Returned row
-                "id": source_id,
-                "type": "document",
-                "title": "Test Note",
-                "url": None,
-                "content": "Test content",
-                "fingerprint": "abc123",
-                "reliability": 0.5,
-                "content_hash": "abc123",
-                "metadata": {},
-                "created_at": None,
-                "supersedes_id": None,
-            },
-        ]
+        ok_resp = self._make_ok(self._source_data(source_id))
 
-        with patch("valence.mcp.handlers.sources.get_cursor", mock_get_cursor):
+        with patch("valence.mcp.handlers.sources._run_async", return_value=ok_resp):
             result = source_ingest(
                 content="Test content",
                 source_type="document",
@@ -53,22 +69,31 @@ class TestSourceIngest:
         assert result["source"]["title"] == "Test Note"
 
     def test_ingest_empty_content(self):
-        """Test ingesting source with empty content."""
-        result = source_ingest(content="", source_type="document")
+        """Test ingesting source with empty content (validated before async call)."""
+        err_resp = self._make_err("content must be non-empty")
+
+        with patch("valence.mcp.handlers.sources._run_async", return_value=err_resp):
+            result = source_ingest(content="", source_type="document")
 
         assert result["success"] is False
         assert "must be non-empty" in result["error"]
 
     def test_ingest_whitespace_content(self):
         """Test ingesting source with whitespace-only content."""
-        result = source_ingest(content="   ", source_type="document")
+        err_resp = self._make_err("content must be non-empty")
+
+        with patch("valence.mcp.handlers.sources._run_async", return_value=err_resp):
+            result = source_ingest(content="   ", source_type="document")
 
         assert result["success"] is False
         assert "must be non-empty" in result["error"]
 
     def test_ingest_invalid_source_type(self):
         """Test ingesting with invalid source_type."""
-        result = source_ingest(content="Test", source_type="invalid_type")
+        err_resp = self._make_err("Invalid source_type 'invalid_type'.")
+
+        with patch("valence.mcp.handlers.sources._run_async", return_value=err_resp):
+            result = source_ingest(content="Test", source_type="invalid_type")
 
         assert result["success"] is False
         assert "Invalid source_type" in result["error"]
@@ -76,10 +101,9 @@ class TestSourceIngest:
     def test_ingest_duplicate_fingerprint(self):
         """Test ingesting duplicate source."""
         existing_id = uuid4()
-        mock_cursor, mock_get_cursor = create_mock_cursor()
-        mock_cursor.fetchone.return_value = {"id": existing_id}
+        err_resp = self._make_err(f"Duplicate source: fingerprint 'abc' already exists (existing_id={existing_id})")
 
-        with patch("valence.mcp.handlers.sources.get_cursor", mock_get_cursor):
+        with patch("valence.mcp.handlers.sources._run_async", return_value=err_resp):
             result = source_ingest(content="Duplicate content", source_type="document")
 
         assert result["success"] is False
@@ -89,25 +113,9 @@ class TestSourceIngest:
     def test_ingest_with_url(self):
         """Test ingesting source with URL."""
         source_id = uuid4()
-        mock_cursor, mock_get_cursor = create_mock_cursor()
-        mock_cursor.fetchone.side_effect = [
-            None,
-            {
-                "id": source_id,
-                "type": "web",
-                "title": "Test Link",
-                "url": "https://example.com",
-                "content": "Test",
-                "fingerprint": "abc123",
-                "reliability": 0.7,
-                "content_hash": "abc123",
-                "metadata": {},
-                "created_at": None,
-                "supersedes_id": None,
-            },
-        ]
+        ok_resp = self._make_ok(self._source_data(source_id, type="web", url="https://example.com", reliability=0.6))
 
-        with patch("valence.mcp.handlers.sources.get_cursor", mock_get_cursor):
+        with patch("valence.mcp.handlers.sources._run_async", return_value=ok_resp):
             result = source_ingest(
                 content="Test",
                 source_type="web",
@@ -121,25 +129,9 @@ class TestSourceIngest:
     def test_ingest_with_metadata(self):
         """Test ingesting source with metadata."""
         source_id = uuid4()
-        mock_cursor, mock_get_cursor = create_mock_cursor()
-        mock_cursor.fetchone.side_effect = [
-            None,
-            {
-                "id": source_id,
-                "type": "document",
-                "title": None,
-                "url": None,
-                "content": "Test",
-                "fingerprint": "abc123",
-                "reliability": 0.5,
-                "content_hash": "abc123",
-                "metadata": {"author": "Jane"},
-                "created_at": None,
-                "supersedes_id": None,
-            },
-        ]
+        ok_resp = self._make_ok(self._source_data(source_id, metadata={"author": "Jane"}))
 
-        with patch("valence.mcp.handlers.sources.get_cursor", mock_get_cursor):
+        with patch("valence.mcp.handlers.sources._run_async", return_value=ok_resp):
             result = source_ingest(
                 content="Test",
                 source_type="document",
@@ -153,26 +145,9 @@ class TestSourceIngest:
         """Test ingesting source that supersedes another."""
         old_id = uuid4()
         new_id = uuid4()
-        mock_cursor, mock_get_cursor = create_mock_cursor()
-        mock_cursor.fetchone.side_effect = [
-            None,  # No duplicate
-            {"id": old_id},  # Superseded source exists
-            {  # New source
-                "id": new_id,
-                "type": "document",
-                "title": None,
-                "url": None,
-                "content": "New version",
-                "fingerprint": "def456",
-                "reliability": 0.5,
-                "content_hash": "def456",
-                "metadata": {},
-                "created_at": None,
-                "supersedes_id": str(old_id),  # Already string in mock
-            },
-        ]
+        ok_resp = self._make_ok(self._source_data(new_id, supersedes_id=str(old_id)))
 
-        with patch("valence.mcp.handlers.sources.get_cursor", mock_get_cursor):
+        with patch("valence.mcp.handlers.sources._run_async", return_value=ok_resp):
             result = source_ingest(
                 content="New version",
                 source_type="document",
@@ -184,13 +159,9 @@ class TestSourceIngest:
 
     def test_ingest_supersedes_not_found(self):
         """Test ingesting with non-existent supersedes_id."""
-        mock_cursor, mock_get_cursor = create_mock_cursor()
-        mock_cursor.fetchone.side_effect = [
-            None,  # No duplicate
-            None,  # Superseded source not found
-        ]
+        err_resp = self._make_err(f"Superseded source not found: {uuid4()}")
 
-        with patch("valence.mcp.handlers.sources.get_cursor", mock_get_cursor):
+        with patch("valence.mcp.handlers.sources._run_async", return_value=err_resp):
             result = source_ingest(
                 content="Test",
                 source_type="document",

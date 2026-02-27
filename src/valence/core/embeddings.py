@@ -115,3 +115,77 @@ def get_embedding_capability() -> dict[str, Any]:
         "type_id": type_id,
         "normalization": "l2",
     }
+
+
+# ---------------------------------------------------------------------------
+# Public domain helpers — called by the ingest pipeline
+# ---------------------------------------------------------------------------
+
+
+def get_section_vectors(source_id: str) -> list[list[float]]:
+    """Fetch all section embedding vectors for a source from source_sections.
+
+    Args:
+        source_id: UUID of the source.
+
+    Returns:
+        List of embedding vectors (each a list of floats). Empty list if none found.
+    """
+    from valence.core.db import get_cursor
+
+    with get_cursor() as cur:
+        cur.execute(
+            "SELECT embedding::text FROM source_sections WHERE source_id = %s",
+            (source_id,),
+        )
+        rows = cur.fetchall()
+
+    vectors: list[list[float]] = []
+    for row in rows:
+        raw = row[0] if isinstance(row, tuple) else row.get("embedding") or row.get(0)
+        if raw is None:
+            continue
+        raw = str(raw).strip()
+        if raw.startswith("["):
+            try:
+                vectors.append([float(x) for x in raw[1:-1].split(",")])
+            except (ValueError, IndexError):
+                pass
+    return vectors
+
+
+def store_source_embedding(source_id: str, vector: list[float]) -> None:
+    """Write a composed source-level embedding to sources.embedding.
+
+    Args:
+        source_id: UUID of the source.
+        vector: Embedding vector to store.
+    """
+    from valence.core.db import get_cursor
+
+    vec_str = vector_to_pgvector(vector)
+    with get_cursor() as cur:
+        cur.execute(
+            "UPDATE sources SET embedding = %s::vector WHERE id = %s",
+            (vec_str, source_id),
+        )
+
+
+def compose_embedding(vectors: list[list[float]]) -> list[float]:
+    """Compute the element-wise mean of a list of equal-length float vectors.
+
+    Args:
+        vectors: List of embedding vectors (must all have the same dimensionality).
+
+    Returns:
+        Mean vector, or an empty list if *vectors* is empty.
+    """
+    if not vectors:
+        return []
+    n = len(vectors)
+    dims = len(vectors[0])
+    result = [0.0] * dims
+    for vec in vectors:
+        for i, v in enumerate(vec):
+            result[i] += v
+    return [x / n for x in result]

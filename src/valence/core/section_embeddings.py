@@ -33,7 +33,7 @@ from valence.core.response import ValenceResponse, err, ok
 logger = logging.getLogger(__name__)
 
 
-def _flatten_tree(
+def flatten_tree(
     nodes: list[dict[str, Any]],
     prefix: str = "",
     depth: int = 0,
@@ -60,11 +60,11 @@ def _flatten_tree(
         )
         children = node.get("children", [])
         if children:
-            flat.extend(_flatten_tree(children, prefix=path, depth=depth + 1))
+            flat.extend(flatten_tree(children, prefix=path, depth=depth + 1))
     return flat
 
 
-def _embed_and_upsert(
+def embed_and_upsert(
     source_id: str,
     content: str,
     flat_nodes: list[dict[str, Any]],
@@ -185,7 +185,7 @@ async def embed_source_sections(source_id: str) -> ValenceResponse:
             ]
 
         # Step 2: Flatten tree
-        flat_nodes = _flatten_tree(tree_index)
+        flat_nodes = flatten_tree(tree_index)
         if not flat_nodes:
             return ok(data={"source_id": source_id, "sections_embedded": 0})
 
@@ -268,3 +268,10 @@ async def embed_all_sources(batch_size: int = 10) -> ValenceResponse:
             "remaining": remaining,
         }
     )
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatible private aliases (do not import these across modules)
+# ---------------------------------------------------------------------------
+_flatten_tree = flatten_tree
+_embed_and_upsert = embed_and_upsert

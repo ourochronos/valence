@@ -5,18 +5,29 @@
 
 from __future__ import annotations
 
-import json
+import asyncio
 import logging
+import re
 from typing import Any
 
 from valence.core.db import get_cursor, serialize_row
-from valence.core.sources import (
-    RELIABILITY_DEFAULTS,
-    VALID_SOURCE_TYPES,
-    _compute_fingerprint,
-)
 
 logger = logging.getLogger(__name__)
+
+
+def _run_async(coro):
+    """Run an async coroutine from sync context.
+
+    Uses the existing event loop if one is running, otherwise creates a new one.
+    """
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # Shouldn't happen in MCP sync handler context — fall through to asyncio.run
+            raise RuntimeError("Event loop already running")
+        return loop.run_until_complete(coro)
+    except RuntimeError:
+        return asyncio.run(coro)
 
 
 def source_ingest(
@@ -27,81 +38,37 @@ def source_ingest(
     metadata: dict | None = None,
     supersedes: str | None = None,
 ) -> dict[str, Any]:
-    """Ingest a new source into the knowledge substrate."""
-    if not content or not content.strip():
-        return {"success": False, "error": "content must be non-empty"}
+    """Ingest a new source into the knowledge substrate.
 
-    if source_type not in VALID_SOURCE_TYPES:
-        return {
-            "success": False,
-            "error": f"Invalid source_type '{source_type}'. Must be one of: {', '.join(sorted(VALID_SOURCE_TYPES))}",
-        }
+    Delegates to core/sources.py:ingest_source() which handles deduplication,
+    storage, and the full post-ingest pipeline (tree-index → embed → compose →
+    auto-compile).  This is the single ingest entry point; the pipeline is
+    wired in core, not here.
+    """
+    from valence.core.sources import ingest_source
 
-    fingerprint = _compute_fingerprint(content)
-    reliability = RELIABILITY_DEFAULTS.get(source_type, 0.5)
-    metadata_json = json.dumps(metadata or {})
-
-    with get_cursor() as cur:
-        cur.execute(
-            "SELECT id FROM sources WHERE fingerprint = %s LIMIT 1",
-            (fingerprint,),
+    result = _run_async(
+        ingest_source(
+            content=content,
+            source_type=source_type,
+            title=title,
+            url=url,
+            metadata=metadata,
+            supersedes=supersedes,
         )
-        existing = cur.fetchone()
-        if existing:
-            return {
-                "success": False,
-                "duplicate": True,
-                "existing_id": str(existing["id"]),
-                "error": "Duplicate source: fingerprint already exists",
-            }
+    )
 
-        if supersedes:
-            cur.execute("SELECT id FROM sources WHERE id = %s::uuid", (supersedes,))
-            if not cur.fetchone():
-                return {"success": False, "error": f"Superseded source not found: {supersedes}"}
+    if not result.success:
+        response: dict[str, Any] = {"success": False, "error": result.error}
+        if result.error and "Duplicate source" in result.error:
+            response["duplicate"] = True
+            # Extract existing_id from error message: "... (existing_id=<uuid>)"
+            m = re.search(r"existing_id=([0-9a-f-]+)", result.error or "")
+            if m:
+                response["existing_id"] = m.group(1)
+        return response
 
-        cur.execute(
-            """
-            INSERT INTO sources (type, title, url, content, fingerprint, reliability,
-                                 content_hash, metadata, supersedes_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::uuid)
-            RETURNING id, type, title, url, content, fingerprint, reliability,
-                      content_hash, metadata, created_at, supersedes_id
-            """,
-            (
-                source_type,
-                title,
-                url,
-                content,
-                fingerprint,
-                reliability,
-                fingerprint,
-                metadata_json,
-                supersedes,
-            ),
-        )
-        row = cur.fetchone()
-
-    source = serialize_row(row)
-
-    # Run post-ingest pipeline synchronously via run_async
-    source_id = source["id"]
-    try:
-        import asyncio
-
-        from valence.core.ingest_pipeline import run_source_pipeline
-
-        pipeline_result = asyncio.run(run_source_pipeline(source_id, batch_mode=False))
-        if pipeline_result.success:
-            source["pipeline"] = pipeline_result.data
-        else:
-            logger.warning("Ingest pipeline failed for %s: %s", source_id, pipeline_result.error)
-            source["pipeline_error"] = pipeline_result.error
-    except Exception as exc:
-        logger.warning("Ingest pipeline raised for %s: %s", source_id, exc)
-        source["pipeline_error"] = str(exc)
-
-    return {"success": True, "source": source}
+    return {"success": True, "source": result.data}
 
 
 def source_get(source_id: str) -> dict[str, Any]:

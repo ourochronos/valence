@@ -9,11 +9,10 @@ from uuid import uuid4
 
 import pytest
 
-from valence.core.ingest_pipeline import (
-    _mean_vector,
-    _flatten_tree,
-    run_source_pipeline,
-)
+# flatten_tree lives in section_embeddings; compose_embedding lives in embeddings
+from valence.core.embeddings import compose_embedding
+from valence.core.ingest_pipeline import run_source_pipeline
+from valence.core.section_embeddings import flatten_tree
 
 
 # ---------------------------------------------------------------------------
@@ -21,21 +20,53 @@ from valence.core.ingest_pipeline import (
 # ---------------------------------------------------------------------------
 
 
-class TestMeanVector:
+class TestComposeEmbedding:
     def test_single_vector(self):
-        result = _mean_vector([[1.0, 2.0, 3.0]])
+        result = compose_embedding([[1.0, 2.0, 3.0]])
         assert result == pytest.approx([1.0, 2.0, 3.0])
 
     def test_multiple_vectors(self):
-        result = _mean_vector([[1.0, 2.0], [3.0, 4.0]])
+        result = compose_embedding([[1.0, 2.0], [3.0, 4.0]])
         assert result == pytest.approx([2.0, 3.0])
 
     def test_empty(self):
-        assert _mean_vector([]) == []
+        assert compose_embedding([]) == []
 
     def test_three_vectors(self):
-        result = _mean_vector([[0.0, 6.0], [3.0, 3.0], [6.0, 0.0]])
+        result = compose_embedding([[0.0, 6.0], [3.0, 3.0], [6.0, 0.0]])
         assert result == pytest.approx([3.0, 3.0])
+
+
+class TestFlattenTree:
+    def test_single_node(self):
+        nodes = [{"title": "Root", "summary": "", "start_char": 0, "end_char": 100, "children": []}]
+        flat = flatten_tree(nodes)
+        assert len(flat) == 1
+        assert flat[0]["tree_path"] == "0"
+        assert flat[0]["depth"] == 0
+
+    def test_nested_nodes(self):
+        nodes = [
+            {
+                "title": "Parent",
+                "summary": "",
+                "start_char": 0,
+                "end_char": 200,
+                "children": [
+                    {"title": "Child A", "summary": "", "start_char": 0, "end_char": 100, "children": []},
+                    {"title": "Child B", "summary": "", "start_char": 100, "end_char": 200, "children": []},
+                ],
+            }
+        ]
+        flat = flatten_tree(nodes)
+        assert len(flat) == 3
+        paths = [n["tree_path"] for n in flat]
+        assert "0" in paths
+        assert "0.0" in paths
+        assert "0.1" in paths
+
+    def test_empty(self):
+        assert flatten_tree([]) == []
 
 
 # ---------------------------------------------------------------------------
@@ -77,7 +108,6 @@ class TestRunSourcePipeline:
             "metadata": {},
         }
         cur = _make_cursor(source_row=source_row)
-        # Need cursor to be context-manager-able multiple times
         call_count = 0
 
         @contextmanager
@@ -87,7 +117,6 @@ class TestRunSourcePipeline:
             yield cur
 
         with patch("valence.core.ingest_pipeline.get_cursor", _inner):
-            # Also need to mock _set_pipeline_status
             with patch("valence.core.ingest_pipeline._set_pipeline_status"):
                 result = await run_source_pipeline("some-id")
         assert result.success
@@ -95,7 +124,7 @@ class TestRunSourcePipeline:
 
     @pytest.mark.asyncio
     async def test_batch_mode_enqueues(self):
-        with patch("valence.core.ingest_pipeline._enqueue_pipeline_task") as mock_enqueue:
+        with patch("valence.core.ingest_pipeline._enqueue_pipeline_task"):
             with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_thread:
                 mock_thread.return_value = None
                 result = await run_source_pipeline("some-id", batch_mode=True)
@@ -103,8 +132,8 @@ class TestRunSourcePipeline:
         assert result.data["queued"] is True
 
     @pytest.mark.asyncio
-    async def test_small_source_trivial_tree(self):
-        """Small sources get a trivial single-node tree (no LLM call)."""
+    async def test_small_source_embeds_sections(self):
+        """Small sources get section-embedded without LLM tree call."""
         source_id = str(uuid4())
         content = "Short content"  # well under SMALL_SOURCE_CHARS
 
@@ -121,13 +150,35 @@ class TestRunSourcePipeline:
             c.fetchall.return_value = []
             yield c
 
+        embed_ok = MagicMock()
+        embed_ok.success = True
+        embed_ok.data = {"sections_embedded": 1}
+
         with patch("valence.core.ingest_pipeline.get_cursor", _cursor):
-            with patch("valence.core.ingest_pipeline._embed_and_upsert", return_value=1):
-                with patch("valence.core.ingest_pipeline._get_section_vectors", return_value=section_vecs):
-                    with patch("valence.core.ingest_pipeline._update_source_embedding"):
+            with patch(
+                "valence.core.ingest_pipeline.embed_source_sections",
+                new_callable=AsyncMock,
+                return_value=embed_ok,
+            ):
+                with patch(
+                    "valence.core.ingest_pipeline.get_section_vectors",
+                    return_value=section_vecs,
+                ):
+                    with patch("valence.core.ingest_pipeline.store_source_embedding"):
                         with patch("valence.core.ingest_pipeline._set_pipeline_status"):
-                            with patch("valence.core.ingest_pipeline._stage_auto_compile", new_callable=AsyncMock, return_value=False):
-                                result = await run_source_pipeline(source_id)
+                            with patch(
+                                "valence.core.ingest_pipeline.asyncio.to_thread",
+                                new_callable=AsyncMock,
+                            ) as mock_to_thread:
+                                # First call: get_section_vectors -> section_vecs
+                                # Second call: store_source_embedding -> None
+                                mock_to_thread.side_effect = [section_vecs, None]
+                                with patch(
+                                    "valence.core.sources.find_similar_ungrouped",
+                                    new_callable=AsyncMock,
+                                    return_value=[],
+                                ):
+                                    result = await run_source_pipeline(source_id)
 
         assert result.success
         assert result.data["sections_embedded"] == 1
