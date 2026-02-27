@@ -148,6 +148,22 @@ async def ingest_source(
         )
     else:
         logger.info("Ingested source id=%s type=%s fingerprint=%s", result["id"], source_type, fingerprint[:8])
+
+    # Run post-ingest pipeline (embed + tree + auto-compile)
+    source_id = result["id"]
+    try:
+        from valence.core.ingest_pipeline import run_source_pipeline
+
+        pipeline_result = await run_source_pipeline(source_id, batch_mode=False)
+        if pipeline_result.success:
+            result["pipeline"] = pipeline_result.data
+        else:
+            logger.warning("Ingest pipeline failed for %s: %s", source_id, pipeline_result.error)
+            result["pipeline_error"] = pipeline_result.error
+    except Exception as exc:
+        logger.warning("Ingest pipeline raised for %s: %s", source_id, exc)
+        result["pipeline_error"] = str(exc)
+
     return ok(data=result)
 
 
@@ -263,3 +279,64 @@ async def list_sources(
         rows = cur.fetchall()
 
     return ok(data=[serialize_row(row) for row in rows])
+
+
+async def find_similar_ungrouped(
+    source_id: str,
+    threshold: float = 0.8,
+    limit: int = 20,
+) -> list[str]:
+    """Find ungrouped sources whose embedding is cosine-similar to *source_id*.
+
+    "Ungrouped" means the source has no rows in article_sources (it is not yet
+    part of any compiled article).  Sources that are already grouped are excluded
+    so we do not double-compile them.
+
+    Args:
+        source_id: UUID of the reference source.
+        threshold: Minimum cosine similarity (1 − cosine distance) to include.
+        limit: Maximum number of similar source IDs to return.
+
+    Returns:
+        Ordered list of similar source UUIDs (excluding *source_id* itself),
+        closest first.  Empty list if the source has no embedding or no similar
+        ungrouped neighbours are found.
+    """
+    with get_cursor() as cur:
+        cur.execute("SELECT embedding::text FROM sources WHERE id = %s", (source_id,))
+        row = cur.fetchone()
+
+    if not row:
+        return []
+
+    raw_emb = row[0] if isinstance(row, tuple) else row.get("embedding") or ""
+    raw_emb = str(raw_emb).strip()
+    if not raw_emb or raw_emb == "None":
+        return []
+
+    # vec_str is already in pgvector "[…]" format straight from the DB cast
+    vec_str = raw_emb
+    try:
+        with get_cursor() as cur:
+            cur.execute(
+                """
+                SELECT s.id::text
+                FROM sources s
+                WHERE s.id != %s::uuid
+                  AND s.embedding IS NOT NULL
+                  AND s.pipeline_status IN ('indexed', 'complete')
+                  AND NOT EXISTS (
+                      SELECT 1 FROM article_sources asrc WHERE asrc.source_id = s.id
+                  )
+                  AND 1 - (s.embedding <=> %s::vector) > %s
+                ORDER BY s.embedding <=> %s::vector
+                LIMIT %s
+                """,
+                (source_id, vec_str, threshold, vec_str, limit),
+            )
+            rows = cur.fetchall()
+    except Exception as exc:
+        logger.warning("find_similar_ungrouped query failed for %s: %s", source_id, exc)
+        return []
+
+    return [r[0] if isinstance(r, tuple) else str(r.get("id", "")) for r in rows if r]

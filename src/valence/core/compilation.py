@@ -925,6 +925,17 @@ async def _process_mutation_item(operation: str, article_id: str, payload: dict)
                 threshold,
             )
 
+    elif operation == "source_pipeline":
+        source_id = payload.get("source_id") or article_id
+        if not source_id:
+            raise ValueError("source_pipeline: missing source_id in payload")
+        from valence.core.ingest_pipeline import run_source_pipeline
+
+        result = await run_source_pipeline(source_id, batch_mode=False)
+        if not result.success:
+            raise RuntimeError(f"source_pipeline failed: {result.error}")
+        logger.info("source_pipeline completed for source %s", source_id)
+
     else:
         raise ValueError(f"Unknown mutation operation: {operation!r}")
 
