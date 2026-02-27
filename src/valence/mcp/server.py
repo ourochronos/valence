@@ -129,7 +129,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         if handler is None:
             result = {"success": False, "error": f"Unknown tool: {name}"}
         else:
-            result = handler(**arguments)
+            result = handler(**(arguments or {}))
 
         return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
 
