@@ -88,6 +88,7 @@ def source_ingest(
     source_id = source["id"]
     try:
         import asyncio
+
         from valence.core.ingest_pipeline import run_source_pipeline
 
         pipeline_result = asyncio.run(run_source_pipeline(source_id, batch_mode=False))

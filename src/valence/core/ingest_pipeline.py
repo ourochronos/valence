@@ -29,12 +29,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any
 
 from valence.core.db import get_cursor
-from valence.core.embeddings import generate_embedding, vector_to_pgvector
+from valence.core.embeddings import vector_to_pgvector
 from valence.core.response import ValenceResponse, err, ok
-from valence.core.section_embeddings import _flatten_tree, _embed_and_upsert
+from valence.core.section_embeddings import _embed_and_upsert, _flatten_tree
 
 logger = logging.getLogger(__name__)
 
