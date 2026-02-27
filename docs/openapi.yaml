@@ -1,18 +1,19 @@
 openapi: 3.1.0
 info:
   title: Valence API
-  version: 1.1.2
+  version: 2.0.0
   description: |
-    Personal knowledge substrate for AI agents - REST API for sources, articles, and provenance.
-    
+    Personal knowledge substrate for AI agents — REST API for sources, articles,
+    provenance, contentions, sessions, and admin operations.
+
     ## Authentication
-    
+
     All endpoints require Bearer token authentication:
-    
+
     ```
     Authorization: Bearer <token>
     ```
-    
+
     Tokens grant either `substrate:read` or `substrate:write` scope.
   contact:
     name: Valence GitHub
@@ -24,8 +25,6 @@ info:
 servers:
   - url: http://127.0.0.1:8420/api/v1
     description: Local development server
-  - url: https://your-server.example.com/api/v1
-    description: Production server (configure as needed)
 
 security:
   - bearerAuth: []
@@ -35,338 +34,236 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
-      bearerFormat: Token
-      description: Bearer token from Valence token store
 
   schemas:
+    Error:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+
     Source:
       type: object
-      required:
-        - id
-        - content
-        - source_type
-        - fingerprint
-        - created_at
       properties:
         id:
           type: string
           format: uuid
-          description: Unique source identifier
         content:
           type: string
-          description: Raw source content
         source_type:
           type: string
           enum: [document, conversation, web, code, observation, tool_output, user_input]
-          description: Type of source material
         title:
           type: string
-          nullable: true
-          description: Human-readable title
         url:
           type: string
-          nullable: true
-          description: Canonical URL for web sources
+        reliability:
+          type: number
         metadata:
           type: object
-          additionalProperties: true
-          nullable: true
-          description: Arbitrary JSON metadata
-        fingerprint:
-          type: string
-          description: Content hash for deduplication
         created_at:
           type: string
           format: date-time
-          description: Timestamp of source creation
-        embedding:
-          type: array
-          items:
-            type: number
-          nullable: true
-          description: Vector embedding (optional)
 
     Article:
       type: object
-      required:
-        - id
-        - content
-        - status
-        - created_at
       properties:
         id:
           type: string
           format: uuid
-          description: Unique article identifier
         content:
           type: string
-          description: Article content (synthesized knowledge)
         title:
           type: string
-          nullable: true
-          description: Article title
-        status:
-          type: string
-          enum: [active, superseded, deprecated]
-          description: Article lifecycle status
-        author_type:
-          type: string
-          enum: [system, operator, agent]
-          description: Authorship type
+        confidence:
+          type: number
         domain_path:
           type: array
           items:
             type: string
-          nullable: true
-          description: Domain hierarchy tags
+        status:
+          type: string
+          enum: [active, archived, superseded]
+        version:
+          type: integer
+        usage_score:
+          type: number
+        corroboration_count:
+          type: integer
         created_at:
           type: string
           format: date-time
         updated_at:
           type: string
           format: date-time
-          nullable: true
-        superseded_by:
-          type: string
-          format: uuid
-          nullable: true
-          description: ID of article that supersedes this one
-        embedding:
-          type: array
-          items:
-            type: number
-          nullable: true
-          description: Vector embedding for semantic search
 
-    ProvenanceLink:
+    Session:
       type: object
-      required:
-        - article_id
-        - source_id
-        - relationship
-        - linked_at
       properties:
-        article_id:
+        id:
           type: string
           format: uuid
-        source_id:
+        platform:
           type: string
-          format: uuid
-        relationship:
+        agent_id:
           type: string
-          enum: [supports, contradicts, references, derived_from]
-          description: Type of provenance relationship
-        notes:
+        status:
           type: string
-          nullable: true
-          description: Optional notes about the relationship
-        linked_at:
+          enum: [active, completed, expired]
+        message_count:
+          type: integer
+        created_at:
           type: string
           format: date-time
 
-    Error:
-      type: object
-      required:
-        - error
-        - message
-      properties:
-        error:
-          type: string
-          description: Error type
-        message:
-          type: string
-          description: Human-readable error message
-        details:
-          type: object
-          additionalProperties: true
-          nullable: true
-
-  responses:
-    Unauthorized:
-      description: Missing or invalid authentication token
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            error: unauthorized
-            message: Invalid or missing authentication token
-
-    Forbidden:
-      description: Insufficient permissions for requested operation
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            error: forbidden
-            message: Insufficient scope for this operation
-
-    NotFound:
-      description: Resource not found
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            error: not_found
-            message: Resource not found
-
-    BadRequest:
-      description: Invalid request payload
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            error: bad_request
-            message: Missing required field 'content'
-
-    Conflict:
-      description: Resource conflict (duplicate fingerprint)
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            error: conflict
-            message: Source with this fingerprint already exists
-
-    InternalError:
-      description: Internal server error
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            error: internal_error
-            message: An unexpected error occurred
-
 paths:
-  # =========================================================================
+  # ===========================================================================
+  # Health & Docs
+  # ===========================================================================
+  /health:
+    get:
+      summary: Health check
+      tags: [System]
+      security: []
+      responses:
+        "200":
+          description: Server is healthy
+
+  /stats:
+    get:
+      summary: Aggregate database statistics
+      tags: [System]
+      parameters:
+        - name: output
+          in: query
+          schema:
+            type: string
+            enum: [json, text]
+      responses:
+        "200":
+          description: Statistics object
+
+  /metrics:
+    get:
+      summary: Prometheus-format metrics
+      tags: [System]
+      responses:
+        "200":
+          description: Prometheus text metrics
+
+  # ===========================================================================
+  # Search (unified retrieval)
+  # ===========================================================================
+  /search:
+    get:
+      summary: Unified knowledge search
+      description: |
+        Ranked hybrid retrieval across articles and optionally sources.
+        Uses full-text search + semantic similarity with RRF fusion.
+      tags: [Search]
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: include_sources
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: session_id
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Ranked search results
+
+  # ===========================================================================
   # Sources
-  # =========================================================================
+  # ===========================================================================
   /sources:
+    get:
+      summary: List sources
+      tags: [Sources]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: source_type
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of sources
     post:
       summary: Ingest a new source
-      operationId: createSource
-      tags:
-        - Sources
-      security:
-        - bearerAuth: []
+      tags: [Sources]
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required:
-                - content
-                - source_type
+              required: [content, source_type]
               properties:
                 content:
                   type: string
-                  description: Raw source content
                 source_type:
                   type: string
                   enum: [document, conversation, web, code, observation, tool_output, user_input]
                 title:
                   type: string
-                  description: Optional human-readable title
                 url:
                   type: string
-                  description: Optional canonical URL
                 metadata:
                   type: object
-                  additionalProperties: true
-                  description: Optional arbitrary JSON metadata
-            example:
-              content: "PostgreSQL is a powerful open-source relational database."
-              source_type: "document"
-              title: "PostgreSQL Overview"
-              metadata:
-                author: "Example User"
       responses:
-        '201':
-          description: Source created successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  source:
-                    $ref: '#/components/schemas/Source'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '409':
-          $ref: '#/components/responses/Conflict'
-        '500':
-          $ref: '#/components/responses/InternalError'
+        "200":
+          description: Ingested source
 
-    get:
-      summary: List sources
-      operationId: listSources
-      tags:
-        - Sources
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: source_type
-          in: query
-          schema:
-            type: string
-            enum: [document, conversation, web, code, observation, tool_output, user_input]
-          description: Filter by source type
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            default: 50
-            maximum: 200
-          description: Maximum number of results
-        - name: offset
-          in: query
-          schema:
-            type: integer
-            default: 0
-          description: Pagination offset
+  /sources/search:
+    post:
+      summary: Full-text search over sources
+      tags: [Sources]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query:
+                  type: string
+                limit:
+                  type: integer
+                  default: 20
       responses:
-        '200':
-          description: List of sources
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  sources:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Source'
-                  total_count:
-                    type: integer
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
+        "200":
+          description: Search results
 
   /sources/{source_id}:
     get:
       summary: Get source by ID
-      operationId: getSource
-      tags:
-        - Sources
-      security:
-        - bearerAuth: []
+      tags: [Sources]
       parameters:
         - name: source_id
           in: path
@@ -374,213 +271,199 @@ paths:
           schema:
             type: string
             format: uuid
-          description: Source UUID
       responses:
-        '200':
+        "200":
           description: Source details
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  source:
-                    $ref: '#/components/schemas/Source'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  /sources/search:
-    post:
-      summary: Search sources by content
-      operationId: searchSources
-      tags:
-        - Sources
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - query
-              properties:
-                query:
-                  type: string
-                  description: Search query
-                limit:
-                  type: integer
-                  default: 20
-                  description: Maximum results
-            example:
-              query: "PostgreSQL performance"
-              limit: 10
+    delete:
+      summary: Delete a source
+      tags: [Sources]
+      parameters:
+        - name: source_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
       responses:
-        '200':
-          description: Search results
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  sources:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Source'
-                  total_count:
-                    type: integer
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
+        "200":
+          description: Source deleted
 
-  # =========================================================================
-  # Articles
-  # =========================================================================
-  /articles:
+  /sources/{source_id}/index:
     post:
-      summary: Create a new article
-      operationId: createArticle
-      tags:
-        - Articles
-      security:
-        - bearerAuth: []
+      summary: Build tree index for a source
+      description: Uses LLM to generate hierarchical tree structure with character offsets.
+      tags: [Sources]
+      parameters:
+        - name: source_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Tree index built
+
+  /sources/{source_id}/tree:
+    get:
+      summary: Get tree index for a source
+      tags: [Sources]
+      parameters:
+        - name: source_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Tree index structure
+
+  /sources/{source_id}/region:
+    get:
+      summary: Get text region from a source by character offsets
+      tags: [Sources]
+      parameters:
+        - name: source_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: start
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: end
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Text region content
+
+  # ===========================================================================
+  # Articles
+  # ===========================================================================
+  /articles:
+    get:
+      summary: Search articles
+      tags: [Articles]
+      parameters:
+        - name: query
+          in: query
+          schema:
+            type: string
+        - name: domain
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "200":
+          description: Article search results
+    post:
+      summary: Create an article
+      tags: [Articles]
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required:
-                - content
+              required: [content]
               properties:
                 content:
                   type: string
-                  description: Article content
                 title:
                   type: string
-                  description: Optional title
+                domain_path:
+                  type: array
+                  items:
+                    type: string
+                source_ids:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: Created article
+
+  /articles/search:
+    post:
+      summary: Search articles (POST variant)
+      tags: [Articles]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query:
+                  type: string
+                domain:
+                  type: string
+                limit:
+                  type: integer
+      responses:
+        "200":
+          description: Article search results
+
+  /articles/compile:
+    post:
+      summary: Compile sources into an article via LLM
+      tags: [Articles]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source_ids]
+              properties:
                 source_ids:
                   type: array
                   items:
                     type: string
                     format: uuid
-                  description: Source IDs to link as provenance
-                author_type:
+                title_hint:
                   type: string
-                  enum: [system, operator, agent]
-                  default: system
-                domain_path:
-                  type: array
-                  items:
-                    type: string
-                  description: Domain hierarchy tags
-            example:
-              content: "PostgreSQL uses MVCC for concurrency control..."
-              title: "PostgreSQL Concurrency Model"
-              author_type: "agent"
-              domain_path: ["databases", "postgresql"]
       responses:
-        '201':
-          description: Article created
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  article:
-                    $ref: '#/components/schemas/Article'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
+        "200":
+          description: Compiled article
 
-  /articles/search:
+  /articles/merge:
     post:
-      summary: Search articles
-      operationId: searchArticles
-      tags:
-        - Articles
-      security:
-        - bearerAuth: []
+      summary: Merge two articles
+      tags: [Articles]
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required:
-                - query
+              required: [article_id_a, article_id_b]
               properties:
-                query:
+                article_id_a:
                   type: string
-                  description: Search query
-                limit:
-                  type: integer
-                  default: 10
-                  maximum: 50
-                domain_filter:
-                  type: array
-                  items:
-                    type: string
-                  description: Filter by domain path
-            example:
-              query: "PostgreSQL MVCC"
-              limit: 5
-              domain_filter: ["databases"]
+                  format: uuid
+                article_id_b:
+                  type: string
+                  format: uuid
       responses:
-        '200':
-          description: Search results
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  articles:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Article'
-                  total_count:
-                    type: integer
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
+        "200":
+          description: Merged article
 
   /articles/{article_id}:
     get:
       summary: Get article by ID
-      operationId: getArticle
-      tags:
-        - Articles
-      security:
-        - bearerAuth: []
+      tags: [Articles]
       parameters:
         - name: article_id
           in: path
@@ -593,40 +476,12 @@ paths:
           schema:
             type: boolean
             default: false
-          description: Include provenance sources
       responses:
-        '200':
+        "200":
           description: Article details
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  article:
-                    $ref: '#/components/schemas/Article'
-                  provenance:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/ProvenanceLink'
-                    description: Included if include_provenance=true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
     put:
-      summary: Update article content
-      operationId: updateArticle
-      tags:
-        - Articles
-      security:
-        - bearerAuth: []
+      summary: Update an article
+      tags: [Articles]
       parameters:
         - name: article_id
           in: path
@@ -640,50 +495,21 @@ paths:
           application/json:
             schema:
               type: object
-              required:
-                - content
+              required: [content]
               properties:
                 content:
                   type: string
-                  description: Updated content
                 source_id:
                   type: string
                   format: uuid
-                  description: Optional source ID for provenance
       responses:
-        '200':
-          description: Article updated
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  article:
-                    $ref: '#/components/schemas/Article'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalError'
+        "200":
+          description: Updated article
 
-  # =========================================================================
-  # Provenance
-  # =========================================================================
-  /articles/{article_id}/provenance:
-    get:
-      summary: Get article provenance
-      operationId: getProvenance
-      tags:
-        - Provenance
-      security:
-        - bearerAuth: []
+  /articles/{article_id}/split:
+    post:
+      summary: Split an oversized article
+      tags: [Articles]
       parameters:
         - name: article_id
           in: path
@@ -692,36 +518,28 @@ paths:
             type: string
             format: uuid
       responses:
-        '200':
+        "200":
+          description: Split result (original + new article)
+
+  /articles/{article_id}/provenance:
+    get:
+      summary: Get provenance links for an article
+      tags: [Provenance]
+      parameters:
+        - name: article_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
           description: Provenance links
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  provenance:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/ProvenanceLink'
-                  count:
-                    type: integer
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
 
   /articles/{article_id}/provenance/link:
     post:
       summary: Link a source to an article
-      operationId: linkProvenance
-      tags:
-        - Provenance
-      security:
-        - bearerAuth: []
+      tags: [Provenance]
       parameters:
         - name: article_id
           in: path
@@ -735,49 +553,22 @@ paths:
           application/json:
             schema:
               type: object
-              required:
-                - source_id
-                - relationship
+              required: [source_id, relationship]
               properties:
                 source_id:
                   type: string
                   format: uuid
                 relationship:
                   type: string
-                  enum: [supports, contradicts, references, derived_from]
-                notes:
-                  type: string
-            example:
-              source_id: "550e8400-e29b-41d4-a716-446655440000"
-              relationship: "supports"
-              notes: "Primary source for MVCC explanation"
+                  enum: [originates, confirms, supersedes, contradicts, contends]
       responses:
-        '201':
-          description: Provenance link created
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
+        "200":
+          description: Link created
 
   /articles/{article_id}/provenance/trace:
     post:
-      summary: Trace a claim to sources
-      operationId: traceClaim
-      tags:
-        - Provenance
-      security:
-        - bearerAuth: []
+      summary: Trace a claim to its contributing sources
+      tags: [Provenance]
       parameters:
         - name: article_id
           in: path
@@ -791,115 +582,384 @@ paths:
           application/json:
             schema:
               type: object
-              required:
-                - claim_text
+              required: [claim_text]
               properties:
                 claim_text:
                   type: string
-                  description: Text of claim to trace
-            example:
-              claim_text: "PostgreSQL uses MVCC"
       responses:
-        '200':
-          description: Traced sources
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  sources:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Source'
-                  count:
-                    type: integer
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
+        "200":
+          description: Source attribution rankings
 
-  # =========================================================================
-  # System
-  # =========================================================================
-  /health:
+  # ===========================================================================
+  # Contentions
+  # ===========================================================================
+  /contentions:
     get:
-      summary: Health check
-      operationId: healthCheck
-      tags:
-        - System
-      security: []
+      summary: List contentions
+      tags: [Contentions]
+      parameters:
+        - name: article_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [detected, resolved, dismissed]
       responses:
-        '200':
-          description: Service is healthy
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    enum: [healthy, degraded]
-                  server:
-                    type: string
-                  version:
-                    type: string
-                  database:
-                    type: string
-        '503':
-          description: Service is degraded or unhealthy
+        "200":
+          description: List of contentions
 
-  /stats:
+  /contentions/detect:
     get:
-      summary: Get system statistics
-      operationId: getStats
-      tags:
-        - System
-      security:
-        - bearerAuth: []
+      summary: Detect potential contradictions via semantic similarity
+      tags: [Contentions]
+      parameters:
+        - name: threshold
+          in: query
+          schema:
+            type: number
+            default: 0.85
+        - name: auto_record
+          in: query
+          schema:
+            type: boolean
+            default: false
       responses:
-        '200':
-          description: System statistics
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  articles:
-                    type: object
-                    properties:
-                      total:
-                        type: integer
-                      active:
-                        type: integer
-                  sources:
-                    type: object
-                    properties:
-                      total:
-                        type: integer
-                  embeddings:
-                    type: object
-                    properties:
-                      coverage_pct:
-                        type: number
-                      total:
-                        type: integer
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '500':
-          $ref: '#/components/responses/InternalError'
+        "200":
+          description: Detected conflicts
 
-tags:
-  - name: Sources
-    description: Source ingestion and retrieval
-  - name: Articles
-    description: Article creation and search
-  - name: Provenance
-    description: Source-to-article provenance tracking
-  - name: System
-    description: Health and statistics
+  /contentions/{contention_id}/resolve:
+    post:
+      summary: Resolve a contention
+      tags: [Contentions]
+      parameters:
+        - name: contention_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [resolution, rationale]
+              properties:
+                resolution:
+                  type: string
+                  enum: [supersede_a, supersede_b, accept_both, dismiss]
+                rationale:
+                  type: string
+      responses:
+        "200":
+          description: Resolved contention
+
+  # ===========================================================================
+  # Sessions
+  # ===========================================================================
+  /sessions:
+    get:
+      summary: List sessions
+      tags: [Sessions]
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: platform
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: List of sessions
+    post:
+      summary: Create or update a session
+      tags: [Sessions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                platform:
+                  type: string
+                agent_id:
+                  type: string
+                external_id:
+                  type: string
+                metadata:
+                  type: object
+      responses:
+        "200":
+          description: Session created/updated
+
+  /sessions/search:
+    get:
+      summary: Search sessions
+      tags: [Sessions]
+      parameters:
+        - name: query
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Session search results
+
+  /sessions/flush-stale:
+    post:
+      summary: Flush all stale sessions
+      tags: [Sessions]
+      responses:
+        "200":
+          description: Flush results
+
+  /sessions/{session_id}:
+    get:
+      summary: Get session details
+      tags: [Sessions]
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: include_messages
+          in: query
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Session details
+    patch:
+      summary: Update session metadata
+      tags: [Sessions]
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                metadata:
+                  type: object
+      responses:
+        "200":
+          description: Updated session
+
+  /sessions/{session_id}/messages:
+    get:
+      summary: Get session messages
+      tags: [Sessions]
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Message list
+    post:
+      summary: Append messages to session
+      tags: [Sessions]
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [messages]
+              properties:
+                messages:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      role:
+                        type: string
+                      content:
+                        type: string
+      responses:
+        "200":
+          description: Messages appended
+
+  /sessions/{session_id}/flush:
+    post:
+      summary: Flush session messages to source
+      tags: [Sessions]
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Session flushed
+
+  /sessions/{session_id}/compile:
+    post:
+      summary: Compile session sources into article
+      tags: [Sessions]
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Compiled article
+
+  /sessions/{session_id}/finalize:
+    post:
+      summary: Flush + complete + compile session
+      tags: [Sessions]
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Finalized session
+
+  # ===========================================================================
+  # Admin
+  # ===========================================================================
+  /admin/maintenance:
+    post:
+      summary: Trigger maintenance operations
+      tags: [Admin]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                recompute_scores:
+                  type: boolean
+                process_queue:
+                  type: boolean
+                evict_if_over_capacity:
+                  type: boolean
+                evict_count:
+                  type: integer
+      responses:
+        "200":
+          description: Maintenance results
+
+  /admin/forget/{target_type}/{target_id}:
+    delete:
+      summary: Permanently remove a source or article
+      tags: [Admin]
+      parameters:
+        - name: target_type
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [source, article]
+        - name: target_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Target forgotten
+
+  /admin/verify-chains:
+    get:
+      summary: Verify provenance chain integrity
+      tags: [Admin]
+      responses:
+        "200":
+          description: Chain verification results
+
+  /admin/embeddings/status:
+    get:
+      summary: Embedding coverage status
+      tags: [Admin]
+      responses:
+        "200":
+          description: Embedding statistics
+
+  /admin/embeddings/backfill:
+    post:
+      summary: Backfill missing embeddings
+      tags: [Admin]
+      responses:
+        "200":
+          description: Backfill results
+
+  /admin/embeddings/migrate:
+    post:
+      summary: Migrate embeddings to section-based format
+      tags: [Admin]
+      responses:
+        "200":
+          description: Migration results
+
+  /config/inference:
+    put:
+      summary: Configure inference backend
+      tags: [Admin]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                backend:
+                  type: string
+                model:
+                  type: string
+                base_url:
+                  type: string
+      responses:
+        "200":
+          description: Configuration updated

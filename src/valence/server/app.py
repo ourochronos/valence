@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Ourochronos Contributors
 
-"""Starlette ASGI application for the Valence HTTP MCP server.
+"""Starlette ASGI application for the Valence HTTP + MCP server.
 
 Provides HTTP transport for the unified MCP server with authentication,
 health checks, and rate limiting.
