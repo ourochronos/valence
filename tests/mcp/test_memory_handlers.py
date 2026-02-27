@@ -170,6 +170,35 @@ class TestMemoryStore:
         call_kwargs = mock_source_ingest.call_args.kwargs
         assert call_kwargs["title"] == "Memory from test:context"
 
+    def test_importance_none_defaults_to_half(self, mock_source_ingest):
+        """Regression: MCP clients may send null for optional params (issue #561)."""
+        result = memory_store(content="Test memory", importance=None)
+        assert result["success"] is True
+        assert result["importance"] == 0.5
+        call_kwargs = mock_source_ingest.call_args.kwargs
+        assert call_kwargs["metadata"]["importance"] == 0.5
+        assert call_kwargs["metadata"]["memory"] is True
+
+    def test_null_optional_params_from_mcp(self, mock_source_ingest):
+        """Regression: when MCP sends null for all optional params, metadata must still persist (issue #561)."""
+        result = memory_store(
+            content="Test memory via MCP",
+            context=None,
+            importance=None,
+            tags=None,
+            supersedes_id=None,
+        )
+        assert result["success"] is True
+        # Default importance applied
+        assert result["importance"] == 0.5
+        # metadata memory flag must still be set
+        call_kwargs = mock_source_ingest.call_args.kwargs
+        assert call_kwargs["metadata"]["memory"] is True
+        assert call_kwargs["metadata"]["importance"] == 0.5
+        # context and tags should not be in metadata (they were None)
+        assert "context" not in call_kwargs["metadata"]
+        assert "tags" not in call_kwargs["metadata"]
+
 
 # ---------------------------------------------------------------------------
 # Tests: memory_recall

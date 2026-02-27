@@ -49,7 +49,9 @@ def memory_store(
     if not content or not content.strip():
         return {"success": False, "error": "content must be non-empty"}
 
-    # Validate importance
+    # Validate importance — MCP clients may send null for optional params; default to 0.5
+    if importance is None:
+        importance = 0.5
     importance = max(0.0, min(1.0, float(importance)))
 
     # Build metadata with agent-specific fields

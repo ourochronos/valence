@@ -161,6 +161,26 @@ async def test_call_tool_unexpected_error():
     assert "Something went wrong" in response["error"]
 
 
+@pytest.mark.asyncio
+async def test_call_tool_none_arguments():
+    """Regression: call_tool should not crash when arguments is None (issue #561).
+
+    Some MCP library versions pass None instead of {} when a client sends no args.
+    """
+    mock_handler = Mock(return_value={"success": True})
+
+    with patch.dict(TOOL_HANDLERS, {"test_tool": mock_handler}, clear=False):
+        result = await call_tool("test_tool", None)
+
+    # Should not raise; handler called with no args or returns error
+    assert len(result) == 1
+    assert result[0].type == "text"
+    response = json.loads(result[0].text)
+    # The mock handler is called with no kwargs since arguments or {} = {}
+    assert response["success"] is True
+    mock_handler.assert_called_once_with()
+
+
 # ---------------------------------------------------------------------------
 # Tests: list_resources
 # ---------------------------------------------------------------------------
