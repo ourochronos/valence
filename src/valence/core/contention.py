@@ -17,11 +17,9 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable
-from datetime import datetime
 from typing import Any
-from uuid import UUID
 
-from valence.core.db import get_cursor
+from valence.core.db import get_cursor, serialize_row
 from valence.core.inference import (
     TASK_CONTENTION,
     TASK_OUTPUT_SCHEMAS,
@@ -154,19 +152,6 @@ def _get_materiality_threshold() -> float:
 # ---------------------------------------------------------------------------
 # Row serialization
 # ---------------------------------------------------------------------------
-
-
-def _serialize_row(row: dict[str, Any]) -> dict[str, Any]:
-    """Convert a DB row to a JSON-safe plain dict."""
-    out: dict[str, Any] = {}
-    for k, v in row.items():
-        if isinstance(v, datetime):
-            out[k] = v.isoformat()
-        elif isinstance(v, UUID):
-            out[k] = str(v)
-        else:
-            out[k] = v
-    return out
 
 
 # ---------------------------------------------------------------------------
@@ -355,7 +340,7 @@ async def detect_contention(article_id: str, source_id: str) -> ValenceResponse:
         if row is None:
             logger.error("detect_contention: INSERT returned no row")
             return err("Contention INSERT returned no row")
-        contention = _serialize_row(dict(row))
+        contention = serialize_row(dict(row))
 
     logger.info(
         "Contention created: id=%s article=%s source=%s materiality=%.2f type=%s",
@@ -401,7 +386,7 @@ async def list_contentions(
         cur.execute(sql, params)
         rows = cur.fetchall()
 
-    return ok(data=[_serialize_row(dict(r)) for r in rows])
+    return ok(data=[serialize_row(dict(r)) for r in rows])
 
 
 async def resolve_contention(
@@ -502,7 +487,7 @@ async def resolve_contention(
         return err("Failed to update contention row")
 
     data: dict[str, Any] = {
-        "contention": _serialize_row(dict(updated_row)),
+        "contention": serialize_row(dict(updated_row)),
     }
     if updated_article:
         data["article"] = updated_article
@@ -614,6 +599,6 @@ async def _apply_supersede_b(
             ),
         )
 
-    updated_article = _serialize_row(dict(updated_row))
+    updated_article = serialize_row(dict(updated_row))
     logger.info("Article %s updated via supersede_b resolution", article_id)
     return updated_article

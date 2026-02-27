@@ -16,12 +16,10 @@ import asyncio
 import json
 import logging
 from collections.abc import Callable
-from datetime import datetime
 from typing import Any
-from uuid import UUID
 
 from valence.core.confidence import compute_confidence
-from valence.core.db import get_cursor
+from valence.core.db import get_cursor, serialize_row
 from valence.core.inference import (
     RELATIONSHIP_ENUM,
     TASK_COMPILE,
@@ -294,19 +292,6 @@ def _parse_llm_json(response: str, required_keys: list[str]) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _serialize_row(row: dict[str, Any]) -> dict[str, Any]:
-    """Convert a DB row to a JSON-safe plain dict."""
-    out: dict[str, Any] = {}
-    for k, v in row.items():
-        if isinstance(v, datetime):
-            out[k] = v.isoformat()
-        elif isinstance(v, UUID):
-            out[k] = str(v)
-        else:
-            out[k] = v
-    return out
-
-
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -472,7 +457,7 @@ async def compile_article(
                 ),
             )
             row = cur.fetchone()
-            article = _serialize_row(dict(row))
+            article = serialize_row(dict(row))
             article_id = article["id"]
 
             # Link each source with its identified relationship
@@ -576,7 +561,7 @@ async def update_article_from_source(
         row = cur.fetchone()
         if not row:
             return err(f"Article not found: {article_id}")
-        article = _serialize_row(dict(row))
+        article = serialize_row(dict(row))
 
         cur.execute(
             "SELECT id, type, title, url, content, reliability FROM sources WHERE id = %s",
@@ -631,7 +616,7 @@ async def update_article_from_source(
         row = cur.fetchone()
         if not row:
             return err(f"Article not found after update: {article_id}")
-        updated_article = _serialize_row(dict(row))
+        updated_article = serialize_row(dict(row))
 
         # Link source with identified relationship
         try:
@@ -1043,7 +1028,7 @@ async def recompile_article(article_id: str) -> ValenceResponse:
         row = cur.fetchone()
         if not row:
             return err(f"Article not found after recompile: {article_id}")
-        updated_article = _serialize_row(dict(row))
+        updated_article = serialize_row(dict(row))
 
         # Update source relationships
         cur.execute("DELETE FROM article_sources WHERE article_id = %s", (article_id,))
@@ -1129,7 +1114,7 @@ async def recompile_article(article_id: str) -> ValenceResponse:
                 ),
             )
             row = cur.fetchone()
-            new_article = _serialize_row(dict(row))
+            new_article = serialize_row(dict(row))
             new_id = new_article["id"]
 
             for src in sources:
