@@ -38,7 +38,6 @@ from .handlers.articles import (
     knowledge_search,
 )
 from .handlers.contention import contention_detect, contention_list, contention_resolve
-from .handlers.entities import entity_get, entity_search
 from .handlers.memory import memory_forget, memory_recall, memory_status, memory_store
 from .handlers.provenance import provenance_get, provenance_link, provenance_trace
 from .handlers.sessions import (
@@ -85,9 +84,6 @@ TOOL_HANDLERS: dict[str, Any] = {
     "provenance_link": provenance_link,
     "provenance_get": provenance_get,
     "provenance_trace": provenance_trace,
-    # Entity tools
-    "entity_get": entity_get,
-    "entity_search": entity_search,
     # Contention tools
     "contention_detect": contention_detect,
     "contention_list": contention_list,

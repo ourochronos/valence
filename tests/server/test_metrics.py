@@ -175,7 +175,6 @@ class TestDatabaseMetrics:
         lines = collector._collect_database_metrics()
 
         assert any("valence_articles_total 100" in line for line in lines)
-        assert any("valence_entities_total 50" in line for line in lines)
 
     def test_collect_database_metrics_error(self):
         """Database errors are handled gracefully."""

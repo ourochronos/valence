@@ -35,7 +35,7 @@ class TestConflicts:
 
         assert result == 0
         call_args = mock_client.get.call_args
-        assert call_args[0][0] == "/beliefs/conflicts"
+        assert call_args[0][0] == "/contentions/detect"
         params = call_args[1]["params"]
         assert params["output"] == "text"
         assert params["threshold"] == "0.85"
