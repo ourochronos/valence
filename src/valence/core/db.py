@@ -313,6 +313,7 @@ def serialize_row(row: dict[str, Any], *, strip_internal: bool = True) -> dict[s
     import json as _json
     import uuid as _uuid
     from datetime import datetime as _dt
+    from decimal import Decimal as _Decimal
 
     d = dict(row)
     for key, val in list(d.items()):
@@ -320,6 +321,8 @@ def serialize_row(row: dict[str, Any], *, strip_internal: bool = True) -> dict[s
             d[key] = val.isoformat()
         elif isinstance(val, _uuid.UUID):
             d[key] = str(val)
+        elif isinstance(val, _Decimal):
+            d[key] = float(val)
         elif key in ("confidence", "metadata") and isinstance(val, str):
             try:
                 d[key] = _json.loads(val)
