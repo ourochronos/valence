@@ -122,6 +122,33 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     )
     search_p.set_defaults(func=cmd_memory_search)
 
+    # --- store ---
+    store_p = memory_sub.add_parser("store", help="Store a memory directly from content string")
+    store_p.add_argument("content", help="Memory content to store")
+    store_p.add_argument(
+        "--context",
+        help="Where this memory came from (e.g., 'session:main', 'conversation:user')",
+    )
+    store_p.add_argument(
+        "--importance",
+        type=float,
+        default=0.5,
+        help="Importance score (0.0-1.0, default 0.5)",
+    )
+    store_p.add_argument(
+        "--tags",
+        action="append",
+        dest="tags",
+        metavar="TAG",
+        help="Tag to apply (repeatable: --tags foo --tags bar)",
+    )
+    store_p.add_argument(
+        "--supersedes-id",
+        dest="supersedes_id",
+        help="UUID of a previous memory this replaces",
+    )
+    store_p.set_defaults(func=cmd_memory_store)
+
     # --- forget ---
     forget_p = memory_sub.add_parser("forget", help="Mark a memory as forgotten (soft delete)")
     forget_p.add_argument("memory_id", help="UUID of the memory to forget")
@@ -322,6 +349,22 @@ def cmd_memory_search(args: argparse.Namespace) -> int:
         limit=args.limit,
         min_confidence=args.min_confidence,
         tags=args.tags,
+    )
+
+    output_result(result)
+    return 0 if result.get("success") else 1
+
+
+def cmd_memory_store(args: argparse.Namespace) -> int:
+    """Store a memory directly from a content string."""
+    from valence.mcp.handlers.memory import memory_store
+
+    result = memory_store(
+        content=args.content,
+        context=getattr(args, "context", None),
+        importance=getattr(args, "importance", 0.5),
+        tags=getattr(args, "tags", None),
+        supersedes_id=getattr(args, "supersedes_id", None),
     )
 
     output_result(result)
