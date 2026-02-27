@@ -13,11 +13,8 @@ WU-14: All public functions now async and return ValenceResponse (C12, DR-10).
 from __future__ import annotations
 
 import logging
-from datetime import datetime
-from typing import Any
-from uuid import UUID
 
-from valence.core.db import get_cursor
+from valence.core.db import get_cursor, serialize_row
 
 from .embedding_interop import text_similarity
 from .response import ValenceResponse, err, ok
@@ -34,19 +31,6 @@ VALID_RELATIONSHIPS = {"originates", "confirms", "supersedes", "contradicts", "c
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _serialize_row(row: dict[str, Any]) -> dict[str, Any]:
-    """Convert a DB row dict to a JSON-safe plain dict."""
-    out: dict[str, Any] = {}
-    for k, v in row.items():
-        if isinstance(v, datetime):
-            out[k] = v.isoformat()
-        elif isinstance(v, UUID):
-            out[k] = str(v)
-        else:
-            out[k] = v
-    return out
 
 
 # ---------------------------------------------------------------------------
@@ -97,7 +81,7 @@ async def link_source(
             (article_id, source_id, relationship, notes),
         )
         row = cur.fetchone()
-        return ok(data=_serialize_row(dict(row)))
+        return ok(data=serialize_row(dict(row)))
 
 
 async def get_provenance(article_id: str) -> ValenceResponse:
@@ -133,7 +117,7 @@ async def get_provenance(article_id: str) -> ValenceResponse:
             (article_id,),
         )
         rows = cur.fetchall()
-        return ok(data=[_serialize_row(dict(r)) for r in rows])
+        return ok(data=[serialize_row(dict(r)) for r in rows])
 
 
 async def trace_claim(article_id: str, claim_text: str) -> ValenceResponse:
@@ -180,7 +164,7 @@ async def trace_claim(article_id: str, claim_text: str) -> ValenceResponse:
 
     results = []
     for row in rows:
-        row_dict = _serialize_row(dict(row))
+        row_dict = serialize_row(dict(row))
         source_content = row_dict.get("content") or ""
         similarity = text_similarity(claim_text, source_content)
         if similarity > 0:
@@ -212,4 +196,4 @@ async def get_mutation_history(article_id: str) -> ValenceResponse:
             (article_id,),
         )
         rows = cur.fetchall()
-        return ok(data=[_serialize_row(dict(r)) for r in rows])
+        return ok(data=[serialize_row(dict(r)) for r in rows])

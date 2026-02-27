@@ -25,7 +25,7 @@ import math
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from valence.core.db import get_cursor
+from valence.core.db import get_cursor, serialize_row
 from valence.core.embeddings import generate_embedding
 
 from .ranking import multi_signal_rank
@@ -52,13 +52,6 @@ def _try_generate_embedding(query: str) -> str | None:
     except Exception as exc:
         logger.warning("Embedding generation failed, falling back to text-only: %s", exc)
         return None
-
-
-def _serialize_row(row: dict[str, Any]) -> dict[str, Any]:
-    """Convert a DB row dict: UUID → str, datetime → ISO string."""
-    from valence.core.db import serialize_row
-
-    return serialize_row(row)
 
 
 def _extract_rrf_scores(d: dict[str, Any], rrf_min: float, rrf_range: float) -> None:
@@ -294,7 +287,7 @@ def _search_articles_sync(query: str, limit: int) -> list[dict[str, Any]]:
 
         results = []
         for row in rows:
-            d = _serialize_row(row)
+            d = serialize_row(row)
             d.pop("content_tsv", None)
             d.pop("embedding", None)
             _extract_rrf_scores(d, rrf_min, rrf_range)
@@ -415,7 +408,7 @@ def _search_ungrouped_sources_sync(query: str, limit: int) -> list[dict[str, Any
 
         results = []
         for row in rows:
-            d = _serialize_row(row)
+            d = serialize_row(row)
             _extract_rrf_scores(d, rrf_min, rrf_range)
             d["type"] = "source"
             d["confidence"] = {"overall": float(d.get("reliability", 0.5))}
