@@ -148,6 +148,22 @@ async def ingest_source(
         )
     else:
         logger.info("Ingested source id=%s type=%s fingerprint=%s", result["id"], source_type, fingerprint[:8])
+
+    # Run post-ingest pipeline (embed + tree + auto-compile)
+    source_id = result["id"]
+    try:
+        from valence.core.ingest_pipeline import run_source_pipeline
+
+        pipeline_result = await run_source_pipeline(source_id, batch_mode=False)
+        if pipeline_result.success:
+            result["pipeline"] = pipeline_result.data
+        else:
+            logger.warning("Ingest pipeline failed for %s: %s", source_id, pipeline_result.error)
+            result["pipeline_error"] = pipeline_result.error
+    except Exception as exc:
+        logger.warning("Ingest pipeline raised for %s: %s", source_id, exc)
+        result["pipeline_error"] = str(exc)
+
     return ok(data=result)
 
 

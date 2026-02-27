@@ -83,6 +83,23 @@ def source_ingest(
         row = cur.fetchone()
 
     source = serialize_row(row)
+
+    # Run post-ingest pipeline synchronously via run_async
+    source_id = source["id"]
+    try:
+        import asyncio
+        from valence.core.ingest_pipeline import run_source_pipeline
+
+        pipeline_result = asyncio.run(run_source_pipeline(source_id, batch_mode=False))
+        if pipeline_result.success:
+            source["pipeline"] = pipeline_result.data
+        else:
+            logger.warning("Ingest pipeline failed for %s: %s", source_id, pipeline_result.error)
+            source["pipeline_error"] = pipeline_result.error
+    except Exception as exc:
+        logger.warning("Ingest pipeline raised for %s: %s", source_id, exc)
+        source["pipeline_error"] = str(exc)
+
     return {"success": True, "source": source}
 
 
