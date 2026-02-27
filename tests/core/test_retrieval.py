@@ -570,7 +570,7 @@ class TestUngroupedSourcesAndQueue:
         src_row = _make_source_row(source_id=SOURCE_ID, text_rank=0.7)
         sentinel = {"id": uuid.UUID(ARTICLE_ID)}
 
-        fetch_all_responses = [[], [src_row]]  # articles=[], sources=[src_row]
+        fetch_all_responses = [[], [], [src_row]]  # articles=[], sections=[], sources=[src_row]
         fetch_one_responses = [sentinel]  # sentinel for recompile queue
 
         cur = MagicMock()
@@ -596,7 +596,7 @@ class TestUngroupedSourcesAndQueue:
         src_row = _make_source_row(source_id=SOURCE_ID, text_rank=0.7)
         sentinel = {"id": uuid.UUID(ARTICLE_ID)}
 
-        fetch_all_responses = [[], [src_row]]
+        fetch_all_responses = [[], [], [src_row]]
         fetch_one_responses = [sentinel]
 
         cur = MagicMock()
@@ -639,7 +639,7 @@ class TestUngroupedSourcesAndQueue:
         """If there are no articles to attach to, recompile queue is skipped gracefully."""
         src_row = _make_source_row(source_id=SOURCE_ID, text_rank=0.7)
 
-        fetch_all_responses = [[], [src_row]]
+        fetch_all_responses = [[], [], [src_row]]
         fetch_one_responses = [None]  # no articles exist
 
         cur = MagicMock()
@@ -675,7 +675,7 @@ class TestSourceResultMetadata:
         src_row = _make_source_row(reliability=0.8)
         sentinel = {"id": uuid.UUID(ARTICLE_ID)}
 
-        fetch_all_responses = [[], [src_row]]
+        fetch_all_responses = [[], [], [src_row]]
         fetch_one_responses = [sentinel]
 
         cur = MagicMock()
@@ -699,7 +699,7 @@ class TestSourceResultMetadata:
         src_row = _make_source_row(days_old=10.0)
         sentinel = {"id": uuid.UUID(ARTICLE_ID)}
 
-        fetch_all_responses = [[], [src_row]]
+        fetch_all_responses = [[], [], [src_row]]
         fetch_one_responses = [sentinel]
 
         cur = MagicMock()

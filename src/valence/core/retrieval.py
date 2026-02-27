@@ -430,6 +430,95 @@ def _search_ungrouped_sources_sync(query: str, limit: int) -> list[dict[str, Any
 
 
 # ---------------------------------------------------------------------------
+# Search: source sections (tree-indexed embeddings)
+# ---------------------------------------------------------------------------
+
+_SECTION_HYBRID_SQL = """
+WITH vec AS (
+    SELECT ss.id,
+           ss.source_id,
+           ROW_NUMBER() OVER (ORDER BY ss.embedding <=> %(emb)s::vector) AS vec_rank,
+           1 - (ss.embedding <=> %(emb)s::vector) AS vec_score
+    FROM source_sections ss
+    WHERE ss.embedding IS NOT NULL
+    ORDER BY ss.embedding <=> %(emb)s::vector
+    LIMIT %(search_limit)s
+)
+SELECT s.id AS source_id, s.type, s.title AS source_title, s.url,
+       s.reliability, s.created_at,
+       ss.id AS section_id, ss.tree_path, ss.title AS section_title,
+       ss.summary, ss.start_char, ss.end_char, ss.depth,
+       COALESCE(v.vec_score, 0) AS vec_score,
+       COALESCE(v.vec_rank, %(default_rank)s) AS vec_rank,
+       %(default_rank)s AS text_rank,
+       0.0 AS text_score,
+       (1.0 / (%(k)s + COALESCE(v.vec_rank, %(default_rank)s))) AS rrf_score
+FROM source_sections ss
+JOIN sources s ON s.id = ss.source_id
+JOIN vec v ON v.id = ss.id
+ORDER BY rrf_score DESC
+LIMIT %(lim)s
+"""
+
+
+def _search_source_sections_sync(query: str, limit: int) -> list[dict[str, Any]]:
+    """Vector search over source_sections for tree-indexed content."""
+    embedding_str = _try_generate_embedding(query)
+    if embedding_str is None:
+        return []  # Sections are vector-only (no tsv column)
+
+    params = {
+        "q": query,
+        "emb": embedding_str,
+        "k": RRF_K,
+        "default_rank": DEFAULT_RANK,
+        "search_limit": limit * 2,
+        "lim": limit,
+    }
+
+    with get_cursor() as cur:
+        cur.execute(_SECTION_HYBRID_SQL, params)
+        rows = cur.fetchall()
+        if not rows:
+            return []
+
+        _, rrf_min, rrf_range = _rrf_range(rows)
+
+        results = []
+        for row in rows:
+            d = dict(row)
+            # Extract the actual content slice from the source
+            cur.execute("SELECT content FROM sources WHERE id = %s", (d["source_id"],))
+            src_row = cur.fetchone()
+            if src_row:
+                full_content = src_row["content"] or ""
+                d["content"] = full_content[d["start_char"] : d["end_char"]]
+            else:
+                d["content"] = ""
+
+            d["id"] = str(d["section_id"])
+            d["source_id"] = str(d["source_id"])
+            d["type"] = "source_section"
+            d["title"] = d.get("section_title") or d.get("source_title") or "Untitled"
+            d["confidence"] = {"overall": float(d.get("reliability", 0.5))}
+
+            _extract_rrf_scores(d, rrf_min, rrf_range)
+            freshness_days = _compute_freshness_days(d)
+            d["freshness"] = freshness_days
+            d["freshness_score"] = _freshness_score(freshness_days)
+            d["active_contentions"] = False
+            d["provenance_summary"] = {"source_count": 1, "relationship_types": []}
+
+            # Clean up internal keys
+            for key in ("section_id", "source_title", "section_title", "reliability"):
+                d.pop(key, None)
+
+            results.append(d)
+
+        return results
+
+
+# ---------------------------------------------------------------------------
 # Unified retrieval
 # ---------------------------------------------------------------------------
 
@@ -445,7 +534,10 @@ def _retrieve_sync(
 
     source_results: list[dict[str, Any]] = []
     if include_sources:
-        source_results = _search_ungrouped_sources_sync(query, limit)
+        # Prefer tree-indexed section search; fall back to whole-source search
+        source_results = _search_source_sections_sync(query, limit)
+        if not source_results:
+            source_results = _search_ungrouped_sources_sync(query, limit)
 
     all_results = article_results + source_results
     if not all_results:

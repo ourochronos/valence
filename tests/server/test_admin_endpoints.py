@@ -91,13 +91,15 @@ class TestMaintenance:
     @patch("valence.core.compilation.process_mutation_queue")
     @patch("valence.core.usage.compute_usage_scores")
     @patch("valence.core.usage.backfill_confidence_scores")
-    def test_run_all(self, mock_backfill, mock_scores, mock_queue, mock_full, mock_params, mock_connect, client):
+    @patch("valence.core.section_embeddings.embed_all_sources")
+    def test_run_all(self, mock_embed_sections, mock_backfill, mock_scores, mock_queue, mock_full, mock_params, mock_connect, client):
         from valence.core.maintenance import MaintenanceResult
         from valence.core.response import ValenceResponse
 
         # Mock v2 ops
         mock_scores.return_value = ValenceResponse(success=True, data=10)
         mock_queue.return_value = ValenceResponse(success=True, data=0)
+        mock_embed_sections.return_value = ValenceResponse(success=True, data={"processed": 3, "total_sections": 12, "errors": 0, "remaining": 0})
         mock_backfill.return_value = ValenceResponse(success=True, data=5)
 
         # Mock legacy DB ops
@@ -114,11 +116,12 @@ class TestMaintenance:
         assert resp.status_code == 200
         data = resp.json()
         # 3 v2 ops + legacy results
-        assert data["count"] >= 4
+        assert data["count"] >= 5
         ops = [r["operation"] for r in data["results"]]
         assert "recompute_scores" in ops
         assert "process_queue" in ops
         assert "backfill_confidence" in ops
+        assert "embed_sections" in ops
 
 
 # =============================================================================
