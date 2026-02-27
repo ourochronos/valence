@@ -5,10 +5,14 @@
 
 Sources are append-only — use supersession for corrections.
 
-Two forgetting operations remain:
+Three forgetting operations:
 
-1. ``remove_article`` — Delete an article. Sources are untouched.
-2. ``evict_lowest``   — Organic forgetting when over capacity.
+1. ``remove_article`` — Delete an article permanently. Sources are untouched.
+2. ``archive_lowest``  — Organic forgetting: archive lowest-score articles when over capacity.
+3. ``evict_lowest``    — Alias for archive_lowest (backwards compat).
+
+Archived articles remain searchable but with a capped score (rank floor),
+so they only surface when directly relevant.
 """
 
 from __future__ import annotations
@@ -52,10 +56,14 @@ async def remove_article(article_id: str) -> ValenceResponse:
     return ok(data={"article_id": article_id})
 
 
-async def evict_lowest(count: int = 10) -> ValenceResponse:
-    """Organic forgetting: evict lowest-score non-pinned articles when over capacity."""
+async def archive_lowest(count: int = 10) -> ValenceResponse:
+    """Organic forgetting: archive lowest-score non-pinned articles when over capacity.
+
+    Archived articles are NOT deleted — they remain searchable with a capped
+    score (rank floor) so they only surface when directly relevant.
+    """
     count = max(1, count)
-    evicted: list[str] = []
+    archived: list[str] = []
 
     with get_cursor() as cur:
         cur.execute(
@@ -80,27 +88,30 @@ async def evict_lowest(count: int = 10) -> ValenceResponse:
             return ok(data=[])
 
         overflow = current_count - max_articles
-        to_evict = min(count, overflow)
+        to_archive = min(count, overflow)
 
         cur.execute(
             """
-            SELECT id::text
-            FROM articles
-            WHERE pinned = FALSE
-              AND status = 'active'
-            ORDER BY usage_score ASC
-            LIMIT %s
+            UPDATE articles
+            SET status = 'archived'
+            WHERE id IN (
+                SELECT id
+                FROM articles
+                WHERE pinned = FALSE
+                  AND status = 'active'
+                ORDER BY usage_score ASC
+                LIMIT %s
+            )
+            RETURNING id::text
             """,
-            (to_evict,),
+            (to_archive,),
         )
-        candidates = [row["id"] for row in cur.fetchall()]
+        archived = [row["id"] for row in cur.fetchall()]
 
-    for article_id in candidates:
-        result = await remove_article(article_id)
-        if result.success:
-            evicted.append(article_id)
-        else:
-            logger.warning("evict_lowest: failed to evict %s: %s", article_id, result.error)
+    logger.info("archive_lowest: archived %d article(s)", len(archived))
+    return ok(data=archived)
 
-    logger.info("evict_lowest: evicted %d article(s)", len(evicted))
-    return ok(data=evicted)
+
+async def evict_lowest(count: int = 10) -> ValenceResponse:
+    """Backwards-compatible alias for archive_lowest."""
+    return await archive_lowest(count)

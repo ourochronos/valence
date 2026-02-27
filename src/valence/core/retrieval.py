@@ -37,6 +37,8 @@ logger = logging.getLogger(__name__)
 RRF_K = 60
 # Default rank for items not found by one search method
 DEFAULT_RANK = 1000
+# Maximum final_score for archived articles (organic forgetting rank floor)
+ARCHIVED_RANK_FLOOR = 0.1
 
 
 # ---------------------------------------------------------------------------
@@ -177,7 +179,7 @@ def _queue_recompile(source_id: str, query: str, cur: Any) -> None:
     """Queue a recompile mutation for an ungrouped source."""
     try:
         cur.execute(
-            "SELECT id FROM articles WHERE status = 'active' ORDER BY created_at LIMIT 1",
+            "SELECT id FROM articles WHERE status IN ('active', 'archived') ORDER BY created_at LIMIT 1",
         )
         row = cur.fetchone()
         if row is None:
@@ -207,7 +209,7 @@ WITH vec AS (
            ROW_NUMBER() OVER (ORDER BY embedding <=> %(emb)s::vector) AS vec_rank,
            1 - (embedding <=> %(emb)s::vector) AS vec_score
     FROM articles
-    WHERE status = 'active'
+    WHERE status IN ('active', 'archived')
       AND superseded_by_id IS NULL
       AND embedding IS NOT NULL
     ORDER BY embedding <=> %(emb)s::vector
@@ -220,7 +222,7 @@ txt AS (
            ) AS text_rank,
            ts_rank(content_tsv, websearch_to_tsquery('english', %(q)s)) AS text_score
     FROM articles
-    WHERE status = 'active'
+    WHERE status IN ('active', 'archived')
       AND superseded_by_id IS NULL
       AND content_tsv @@ websearch_to_tsquery('english', %(q)s)
     LIMIT %(search_limit)s
@@ -253,7 +255,7 @@ SELECT a.*,
        ))) AS rrf_score
 FROM articles a
 WHERE a.content_tsv @@ websearch_to_tsquery('english', %(q)s)
-  AND a.status = 'active'
+  AND a.status IN ('active', 'archived')
   AND a.superseded_by_id IS NULL
 ORDER BY rrf_score DESC
 LIMIT %(lim)s
@@ -558,6 +560,11 @@ def _retrieve_sync(
             r["created_at"] = orig
 
     ranked = ranked[:limit]
+
+    # Apply rank floor to archived articles
+    for r in ranked:
+        if r.get("status") == "archived" and r.get("final_score", 0) > ARCHIVED_RANK_FLOOR:
+            r["final_score"] = ARCHIVED_RANK_FLOOR
 
     # Side effects: usage traces + recompile queue
     with get_cursor() as cur:
