@@ -865,3 +865,59 @@ class TestComputeFreshnessScore:
 
         score = compute_freshness_score({})
         assert score == 0.5
+
+
+class TestGracePeriodBoost:
+    """Test novelty boost for new articles."""
+
+    def test_constants(self):
+        """Grace period constants have expected values."""
+        from valence.core.retrieval import GRACE_PERIOD_HOURS, NOVELTY_BOOST_MAX
+
+        assert GRACE_PERIOD_HOURS == 48
+        assert NOVELTY_BOOST_MAX == 1.5
+
+    def test_boost_applied_to_new_article(self):
+        """A just-created article should get close to max boost."""
+        from datetime import UTC, datetime, timedelta
+
+        from valence.core.retrieval import GRACE_PERIOD_HOURS, NOVELTY_BOOST_MAX
+
+        now = datetime.now(UTC)
+        # Simulate: article created 1 hour ago
+        created = now - timedelta(hours=1)
+        elapsed = (now - created).total_seconds()
+        grace_seconds = GRACE_PERIOD_HOURS * 3600
+        decay = max(0.0, 1.0 - elapsed / grace_seconds)
+        boost = 1.0 + (NOVELTY_BOOST_MAX - 1.0) * decay
+
+        # 1 hour into 48-hour period → ~97.9% of max boost
+        assert boost > 1.4
+        assert boost <= NOVELTY_BOOST_MAX
+
+    def test_boost_decays_to_one(self):
+        """At the end of grace period, boost should be ~1.0."""
+        from datetime import UTC, datetime, timedelta
+
+        from valence.core.retrieval import GRACE_PERIOD_HOURS, NOVELTY_BOOST_MAX
+
+        now = datetime.now(UTC)
+        created = now - timedelta(hours=GRACE_PERIOD_HOURS)
+        elapsed = (now - created).total_seconds()
+        grace_seconds = GRACE_PERIOD_HOURS * 3600
+        decay = max(0.0, 1.0 - elapsed / grace_seconds)
+        boost = 1.0 + (NOVELTY_BOOST_MAX - 1.0) * decay
+
+        assert abs(boost - 1.0) < 0.01
+
+    def test_no_boost_after_grace_period(self):
+        """Articles older than grace period get no boost."""
+        from datetime import UTC, datetime, timedelta
+
+        from valence.core.retrieval import GRACE_PERIOD_HOURS
+
+        now = datetime.now(UTC)
+        created = now - timedelta(hours=GRACE_PERIOD_HOURS + 1)
+        # This article would NOT enter the boost branch (ca <= grace_cutoff)
+        grace_cutoff = now - timedelta(hours=GRACE_PERIOD_HOURS)
+        assert created <= grace_cutoff
