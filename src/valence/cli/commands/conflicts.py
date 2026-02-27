@@ -61,7 +61,7 @@ def cmd_conflicts_list(args: argparse.Namespace) -> int:
 
     client = get_client()
     try:
-        result = client.get("/beliefs/conflicts", params=params)
+        result = client.get("/contentions/detect", params=params)
         output_result(result)
         return 0
     except ValenceConnectionError as e:

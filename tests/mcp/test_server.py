@@ -676,8 +676,6 @@ def test_tool_handlers_registry_complete():
         "provenance_get",
         "provenance_trace",
         # Entity tools
-        "entity_get",
-        "entity_search",
         # Contention tools
         "contention_detect",
         "contention_list",

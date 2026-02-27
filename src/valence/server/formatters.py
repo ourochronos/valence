@@ -22,58 +22,6 @@ def format_stats_text(data: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def format_beliefs_list_text(data: dict[str, Any]) -> str:
-    """Format beliefs query/list result as human-readable text."""
-    beliefs = data.get("beliefs", [])
-    if not beliefs:
-        return "No beliefs found."
-
-    lines = [f"Found {len(beliefs)} belief(s)", ""]
-    for i, b in enumerate(beliefs, 1):
-        conf = b.get("confidence", {})
-        overall = conf.get("overall", "?") if isinstance(conf, dict) else conf
-        if isinstance(overall, float):
-            overall = f"{overall:.0%}"
-        content = str(b.get("content", ""))[:80]
-        lines.append(f"[{i}] {content}")
-        bid = str(b.get("id", ""))[:8]
-        lines.append(f"    ID: {bid}  Confidence: {overall}")
-        domains = b.get("domain_path")
-        if domains:
-            lines.append(f"    Domains: {', '.join(domains)}")
-        lines.append("")
-    return "\n".join(lines)
-
-
-def format_entities_list_text(data: dict[str, Any]) -> str:
-    """Format entity search results as text."""
-    entities = data.get("entities", [])
-    if not entities:
-        return "No entities found."
-
-    lines = [f"Found {len(entities)} entity/entities", ""]
-    for e in entities:
-        etype = e.get("type", "unknown")
-        lines.append(f"  [{etype}] {e.get('name', '?')} ({str(e.get('id', ''))[:8]})")
-    return "\n".join(lines)
-
-
-def format_tensions_list_text(data: dict[str, Any]) -> str:
-    """Format tensions list as text."""
-    tensions = data.get("tensions", [])
-    if not tensions:
-        return "No tensions found."
-
-    lines = [f"Found {len(tensions)} tension(s)", ""]
-    for t in tensions:
-        tid = str(t.get("id", ""))[:8]
-        severity = t.get("severity", "?")
-        status = t.get("status", "?")
-        desc = str(t.get("description", ""))[:60]
-        lines.append(f"  [{tid}] ({severity}/{status}) {desc}")
-    return "\n".join(lines)
-
-
 def format_conflicts_text(data: dict[str, Any]) -> str:
     """Format conflict detection results as text."""
     conflicts = data.get("conflicts", [])
@@ -123,24 +71,6 @@ def format_sessions_list_text(data: dict[str, Any]) -> str:
         status = s.get("status", "?")
         platform = s.get("platform", "?")
         lines.append(f"  [{sid}] ({status}) platform={platform}")
-    return "\n".join(lines)
-
-
-def format_patterns_list_text(data: dict[str, Any]) -> str:
-    """Format patterns list as text."""
-    patterns = data.get("patterns", [])
-    if not patterns:
-        return "No patterns found."
-
-    lines = [f"Found {len(patterns)} pattern(s)", ""]
-    for p in patterns:
-        pid = str(p.get("id", ""))[:8]
-        ptype = p.get("type", "?")
-        desc = str(p.get("description", ""))[:60]
-        conf = p.get("confidence", "?")
-        if isinstance(conf, float):
-            conf = f"{conf:.0%}"
-        lines.append(f"  [{pid}] ({ptype}, {conf}) {desc}")
     return "\n".join(lines)
 
 

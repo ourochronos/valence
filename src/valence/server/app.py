@@ -85,17 +85,8 @@ from .session_endpoints import (
     upsert_session_endpoint,
 )
 from .substrate_endpoints import (
-    beliefs_create_endpoint,
-    beliefs_get_endpoint,
-    beliefs_list_endpoint,
-    beliefs_search_endpoint,
-    beliefs_supersede_endpoint,
     conflicts_endpoint,
-    entities_get_endpoint,
-    entities_list_endpoint,
     stats_endpoint,
-    tensions_list_endpoint,
-    tensions_resolve_endpoint,
 )
 
 logger = logging.getLogger(__name__)
@@ -680,8 +671,7 @@ use `pattern_record` to capture them.
 - `article_update` - Update existing knowledge with versioning
 - `article_get` - Get detailed article information
 - `article_compile` - Compile sources into an article via LLM
-- `entity_get`, `entity_search` - Work with entities (people, tools, concepts)
-- `contention_list`, `contention_resolve` - Handle contradictions
+- `contention_list`, `contention_resolve`, `contention_detect` - Handle contradictions
 
 ### Conversation Tracking (VKB)
 - `session_start`, `session_end`, `session_get`, `session_list` - Session management
@@ -1270,19 +1260,8 @@ def create_app() -> Starlette:
             trace_claim_endpoint,
             methods=["POST"],
         ),
-        # -----------------------------------------------------------------------
-        # Legacy Substrate REST endpoints (kept for backward compatibility)
-        # -----------------------------------------------------------------------
-        Route(f"{API_V1}/beliefs", beliefs_list_endpoint, methods=["GET"]),
-        Route(f"{API_V1}/beliefs", beliefs_create_endpoint, methods=["POST"]),
-        Route(f"{API_V1}/beliefs/search", beliefs_search_endpoint, methods=["GET"]),
-        Route(f"{API_V1}/beliefs/conflicts", conflicts_endpoint, methods=["GET"]),
-        Route(f"{API_V1}/beliefs/{{belief_id}}", beliefs_get_endpoint, methods=["GET"]),
-        Route(f"{API_V1}/beliefs/{{belief_id}}/supersede", beliefs_supersede_endpoint, methods=["POST"]),
-        Route(f"{API_V1}/entities", entities_list_endpoint, methods=["GET"]),
-        Route(f"{API_V1}/entities/{{id}}", entities_get_endpoint, methods=["GET"]),
-        Route(f"{API_V1}/tensions", tensions_list_endpoint, methods=["GET"]),
-        Route(f"{API_V1}/tensions/{{id}}/resolve", tensions_resolve_endpoint, methods=["POST"]),
+        # Contention detection (semantic conflict scanner)
+        Route(f"{API_V1}/contentions/detect", conflicts_endpoint, methods=["GET"]),
         # -----------------------------------------------------------------------
         # Session endpoints (Issue #470)
         # -----------------------------------------------------------------------

@@ -217,12 +217,6 @@ class MetricsCollector:
             lines.append("# HELP valence_articles_total Total articles in database")
             lines.append("# TYPE valence_articles_total gauge")
             lines.append(f"valence_articles_total {stats_dict.get('articles', 0)}")
-
-            lines.append("")
-            lines.append("# HELP valence_entities_total Total entities in database")
-            lines.append("# TYPE valence_entities_total gauge")
-            lines.append(f"valence_entities_total {stats_dict.get('entities', 0)}")
-
             lines.append("")
             lines.append("# HELP valence_sessions_total Total VKB sessions")
             lines.append("# TYPE valence_sessions_total gauge")
