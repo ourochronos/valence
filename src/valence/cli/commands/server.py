@@ -21,7 +21,7 @@ from ..output import output_error, output_result
 
 LAUNCHD_LABEL = "com.ourochronos.valence-server"
 PLIST_PATH = Path.home() / "Library" / "LaunchAgents" / f"{LAUNCHD_LABEL}.plist"
-HEALTH_URL = "http://127.0.0.1:8420/health"
+HEALTH_URL = "http://127.0.0.1:8420/api/v1/health"
 LOG_DIR = Path.home() / ".valence" / "logs"
 
 
