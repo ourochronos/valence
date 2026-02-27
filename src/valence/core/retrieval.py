@@ -39,6 +39,10 @@ RRF_K = 60
 DEFAULT_RANK = 1000
 # Maximum final_score for archived articles (organic forgetting rank floor)
 ARCHIVED_RANK_FLOOR = 0.1
+# Grace period: new articles get a novelty boost that decays linearly over this duration
+GRACE_PERIOD_HOURS = 48
+# Maximum novelty boost multiplier (at creation, decays linearly to 1.0)
+NOVELTY_BOOST_MAX = 1.5
 
 
 # ---------------------------------------------------------------------------
@@ -565,6 +569,35 @@ def _retrieve_sync(
     for r in ranked:
         if r.get("status") == "archived" and r.get("final_score", 0) > ARCHIVED_RANK_FLOOR:
             r["final_score"] = ARCHIVED_RANK_FLOOR
+
+    # Grace period novelty boost: new articles get a decaying score multiplier
+    grace_cutoff = now - timedelta(hours=GRACE_PERIOD_HOURS)
+    for r in ranked:
+        created_at = r.get("created_at")
+        if not created_at:
+            continue
+        try:
+            if isinstance(created_at, str):
+                # Parse ISO format, handle with/without timezone
+                ca = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                if ca.tzinfo is None:
+                    ca = ca.replace(tzinfo=UTC)
+            else:
+                ca = created_at
+                if ca.tzinfo is None:
+                    ca = ca.replace(tzinfo=UTC)
+        except (ValueError, TypeError):
+            continue
+        if ca > grace_cutoff:
+            # Linear decay: full boost at creation, 1.0x at grace_cutoff
+            elapsed = (now - ca).total_seconds()
+            grace_seconds = GRACE_PERIOD_HOURS * 3600
+            decay = max(0.0, 1.0 - elapsed / grace_seconds)
+            boost = 1.0 + (NOVELTY_BOOST_MAX - 1.0) * decay
+            r["final_score"] = r.get("final_score", 0) * boost
+
+    # Re-sort after score adjustments (rank floor + boost)
+    ranked.sort(key=lambda r: r.get("final_score", 0), reverse=True)
 
     # Side effects: usage traces + recompile queue
     with get_cursor() as cur:
