@@ -320,11 +320,6 @@ async def build_tree_index(
     if not force and "tree_index" in metadata:
         return err("Source already has tree_index. Use force=True to rebuild.")
 
-    # Skip sources too small for meaningful tree indexing
-    min_tree_chars = 200
-    if len(content) < min_tree_chars:
-        return err(f"Source too small for tree indexing ({len(content)} chars, minimum {min_tree_chars}). Small sources are served whole.")
-
     token_estimate = _estimate_tokens(content)
     logger.info(
         "Building tree index for source %s (~%d tokens, %d chars)",
@@ -333,8 +328,21 @@ async def build_tree_index(
         len(content),
     )
 
-    # Choose method based on size
-    if token_estimate <= window_tokens:
+    # Small sources get a single root node — no inference needed
+    min_tree_chars = 200
+    if len(content) < min_tree_chars:
+        tree = {
+            "nodes": [
+                {
+                    "title": row.get("title") or "Full content",
+                    "summary": content[:120].replace("\n", " ").strip(),
+                    "start_char": 0,
+                    "end_char": len(content),
+                }
+            ]
+        }
+        method = "trivial"
+    elif token_estimate <= window_tokens:
         tree = await _build_tree_single(content)
         method = "single"
     else:
