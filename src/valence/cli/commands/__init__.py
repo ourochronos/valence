@@ -18,6 +18,7 @@ from . import (
     memory,
     migration,
     provenance,
+    server,
     sessions,
     sources,
     stats,
@@ -56,6 +57,7 @@ COMMAND_MODULES = [
     embeddings,
     migration,
     maintenance,
+    server,
 ]
 
 __all__ = [
