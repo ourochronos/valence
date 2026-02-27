@@ -298,8 +298,19 @@ def get_connection_params() -> dict[str, Any]:
     return _get_db_config()
 
 
-def serialize_row(row: dict[str, Any]) -> dict[str, Any]:
-    """Convert a DB row dict: UUID → str, datetime → ISO string."""
+def serialize_row(row: dict[str, Any], *, strip_internal: bool = True) -> dict[str, Any]:
+    """Convert a DB row dict to a JSON-safe plain dict.
+
+    - UUID → str
+    - datetime → ISO string
+    - JSON string columns (confidence, metadata) → parsed dicts
+    - Strips ``content_tsv`` and ``embedding`` by default (internal columns)
+
+    Args:
+        row: Database row (RealDictRow or plain dict).
+        strip_internal: Remove ``content_tsv`` and ``embedding`` columns.
+    """
+    import json as _json
     import uuid as _uuid
     from datetime import datetime as _dt
 
@@ -309,4 +320,12 @@ def serialize_row(row: dict[str, Any]) -> dict[str, Any]:
             d[key] = val.isoformat()
         elif isinstance(val, _uuid.UUID):
             d[key] = str(val)
+        elif key in ("confidence", "metadata") and isinstance(val, str):
+            try:
+                d[key] = _json.loads(val)
+            except (ValueError, TypeError):
+                pass
+    if strip_internal:
+        d.pop("content_tsv", None)
+        d.pop("embedding", None)
     return d

@@ -28,9 +28,8 @@ import logging
 import math
 import os
 from datetime import UTC, datetime
-from typing import Any
 
-from valence.core.db import get_cursor
+from valence.core.db import get_cursor, serialize_row
 
 from .response import ValenceResponse, ok
 
@@ -72,18 +71,6 @@ def _compute_score(retrieval_timestamps: list[datetime], source_count: int) -> f
     recency_sum = sum(_decayed_weight(ts, now) for ts in retrieval_timestamps)
     connection_bonus = math.log1p(source_count) * 0.5
     return recency_sum + connection_bonus
-
-
-def _row_to_dict(row: Any) -> dict[str, Any]:
-    """Convert a DB row to a plain serialisable dict."""
-    d = dict(row)
-    for key in ("id", "source_id"):
-        if d.get(key) is not None:
-            d[key] = str(d[key])
-    for key, val in d.items():
-        if hasattr(val, "isoformat"):
-            d[key] = val.isoformat()
-    return d
 
 
 # ---------------------------------------------------------------------------
@@ -248,7 +235,7 @@ async def get_decay_candidates(limit: int = 100) -> ValenceResponse:
         )
         rows = cur.fetchall()
 
-    return ok(data=[_row_to_dict(row) for row in rows])
+    return ok(data=[serialize_row(row) for row in rows])
 
 
 async def backfill_confidence_scores() -> ValenceResponse:

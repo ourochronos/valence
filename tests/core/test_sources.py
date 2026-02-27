@@ -20,11 +20,11 @@ from uuid import uuid4
 
 import pytest
 
+from valence.core.db import serialize_row
 from valence.core.sources import (
     RELIABILITY_DEFAULTS,
     VALID_SOURCE_TYPES,
     _compute_fingerprint,
-    _row_to_dict,
     get_source,
     ingest_source,
     list_sources,
@@ -111,20 +111,20 @@ class TestRowToDict:
             "created_at": datetime(2026, 1, 1),
             "metadata": {},
         }
-        result = _row_to_dict(row)
+        result = serialize_row(row)
         assert "content_tsv" not in result
         assert "embedding" not in result
 
     def test_id_becomes_string(self):
         uid = uuid4()
         row = {"id": uid, "created_at": datetime(2026, 1, 1), "metadata": {}}
-        result = _row_to_dict(row)
+        result = serialize_row(row)
         assert result["id"] == str(uid)
 
     def test_created_at_becomes_isoformat(self):
         dt = datetime(2026, 2, 21, 12, 0, 0)
         row = {"id": uuid4(), "created_at": dt, "metadata": {}}
-        result = _row_to_dict(row)
+        result = serialize_row(row)
         assert result["created_at"] == dt.isoformat()
 
     def test_metadata_string_decoded(self):
@@ -133,7 +133,7 @@ class TestRowToDict:
             "created_at": datetime(2026, 1, 1),
             "metadata": '{"key": "val"}',
         }
-        result = _row_to_dict(row)
+        result = serialize_row(row)
         assert result["metadata"] == {"key": "val"}
 
 

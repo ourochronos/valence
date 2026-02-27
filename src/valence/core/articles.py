@@ -18,7 +18,7 @@ import os
 from datetime import datetime
 from typing import Any
 
-from valence.core.db import get_cursor
+from valence.core.db import get_cursor, serialize_row
 
 from .response import ValenceResponse, err, ok
 
@@ -52,26 +52,6 @@ def _compute_embedding(content: str) -> str | None:
         return vector_to_pgvector(generate_embedding(content))
     except Exception:
         return None
-
-
-def _row_to_article(row: dict[str, Any]) -> dict[str, Any]:
-    """Serialise a DB article row to a plain dict."""
-    article: dict[str, Any] = {}
-    for k, v in row.items():
-        if isinstance(v, datetime):
-            article[k] = v.isoformat()
-        elif k == "confidence" and isinstance(v, str):
-            try:
-                article[k] = json.loads(v)
-            except (json.JSONDecodeError, TypeError):
-                article[k] = v
-        else:
-            article[k] = v
-    # Always stringify UUIDs
-    for uuid_col in ("id", "source_id", "supersedes_id", "superseded_by_id", "holder_id"):
-        if uuid_col in article and article[uuid_col] is not None:
-            article[uuid_col] = str(article[uuid_col])
-    return article
 
 
 # ---------------------------------------------------------------------------
@@ -139,7 +119,7 @@ async def create_article(
             ),
         )
         row = cur.fetchone()
-        article = _row_to_article(dict(row))
+        article = serialize_row(dict(row))
         article_id = article["id"]
 
         # Link sources with 'originates' relationship
@@ -188,7 +168,7 @@ async def get_article(
         if not row:
             return err(f"Article not found: {article_id}")
 
-        article = _row_to_article(dict(row))
+        article = serialize_row(dict(row))
 
         if include_provenance:
             from uuid import UUID as _UUID
@@ -278,7 +258,7 @@ async def update_article(
         if not row:
             return err(f"Article not found: {article_id}")
 
-        article = _row_to_article(dict(row))
+        article = serialize_row(dict(row))
 
         # Optionally link the triggering source
         if source_id:
@@ -403,7 +383,7 @@ async def split_article(article_id: str) -> ValenceResponse:
         row = cur.fetchone()
         if not row:
             return err(f"Article not found: {article_id}")
-        original = _row_to_article(dict(row))
+        original = serialize_row(dict(row))
 
         content = original.get("content") or ""
         if len(content.split()) < 4:
@@ -628,7 +608,7 @@ async def search_articles(
         results = []
         max_relevance = max((float(r.get("relevance", 0)) for r in rows), default=1.0) or 1.0
         for row in rows:
-            article = _row_to_article(dict(row))
+            article = serialize_row(dict(row))
             article["text_relevance"] = float(row.get("relevance", 0)) / max_relevance
             article["similarity"] = article["text_relevance"]
             results.append(article)

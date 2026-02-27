@@ -16,7 +16,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from valence.core.db import get_cursor
+from valence.core.db import get_cursor, serialize_row
 from valence.core.response import ValenceResponse, err, ok
 from valence.core.sources import ingest_source
 
@@ -96,7 +96,7 @@ async def upsert_session(
         )
         row = cur.fetchone()
 
-    result = _row_to_dict(row)
+    result = serialize_row(row)
     logger.info("Upserted session %s (platform=%s)", session_id, platform)
     return ok(data=result)
 
@@ -126,7 +126,7 @@ async def get_session(session_id: str) -> ValenceResponse:
     if not row:
         return err(f"Session not found: {session_id}")
 
-    return ok(data=_row_to_dict(row))
+    return ok(data=serialize_row(row))
 
 
 async def list_sessions(
@@ -173,7 +173,7 @@ async def list_sessions(
         )
         rows = cur.fetchall()
 
-    return ok(data=[_row_to_dict(row) for row in rows])
+    return ok(data=[serialize_row(row) for row in rows])
 
 
 async def update_session(
@@ -234,7 +234,7 @@ async def update_session(
         return err(f"Session not found: {session_id}")
 
     logger.info("Updated session %s", session_id)
-    return ok(data=_row_to_dict(row))
+    return ok(data=serialize_row(row))
 
 
 async def append_message(
@@ -280,7 +280,7 @@ async def append_message(
         )
 
     logger.debug("Appended message to session %s (speaker=%s, role=%s)", session_id, speaker, role)
-    return ok(data=_row_to_dict(row))
+    return ok(data=serialize_row(row))
 
 
 async def append_messages(
@@ -359,7 +359,7 @@ async def get_messages(
         )
         rows = cur.fetchall()
 
-    return ok(data=[_row_to_dict(row) for row in rows])
+    return ok(data=[serialize_row(row) for row in rows])
 
 
 async def get_unflushed_messages(session_id: str) -> ValenceResponse:
@@ -383,7 +383,7 @@ async def get_unflushed_messages(session_id: str) -> ValenceResponse:
         )
         rows = cur.fetchall()
 
-    return ok(data=[_row_to_dict(row) for row in rows])
+    return ok(data=[serialize_row(row) for row in rows])
 
 
 async def find_stale_sessions(stale_minutes: int = 30) -> ValenceResponse:
@@ -599,22 +599,6 @@ async def flush_stale_sessions(stale_minutes: int = 30) -> ValenceResponse:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _row_to_dict(row: Any) -> dict[str, Any]:
-    """Convert a DB row to a plain dict with serializable values."""
-    d = dict(row)
-    # Serialize timestamps
-    for key in ("started_at", "last_activity_at", "ended_at", "timestamp", "flushed_at"):
-        if d.get(key) is not None:
-            d[key] = d[key].isoformat() if hasattr(d[key], "isoformat") else str(d[key])
-    # Ensure metadata is dict
-    if d.get("metadata") is not None and not isinstance(d["metadata"], dict):
-        try:
-            d["metadata"] = json.loads(d["metadata"])
-        except Exception:
-            d["metadata"] = {}
-    return d
 
 
 def _serialize_transcript(session: dict, messages: list[dict], chunk_index: int) -> str:
