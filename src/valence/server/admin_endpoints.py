@@ -56,12 +56,14 @@ async def admin_maintenance(request: Request) -> Response:
     run_all = body.get("all", False)
 
     # v2 knowledge operations
-    v2_ops = any(body.get(op) for op in ("recompute_scores", "process_queue", "evict_if_over_capacity"))
+    v2_ops = any(body.get(op) for op in ("recompute_scores", "process_queue", "evict_if_over_capacity", "backfill_confidence"))
     # Legacy DB operations
     legacy_ops = any(body.get(op) for op in ("views", "vacuum"))
 
     if not run_all and not v2_ops and not legacy_ops:
-        return missing_field_error("at least one operation (all, views, vacuum, recompute_scores, process_queue, evict_if_over_capacity)")
+        return missing_field_error(
+            "at least one operation (all, views, vacuum, recompute_scores, process_queue, evict_if_over_capacity, backfill_confidence)"
+        )
 
     try:
         from ..core.maintenance import MaintenanceResult
@@ -112,6 +114,22 @@ async def admin_maintenance(request: Request) -> Response:
                 results.append(
                     {
                         "operation": "evict_if_over_capacity",
+                        "dry_run": False,
+                        "success": res.success,
+                        **(res.data if isinstance(res.data, dict) and res.success else {"result": res.data} if res.success else {"error": res.error}),
+                    }
+                )
+
+        if run_all or body.get("backfill_confidence"):
+            if dry_run:
+                results.append({"operation": "backfill_confidence", "dry_run": True, "note": "skipped in dry-run"})
+            else:
+                from ..core.usage import backfill_confidence_scores
+
+                res = await backfill_confidence_scores()
+                results.append(
+                    {
+                        "operation": "backfill_confidence",
                         "dry_run": False,
                         "success": res.success,
                         **(res.data if isinstance(res.data, dict) and res.success else {"result": res.data} if res.success else {"error": res.error}),

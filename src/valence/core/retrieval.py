@@ -157,7 +157,7 @@ def _record_usage_trace(
     cur: Any,
     session_id: str | None = None,
 ) -> None:
-    """Insert a row into usage_traces for each article result."""
+    """Insert a row into usage_traces and incrementally update usage_score."""
     try:
         cur.execute(
             """
@@ -165,6 +165,16 @@ def _record_usage_trace(
             VALUES (%s, %s, %s, %s, %s)
             """,
             (article_id, query, tool_name, final_score, session_id),
+        )
+        # Incremental score bump: add 1.0 for this retrieval (fresh, no decay).
+        # Full batch recompute via compute_usage_scores() corrects drift.
+        cur.execute(
+            """
+            UPDATE articles
+            SET usage_score = COALESCE(usage_score, 0) + 1.0
+            WHERE id = %s
+            """,
+            (article_id,),
         )
     except Exception as exc:
         logger.warning("Failed to record usage trace for article %s: %s", article_id, exc)
