@@ -254,6 +254,9 @@ async def get_decay_candidates(limit: int = 100) -> ValenceResponse:
 async def backfill_confidence_scores() -> ValenceResponse:
     """Batch-recompute confidence and corroboration_count for all articles.
 
+    NOTE: This reimplements the formula from ``confidence.compute_confidence``
+    in pure SQL for batch efficiency.  Keep the two in sync.
+
     For each article:
     - confidence_source = avg(source.reliability) for linked sources
     - corroboration_count = number of linked sources
