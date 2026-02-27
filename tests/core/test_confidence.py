@@ -5,9 +5,7 @@ from __future__ import annotations
 
 import math
 
-import pytest
-
-from valence.core.confidence import ConfidenceResult, compute_confidence
+from valence.core.confidence import compute_confidence
 
 
 class TestComputeConfidence:

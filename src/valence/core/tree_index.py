@@ -17,8 +17,9 @@ import json
 import logging
 from datetime import UTC
 
-from valence.core.compilation import TASK_COMPILE, _call_llm
+from valence.core.compilation import _call_llm
 from valence.core.db import get_cursor
+from valence.core.inference import TASK_TREE
 
 from .response import ValenceResponse, err, ok
 
@@ -202,7 +203,7 @@ async def _build_tree_single(source_text: str) -> dict:
         source_text=source_text,
     )
 
-    response = await _call_llm(prompt, task_type=TASK_COMPILE)
+    response = await _call_llm(prompt, task_type=TASK_TREE)
     tree = _extract_json(response)
     return tree
 
@@ -232,7 +233,7 @@ async def _build_tree_windowed(source_text: str, window_tokens: int = DEFAULT_WI
             window_text=window_text,
         )
 
-        response = await _call_llm(prompt, task_type=TASK_COMPILE)
+        response = await _call_llm(prompt, task_type=TASK_TREE)
         local_tree = _extract_json(response)
         local_trees.append(local_tree)
 
@@ -257,7 +258,7 @@ async def _build_tree_windowed(source_text: str, window_tokens: int = DEFAULT_WI
     # If merge input fits in context, single merge call
     if _estimate_tokens(local_trees_json) < window_tokens:
         prompt = MERGE_PROMPT.format(local_trees_json=local_trees_json)
-        response = await _call_llm(prompt, task_type=TASK_COMPILE)
+        response = await _call_llm(prompt, task_type=TASK_TREE)
         return _extract_json(response)
 
     # Recursive merge for very large sources
@@ -268,13 +269,13 @@ async def _build_tree_windowed(source_text: str, window_tokens: int = DEFAULT_WI
         group = local_trees[i : i + group_size]
         group_json = json.dumps(group, indent=2)
         prompt = MERGE_PROMPT.format(local_trees_json=group_json)
-        response = await _call_llm(prompt, task_type=TASK_COMPILE)
+        response = await _call_llm(prompt, task_type=TASK_TREE)
         merged_groups.append(_extract_json(response))
 
     # Final merge of merged groups
     final_json = json.dumps(merged_groups, indent=2)
     prompt = MERGE_PROMPT.format(local_trees_json=final_json)
-    response = await _call_llm(prompt, task_type=TASK_COMPILE)
+    response = await _call_llm(prompt, task_type=TASK_TREE)
     return _extract_json(response)
 
 
@@ -318,6 +319,11 @@ async def build_tree_index(
 
     if not force and "tree_index" in metadata:
         return err("Source already has tree_index. Use force=True to rebuild.")
+
+    # Skip sources too small for meaningful tree indexing
+    min_tree_chars = 200
+    if len(content) < min_tree_chars:
+        return err(f"Source too small for tree indexing ({len(content)} chars, minimum {min_tree_chars}). Small sources are served whole.")
 
     token_estimate = _estimate_tokens(content)
     logger.info(

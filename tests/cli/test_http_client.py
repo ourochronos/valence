@@ -98,6 +98,18 @@ class TestHandleResponse:
         assert exc_info.value.status_code == 401
         assert exc_info.value.code == "AUTH_MISSING_TOKEN"
 
+    def test_error_response_string_error(self):
+        """Errors returned as plain strings should be handled gracefully."""
+        client = ValenceClient()
+        resp = MagicMock(spec=httpx.Response)
+        resp.status_code = 400
+        resp.json.return_value = {"success": False, "error": "Source already has tree_index."}
+        with pytest.raises(ValenceAPIError) as exc_info:
+            client._handle_response(resp)
+        assert exc_info.value.status_code == 400
+        assert exc_info.value.code == "ERROR"
+        assert "tree_index" in exc_info.value.message
+
 
 class TestClientRequests:
     @patch("valence.cli.http_client.httpx.Client")

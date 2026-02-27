@@ -62,6 +62,12 @@ class ValenceClient:
             try:
                 body = resp.json()
                 error = body.get("error", {})
+                if isinstance(error, str):
+                    raise ValenceAPIError(
+                        status_code=resp.status_code,
+                        code="ERROR",
+                        message=error,
+                    )
                 raise ValenceAPIError(
                     status_code=resp.status_code,
                     code=error.get("code", "UNKNOWN"),
