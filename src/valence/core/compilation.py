@@ -930,6 +930,7 @@ async def _process_mutation_item(operation: str, article_id: str, payload: dict)
         if not source_id:
             raise ValueError("source_pipeline: missing source_id in payload")
         from valence.core.ingest_pipeline import run_source_pipeline
+
         result = await run_source_pipeline(source_id, batch_mode=False)
         if not result.success:
             raise RuntimeError(f"source_pipeline failed: {result.error}")

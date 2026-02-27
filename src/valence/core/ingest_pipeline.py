@@ -248,11 +248,7 @@ async def _stage_auto_compile(source_id: str) -> bool:
         logger.warning("Auto-compile similarity query failed: %s", exc)
         return False
 
-    similar_ids = [
-        r[0] if isinstance(r, tuple) else str(r.get("id", ""))
-        for r in similar_rows
-        if r
-    ]
+    similar_ids = [r[0] if isinstance(r, tuple) else str(r.get("id", "")) for r in similar_rows if r]
 
     # Check if this source itself is ungrouped
     with get_cursor() as cur:
@@ -366,9 +362,7 @@ async def run_source_pipeline(
     # --- Stage 3: Embed sections ---
     flat_nodes = _flatten_tree(tree_nodes)
     try:
-        sections_embedded = await asyncio.to_thread(
-            _embed_and_upsert, source_id, content, flat_nodes
-        )
+        sections_embedded = await asyncio.to_thread(_embed_and_upsert, source_id, content, flat_nodes)
     except Exception as exc:
         logger.error("Section embedding stage failed for %s: %s", source_id, exc)
         _set_pipeline_status(source_id, "failed")
