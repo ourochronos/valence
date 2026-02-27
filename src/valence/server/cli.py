@@ -202,6 +202,15 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
 def main() -> int:
     """Main entry point for the CLI."""
+    import warnings
+
+    warnings.warn(
+        "valence-token is deprecated. Use 'valence auth' instead.",
+        DeprecationWarning,
+        stacklevel=1,
+    )
+    print("WARNING: valence-token is deprecated. Use 'valence auth' instead.\n", file=sys.stderr)
+
     parser = argparse.ArgumentParser(
         description="Valence token management CLI",
         prog="valence-token",

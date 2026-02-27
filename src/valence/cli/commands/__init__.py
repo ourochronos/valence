@@ -9,6 +9,7 @@ its argparse sub-commands and sets ``parser.set_defaults(func=handler)``.
 
 from . import (
     articles,
+    auth,
     compile,
     config_cmd,
     conflicts,
@@ -58,6 +59,7 @@ COMMAND_MODULES = [
     migration,
     maintenance,
     server,
+    auth,  # valence auth
 ]
 
 __all__ = [
