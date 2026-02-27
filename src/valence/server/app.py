@@ -60,6 +60,11 @@ from .endpoints.contentions import (
     list_contentions_endpoint,
     resolve_contention_endpoint,
 )
+from .endpoints.parity import (
+    admin_forget_endpoint,
+    compile_article_endpoint,
+    knowledge_search_endpoint,
+)
 from .endpoints.sources import (
     sources_create_endpoint,
     sources_delete_endpoint,
@@ -1238,9 +1243,11 @@ def create_app() -> Starlette:
         # -----------------------------------------------------------------------
         # v2 Articles endpoints (C2, C3, C5)
         # -----------------------------------------------------------------------
+        Route(f"{API_V1}/search", knowledge_search_endpoint, methods=["GET"]),
         Route(f"{API_V1}/articles", search_articles_endpoint, methods=["GET"]),
         Route(f"{API_V1}/articles", create_article_endpoint, methods=["POST"]),
         Route(f"{API_V1}/articles/search", search_articles_endpoint, methods=["POST"]),
+        Route(f"{API_V1}/articles/compile", compile_article_endpoint, methods=["POST"]),
         Route(f"{API_V1}/articles/merge", merge_articles_endpoint, methods=["POST"]),
         Route(f"{API_V1}/articles/{{article_id}}", get_article_endpoint, methods=["GET"]),
         Route(f"{API_V1}/articles/{{article_id}}", update_article_endpoint, methods=["PUT"]),
@@ -1282,6 +1289,7 @@ def create_app() -> Starlette:
         Route(f"{API_V1}/config/inference", config_inference_endpoint, methods=["PUT"]),
         # Admin endpoints (Issue #396)
         Route(f"{API_V1}/admin/maintenance", admin_maintenance, methods=["POST"]),
+        Route(f"{API_V1}/admin/forget/{{target_type}}/{{target_id}}", admin_forget_endpoint, methods=["DELETE"]),
         Route(f"{API_V1}/admin/embeddings/status", admin_embeddings_status, methods=["GET"]),
         Route(f"{API_V1}/admin/embeddings/backfill", admin_embeddings_backfill, methods=["POST"]),
         Route(f"{API_V1}/admin/embeddings/migrate", admin_embeddings_migrate, methods=["POST"]),
