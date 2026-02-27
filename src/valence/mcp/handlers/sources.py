@@ -9,12 +9,11 @@ import json
 import logging
 from typing import Any
 
-from valence.core.db import get_cursor
+from valence.core.db import get_cursor, serialize_row
 from valence.core.sources import (
     RELIABILITY_DEFAULTS,
     VALID_SOURCE_TYPES,
     _compute_fingerprint,
-    _row_to_dict,
 )
 
 logger = logging.getLogger(__name__)
@@ -83,7 +82,7 @@ def source_ingest(
         )
         row = cur.fetchone()
 
-    source = _row_to_dict(row)
+    source = serialize_row(row)
     return {"success": True, "source": source}
 
 
@@ -104,7 +103,7 @@ def source_get(source_id: str) -> dict[str, Any]:
     if not row:
         return {"success": False, "error": f"Source not found: {source_id}"}
 
-    source = _row_to_dict(row)
+    source = serialize_row(row)
     return {"success": True, "source": source}
 
 
@@ -130,7 +129,7 @@ def source_search(query: str, limit: int = 20) -> dict[str, Any]:
         )
         rows = cur.fetchall()
 
-    sources = [_row_to_dict(row) for row in rows]
+    sources = [serialize_row(row) for row in rows]
     return {"success": True, "sources": sources, "total_count": len(sources)}
 
 

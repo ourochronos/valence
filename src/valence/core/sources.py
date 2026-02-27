@@ -17,9 +17,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from typing import Any
 
-from valence.core.db import get_cursor
+from valence.core.db import get_cursor, serialize_row
 
 from .response import ValenceResponse, err, ok
 
@@ -51,29 +50,6 @@ RELIABILITY_DEFAULTS: dict[str, float] = {
 def _compute_fingerprint(content: str) -> str:
     """Return SHA-256 hex digest of content."""
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
-
-
-def _row_to_dict(row: Any) -> dict[str, Any]:
-    """Convert a DB row (RealDictRow or dict) to a plain dict with serialisable values."""
-    d = dict(row)
-    # Ensure UUID fields are strings
-    for key in ("id", "session_id"):
-        if d.get(key) is not None:
-            d[key] = str(d[key])
-    # Ensure datetime is string-serialisable
-    if d.get("created_at") is not None:
-        d["created_at"] = d["created_at"].isoformat() if hasattr(d["created_at"], "isoformat") else str(d["created_at"])
-    # Ensure metadata is a plain dict
-    if d.get("metadata") is not None and not isinstance(d["metadata"], dict):
-        try:
-            d["metadata"] = json.loads(d["metadata"])
-        except Exception:
-            d["metadata"] = {}
-    # Strip the generated TSV column — callers don't need it
-    d.pop("content_tsv", None)
-    # Strip embedding bytes — not useful in Python dicts
-    d.pop("embedding", None)
-    return d
 
 
 # ---------------------------------------------------------------------------
@@ -161,7 +137,7 @@ async def ingest_source(
         )
         row = cur.fetchone()
 
-    result = _row_to_dict(row)
+    result = serialize_row(row)
     if supersedes:
         logger.info(
             "Ingested source id=%s type=%s fingerprint=%s, supersedes=%s",
@@ -199,7 +175,7 @@ async def get_source(source_id: str) -> ValenceResponse:
     if row is None:
         return err(f"Source not found: {source_id}")
 
-    return ok(data=_row_to_dict(row))
+    return ok(data=serialize_row(row))
 
 
 async def search_sources(query: str, limit: int = 20) -> ValenceResponse:
@@ -235,7 +211,7 @@ async def search_sources(query: str, limit: int = 20) -> ValenceResponse:
 
     results = []
     for row in rows:
-        d = _row_to_dict(dict(row))
+        d = serialize_row(dict(row))
         d["rank"] = float(row.get("rank", 0.0))
         results.append(d)
     return ok(data=results)
@@ -286,4 +262,4 @@ async def list_sources(
             )
         rows = cur.fetchall()
 
-    return ok(data=[_row_to_dict(row) for row in rows])
+    return ok(data=[serialize_row(row) for row in rows])
