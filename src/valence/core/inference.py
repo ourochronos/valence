@@ -31,8 +31,9 @@ TASK_UPDATE = "update"  # Incremental article update (medium)
 TASK_CLASSIFY = "classify"  # Relationship classification (low)
 TASK_CONTENTION = "contention"  # Contention detection (medium)
 TASK_SPLIT = "split"  # Intelligent split point (low)
+TASK_TREE = "tree"  # Tree index building (medium)
 
-_ALL_TASKS = {TASK_COMPILE, TASK_UPDATE, TASK_CLASSIFY, TASK_CONTENTION, TASK_SPLIT}
+_ALL_TASKS = {TASK_COMPILE, TASK_UPDATE, TASK_CLASSIFY, TASK_CONTENTION, TASK_SPLIT, TASK_TREE}
 
 # ---------------------------------------------------------------------------
 # Shared enum — DR-11
@@ -51,6 +52,7 @@ _TASK_REQUIRED_OUTPUT_FIELDS: dict[str, list[str]] = {
     TASK_CLASSIFY: ["relationship", "confidence", "reasoning"],
     TASK_CONTENTION: ["is_contention", "materiality", "explanation"],
     TASK_SPLIT: ["split_index", "part_a_title", "part_b_title", "reasoning"],
+    TASK_TREE: ["nodes"],
 }
 
 # Fields that contain relationship_enum values and must be validated
@@ -60,6 +62,7 @@ _TASK_RELATIONSHIP_FIELDS: dict[str, list[str]] = {
     TASK_CLASSIFY: ["relationship"],
     TASK_CONTENTION: [],
     TASK_SPLIT: [],
+    TASK_TREE: [],
 }
 
 # Output schema descriptions — used in prompt builders

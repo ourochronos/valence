@@ -116,6 +116,15 @@ class TestBuildTreeIndex:
         assert "already has tree_index" in result.error
 
     @pytest.mark.asyncio
+    async def test_too_small(self):
+        """Sources under 200 chars should be rejected gracefully."""
+        cur = _make_cursor(fetchone_seq=[{"id": "abc", "content": "tiny", "metadata": {}}])
+        with patch("valence.core.tree_index.get_cursor", return_value=cur):
+            result = await build_tree_index("abc")
+        assert not result.success
+        assert "too small" in result.error
+
+    @pytest.mark.asyncio
     async def test_single_window_success(self):
         source_content = "Hello world " * 100
         tree_response = json.dumps({"nodes": [{"title": "Test", "summary": "A test", "start_char": 0, "end_char": len(source_content)}]})
