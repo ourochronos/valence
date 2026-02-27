@@ -156,7 +156,7 @@ def memory_recall(
     if source_ids:
         with get_cursor() as cur:
             cur.execute(
-                "SELECT id, type, metadata FROM sources WHERE id = ANY(%s)",
+                "SELECT id, type, metadata FROM sources WHERE id = ANY(%s::uuid[])",
                 (source_ids,),
             )
             for row in cur.fetchall():
