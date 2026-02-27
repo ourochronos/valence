@@ -91,8 +91,12 @@ async def compile_article_endpoint(request: Request) -> JSONResponse:
         from valence.mcp.handlers.articles import article_compile
 
         result = article_compile(source_ids=source_ids, title_hint=title_hint)
-        status = 200 if result.get("success") else 400
-        return JSONResponse(result, status_code=status)
+        # Ensure all nested dicts are JSON-safe (Decimal, UUID, datetime)
+        import json as _json
+
+        safe_result = _json.loads(_json.dumps(result, default=str))
+        status = 200 if safe_result.get("success") else 400
+        return JSONResponse(safe_result, status_code=status)
     except Exception:
         logger.exception("compile_article_endpoint failed")
         return internal_error()

@@ -587,7 +587,7 @@ async def compile_article(
 
     first_article = created_articles[0]
     if len(created_articles) > 1:
-        first_article["_all_articles"] = created_articles
+        first_article["_all_articles"] = created_articles[1:]
         logger.info("Compiled %d articles from %d sources", len(created_articles), len(sources))
 
     return ok(data=first_article, degraded=is_degraded)
