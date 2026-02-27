@@ -15,11 +15,13 @@ from __future__ import annotations
 
 import json
 import logging
+import subprocess
 import threading
 import time
 from collections import defaultdict
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
@@ -98,6 +100,37 @@ from .substrate_endpoints import (
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Server metadata — startup time, last write, git commit
+# ---------------------------------------------------------------------------
+_server_started_at: str | None = None
+_server_git_commit: str | None = None
+_last_write_at: str | None = None
+
+
+def record_write() -> None:
+    """Record timestamp of the last successful write operation."""
+    global _last_write_at
+    from datetime import datetime
+
+    _last_write_at = datetime.now(UTC).isoformat()
+
+
+def _detect_git_commit() -> str | None:
+    """Get current git HEAD short hash."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return None
+
 
 class JSONLogFormatter(logging.Formatter):
     """JSON structured log formatter for production use."""
@@ -173,6 +206,9 @@ async def health_endpoint(request: Request) -> JSONResponse:
         "status": "healthy",
         "server": settings.server_name,
         "version": settings.server_version,
+        "started_at": _server_started_at,
+        "git_commit": _server_git_commit,
+        "last_write_at": _last_write_at,
     }
 
     # Optionally check database connectivity
@@ -1129,10 +1165,15 @@ def _create_inference_backend(config: dict) -> Any:
 @asynccontextmanager
 async def lifespan(app: Starlette) -> AsyncGenerator[None, None]:
     """Application lifespan handler."""
+    global _server_started_at, _server_git_commit
     import asyncio
+    from datetime import datetime
 
     settings = get_settings()
     logger.info(f"Starting Valence MCP server on {settings.host}:{settings.port}")
+
+    _server_started_at = datetime.now(UTC).isoformat()
+    _server_git_commit = _detect_git_commit()
 
     # Initialize legacy token store
     get_token_store(settings.token_file)

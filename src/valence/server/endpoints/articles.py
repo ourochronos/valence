@@ -104,6 +104,10 @@ async def create_article_endpoint(request: Request) -> JSONResponse:
             domain_path=body.get("domain_path"),
         )
         status = 201 if result.to_dict().get("success") else 400
+        if status == 201:
+            from ...server.app import record_write
+
+            record_write()
         return JSONResponse(result.to_dict(), status_code=status)
     except Exception:
         logger.exception("Error creating article")
