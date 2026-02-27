@@ -90,13 +90,15 @@ class TestMaintenance:
     @patch("valence.core.maintenance.run_full_maintenance")
     @patch("valence.core.compilation.process_mutation_queue")
     @patch("valence.core.usage.compute_usage_scores")
-    def test_run_all(self, mock_scores, mock_queue, mock_full, mock_params, mock_connect, client):
+    @patch("valence.core.usage.backfill_confidence_scores")
+    def test_run_all(self, mock_backfill, mock_scores, mock_queue, mock_full, mock_params, mock_connect, client):
         from valence.core.maintenance import MaintenanceResult
         from valence.core.response import ValenceResponse
 
         # Mock v2 ops
         mock_scores.return_value = ValenceResponse(success=True, data=10)
         mock_queue.return_value = ValenceResponse(success=True, data=0)
+        mock_backfill.return_value = ValenceResponse(success=True, data=5)
 
         # Mock legacy DB ops
         mock_params.return_value = {"host": "localhost", "port": 5433, "dbname": "valence", "user": "valence", "password": "valence"}
@@ -111,11 +113,12 @@ class TestMaintenance:
         resp = client.post("/api/v1/admin/maintenance", json={"all": True})
         assert resp.status_code == 200
         data = resp.json()
-        # 2 v2 ops + legacy results
-        assert data["count"] >= 3
+        # 3 v2 ops + legacy results
+        assert data["count"] >= 4
         ops = [r["operation"] for r in data["results"]]
         assert "recompute_scores" in ops
         assert "process_queue" in ops
+        assert "backfill_confidence" in ops
 
 
 # =============================================================================

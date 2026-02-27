@@ -249,3 +249,52 @@ async def get_decay_candidates(limit: int = 100) -> ValenceResponse:
         rows = cur.fetchall()
 
     return ok(data=[_row_to_dict(row) for row in rows])
+
+
+async def backfill_confidence_scores() -> ValenceResponse:
+    """Batch-recompute confidence and corroboration_count for all articles.
+
+    For each article:
+    - confidence_source = avg(source.reliability) for linked sources
+    - corroboration_count = number of linked sources
+    - confidence = {"overall": min(0.95, avg_reliability + source_bonus)}
+
+    Returns number of articles updated.
+    """
+
+    with get_cursor() as cur:
+        cur.execute(
+            """
+            WITH source_stats AS (
+                SELECT
+                    a_s.article_id,
+                    AVG(s.reliability) AS avg_reliability,
+                    COUNT(DISTINCT a_s.source_id) AS source_count
+                FROM article_sources a_s
+                JOIN sources s ON s.id = a_s.source_id
+                GROUP BY a_s.article_id
+            )
+            UPDATE articles a
+            SET
+                confidence_source = COALESCE(ss.avg_reliability, 0.5),
+                corroboration_count = COALESCE(ss.source_count, 0),
+                confidence = jsonb_build_object(
+                    'overall',
+                    LEAST(0.95,
+                        COALESCE(ss.avg_reliability, 0.5)
+                        + CASE
+                            WHEN COALESCE(ss.source_count, 0) > 1
+                            THEN LEAST(0.15, LN(1 + ss.source_count - 1) * 0.1)
+                            ELSE 0.0
+                          END
+                    )
+                )
+            FROM source_stats ss
+            WHERE a.id = ss.article_id
+              AND a.status = 'active'
+            """
+        )
+        updated = cur.rowcount
+
+    logger.info("backfill_confidence_scores: updated %d article(s)", updated)
+    return ok(data=updated)
