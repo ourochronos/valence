@@ -10,6 +10,7 @@ Tool list:
     source_ingest      C1 — Ingest a new source
     source_get         C1 — Get source by ID
     source_search      C1 — Full-text search over sources
+    source_list        C1 — List sources with filters
     knowledge_search   C9 — Unified ranked retrieval (articles + sources)
     article_get        C2 — Get article with optional provenance
     article_create     C2 — Manually create an article
@@ -17,9 +18,13 @@ Tool list:
     article_update     C2 — Update article with new content / source
     article_split      C3 — Split an oversized article
     article_merge      C3 — Merge two related articles
+    article_search     C2 — Search articles by query/domain
     provenance_trace   C5 — Trace a claim to its contributing sources
+    provenance_get     C5 — Get provenance links for an article
+    provenance_link    C5 — Link a source to an article
     contention_list    C7 — List active contentions
     contention_resolve C7 — Resolve a contention
+    contention_detect  C7 — Detect contradictions via semantic similarity
     admin_forget       C10 — Remove a source or article
     admin_stats        —   Health and capacity statistics
     admin_maintenance  —   Trigger maintenance operations
@@ -132,6 +137,24 @@ SUBSTRATE_TOOLS = [
                 },
             },
             "required": ["query"],
+        },
+    ),
+    Tool(
+        name="source_list",
+        description="List sources with optional filters. Returns source metadata without full content.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "source_type": {
+                    "type": "string",
+                    "description": "Filter by source type (document, conversation, web, code, observation, tool_output, user_input)",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum results (default 50, max 200)",
+                    "default": 50,
+                },
+            },
         },
     ),
     # =========================================================================
@@ -353,6 +376,32 @@ SUBSTRATE_TOOLS = [
             "required": ["article_id_a", "article_id_b"],
         },
     ),
+    Tool(
+        name="article_search",
+        description=(
+            "Search articles by query, domain, or filters. Returns ranked article results. "
+            "For unified search across articles AND sources, use knowledge_search instead."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query text",
+                },
+                "domain": {
+                    "type": "string",
+                    "description": "Filter by domain path prefix",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum results (default 10, max 200)",
+                    "default": 10,
+                },
+            },
+            "required": ["query"],
+        },
+    ),
     # =========================================================================
     # Provenance (C5)
     # =========================================================================
@@ -377,6 +426,43 @@ SUBSTRATE_TOOLS = [
                 },
             },
             "required": ["article_id", "claim_text"],
+        },
+    ),
+    Tool(
+        name="provenance_get",
+        description="Get all provenance links for an article — which sources contributed and how.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "article_id": {
+                    "type": "string",
+                    "description": "UUID of the article",
+                },
+            },
+            "required": ["article_id"],
+        },
+    ),
+    Tool(
+        name="provenance_link",
+        description=("Link a source to an article with a relationship type. Types: originates, confirms, supersedes, contradicts, contends."),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "article_id": {
+                    "type": "string",
+                    "description": "UUID of the article",
+                },
+                "source_id": {
+                    "type": "string",
+                    "description": "UUID of the source to link",
+                },
+                "relationship": {
+                    "type": "string",
+                    "enum": ["originates", "confirms", "supersedes", "contradicts", "contends"],
+                    "description": "Relationship type between source and article",
+                },
+            },
+            "required": ["article_id", "source_id", "relationship"],
         },
     ),
     # =========================================================================
@@ -432,6 +518,28 @@ SUBSTRATE_TOOLS = [
                 },
             },
             "required": ["contention_id", "resolution", "rationale"],
+        },
+    ),
+    Tool(
+        name="contention_detect",
+        description=(
+            "Detect potential contradictions between articles using semantic similarity. "
+            "Optionally auto-record detected contradictions as contentions."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "threshold": {
+                    "type": "number",
+                    "description": "Minimum similarity threshold (default 0.85)",
+                    "default": 0.85,
+                },
+                "auto_record": {
+                    "type": "boolean",
+                    "description": "Automatically record detected contradictions as contentions",
+                    "default": False,
+                },
+            },
         },
     ),
     # =========================================================================
