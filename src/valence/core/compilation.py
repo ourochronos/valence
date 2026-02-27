@@ -910,7 +910,7 @@ async def _process_mutation_item(operation: str, article_id: str, payload: dict)
                     if asyncio.iscoroutine(result):
                         await result
                     logger.info(
-                        "Evicted low-usage article %s (score=%.3f < threshold=%.3f)",
+                        "Archived low-usage article %s (score=%.3f < threshold=%.3f)",
                         article_id,
                         usage_score,
                         threshold,
