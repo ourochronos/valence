@@ -97,6 +97,9 @@ async def sources_create_endpoint(request: Request) -> JSONResponse:
         )
         if not result.success:
             return _json_response({"success": False, "error": result.error}, status_code=400)
+        from ...server.app import record_write
+
+        record_write()
         return _json_response({"success": True, "source": result.data}, status_code=201)
 
     except ConflictError as e:
