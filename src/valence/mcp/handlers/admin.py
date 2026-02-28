@@ -53,6 +53,7 @@ def admin_maintenance(
     process_queue: bool = False,
     evict_if_over_capacity: bool = False,
     evict_count: int = 10,
+    recompile_ungrouped: bool = False,
 ) -> dict[str, Any]:
     """Trigger maintenance operations."""
     results = {}
@@ -81,6 +82,12 @@ def admin_maintenance(
             results["evict_if_over_capacity"] = result.success
             if not result.success:
                 results["evict_error"] = result.error
+
+        if recompile_ungrouped:
+            from valence.core.maintenance import recompile_ungrouped_sources
+
+            recompile_result = run_async(recompile_ungrouped_sources())
+            results["recompile_ungrouped"] = recompile_result
 
         return {"success": True, "maintenance_results": results}
     except Exception as exc:
