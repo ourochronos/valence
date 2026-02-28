@@ -17,7 +17,7 @@ Usage:
 
 from __future__ import annotations
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -229,6 +229,24 @@ class CoreSettings(BaseSettings):
     # These are checked via os.environ in health.py
 
     # ==========================================================================
+    # VALIDATORS
+    # ==========================================================================
+
+    @model_validator(mode="after")
+    def _auto_select_embedding_provider(self) -> CoreSettings:
+        """Auto-select openai embedding provider when API key is available."""
+        # Only auto-select if no explicit provider was set (still default "local")
+        # and an OpenAI API key is available
+        if self.embedding_provider == "local" and self.openai_api_key:
+            import os
+
+            # Check if VALENCE_EMBEDDING_PROVIDER was explicitly set
+            if not os.environ.get("VALENCE_EMBEDDING_PROVIDER"):
+                self.embedding_provider = "openai"
+        return self
+
+        # ==========================================================================
+
     # COMPUTED PROPERTIES
     # ==========================================================================
 

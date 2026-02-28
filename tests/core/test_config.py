@@ -383,3 +383,39 @@ class TestCoreSettingsTypeCoercion:
         settings = CoreSettings()
         assert settings.seed_port == 9000
         assert isinstance(settings.seed_port, int)
+
+
+# ============================================================================
+# Embedding Provider Auto-Detection (#72)
+# ============================================================================
+
+
+class TestEmbeddingProviderAutoDetect:
+    """Test auto-detection of embedding provider based on available API keys."""
+
+    def test_autoselects_openai_when_key_available(self, monkeypatch, clean_env):
+        """When OPENAI_API_KEY is set and VALENCE_EMBEDDING_PROVIDER is NOT set,
+        provider should auto-select to 'openai'."""
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test-autodetect-key")
+        monkeypatch.delenv("VALENCE_EMBEDDING_PROVIDER", raising=False)
+
+        settings = CoreSettings()
+        assert settings.embedding_provider == "openai"
+
+    def test_explicit_local_override_respected(self, monkeypatch, clean_env):
+        """When VALENCE_EMBEDDING_PROVIDER is explicitly set to 'local',
+        it should stay 'local' even if OPENAI_API_KEY is set (user override)."""
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test-explicit-local")
+        monkeypatch.setenv("VALENCE_EMBEDDING_PROVIDER", "local")
+
+        settings = CoreSettings()
+        assert settings.embedding_provider == "local"
+
+    def test_stays_local_when_no_key(self, monkeypatch, clean_env):
+        """When neither OPENAI_API_KEY nor VALENCE_EMBEDDING_PROVIDER is set,
+        provider should remain the default 'local'."""
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("VALENCE_EMBEDDING_PROVIDER", raising=False)
+
+        settings = CoreSettings()
+        assert settings.embedding_provider == "local"
