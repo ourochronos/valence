@@ -45,10 +45,10 @@ logger = logging.getLogger(__name__)
 SMALL_SOURCE_CHARS = 7000  # ~2000 tokens
 
 # Minimum cluster size to trigger auto-compilation
-AUTO_COMPILE_MIN_CLUSTER = 3
+AUTO_COMPILE_MIN_CLUSTER = 2
 
 # Cosine similarity threshold for compilation candidates
-COMPILE_SIMILARITY_THRESHOLD = 0.8
+COMPILE_SIMILARITY_THRESHOLD = 0.65
 
 
 # ---------------------------------------------------------------------------

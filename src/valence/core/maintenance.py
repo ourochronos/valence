@@ -226,3 +226,88 @@ def check_and_run_maintenance(cur) -> dict[str, Any] | None:
         "timestamp": schedule["last_run"],
         "results": [{"operation": r.operation, "details": r.details} for r in results],
     }
+
+
+# ---------------------------------------------------------------------------
+# Recompile ungrouped sources
+# ---------------------------------------------------------------------------
+
+import logging as _logging
+
+# Module-level imports for recompile_ungrouped_sources (allows test patching)
+from valence.core.compilation import compile_article  # noqa: E402
+from valence.core.db import get_cursor  # noqa: E402
+from valence.core.sources import find_similar_ungrouped  # noqa: E402
+
+
+async def recompile_ungrouped_sources(limit: int = 50) -> dict:
+    """Re-check ungrouped sources for compilation candidates.
+
+    Finds sources with pipeline_status = 'complete' that have no article_sources
+    row, then attempts to compile clusters of similar ungrouped sources.
+
+    Args:
+        limit: Maximum number of ungrouped sources to check.
+
+    Returns:
+        Dict with keys: checked, compiled, articles_created.
+    """
+    from valence.core.ingest_pipeline import AUTO_COMPILE_MIN_CLUSTER, COMPILE_SIMILARITY_THRESHOLD
+
+    log = _logging.getLogger(__name__)
+
+    # Fetch ungrouped sources
+    with get_cursor() as cur:
+        cur.execute(
+            """
+            SELECT s.id
+            FROM sources s
+            WHERE s.pipeline_status = 'complete'
+              AND NOT EXISTS (
+                  SELECT 1 FROM article_sources a WHERE a.source_id = s.id
+              )
+            LIMIT %s
+            """,
+            (limit,),
+        )
+        rows = cur.fetchall()
+
+    ungrouped_ids = [row["id"] for row in rows]
+    checked = len(ungrouped_ids)
+    compiled = 0
+    articles_created = 0
+    processed: set[str] = set()
+
+    for source_id in ungrouped_ids:
+        sid = str(source_id)
+        if sid in processed:
+            continue
+
+        try:
+            similar_ids = await find_similar_ungrouped(sid, COMPILE_SIMILARITY_THRESHOLD)
+            candidate_ids = [sid] + [s for s in similar_ids if s != sid]
+
+            if len(candidate_ids) >= AUTO_COMPILE_MIN_CLUSTER:
+                result = await compile_article(candidate_ids[:10])
+                if result.success:
+                    log.info(
+                        "recompile_ungrouped: compiled %d sources → article %s",
+                        len(candidate_ids),
+                        (result.data or {}).get("id", "?"),
+                    )
+                    articles_created += 1
+                    compiled += len(candidate_ids)
+                    processed.update(candidate_ids)
+                else:
+                    log.warning("recompile_ungrouped: compile failed: %s", result.error)
+            else:
+                log.debug(
+                    "recompile_ungrouped: only %d candidates for %s (need %d), skipping",
+                    len(candidate_ids),
+                    sid,
+                    AUTO_COMPILE_MIN_CLUSTER,
+                )
+        except Exception as exc:
+            log.warning("recompile_ungrouped: error processing %s: %s (non-fatal)", sid, exc)
+
+    return {"checked": checked, "compiled": compiled, "articles_created": articles_created}
