@@ -13,6 +13,7 @@ Commands:
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -127,7 +128,8 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
     # --- store ---
     store_p = memory_sub.add_parser("store", help="Store a memory directly from content string")
-    store_p.add_argument("content", help="Memory content to store")
+    store_p.add_argument("content", nargs="?", default=None, help="Memory content (omit to read from stdin)")
+    store_p.add_argument("--stdin", action="store_true", help="Read content from stdin")
     store_p.add_argument(
         "--context",
         help="Where this memory came from (e.g., 'session:main', 'conversation:user')",
@@ -330,7 +332,10 @@ def cmd_memory_search(args: argparse.Namespace) -> int:
 def cmd_memory_store(args: argparse.Namespace) -> int:
     """Store a memory via REST API."""
     client = get_client()
-    body: dict[str, Any] = {"content": args.content}
+    content = args.content
+    if content is None:
+        content = sys.stdin.read()
+    body: dict[str, Any] = {"content": content}
     if getattr(args, "context", None):
         body["context"] = args.context
     if getattr(args, "importance", None) is not None:
