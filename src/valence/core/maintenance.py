@@ -9,11 +9,16 @@ Provides vacuum, view refresh, and orchestrated maintenance cycles.
 from __future__ import annotations
 
 import json
+import logging as _logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from psycopg2 import sql
+
+from valence.core.compilation import compile_article
+from valence.core.db import get_cursor
+from valence.core.sources import find_similar_ungrouped
 
 
 @dataclass
@@ -231,13 +236,6 @@ def check_and_run_maintenance(cur) -> dict[str, Any] | None:
 # ---------------------------------------------------------------------------
 # Recompile ungrouped sources
 # ---------------------------------------------------------------------------
-
-import logging as _logging
-
-# Module-level imports for recompile_ungrouped_sources (allows test patching)
-from valence.core.compilation import compile_article  # noqa: E402
-from valence.core.db import get_cursor  # noqa: E402
-from valence.core.sources import find_similar_ungrouped  # noqa: E402
 
 
 async def recompile_ungrouped_sources(limit: int = 50) -> dict:
