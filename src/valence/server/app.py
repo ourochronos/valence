@@ -60,6 +60,13 @@ from .endpoints.contentions import (
     list_contentions_endpoint,
     resolve_contention_endpoint,
 )
+from .endpoints.memory import (
+    memory_forget_endpoint,
+    memory_list_endpoint,
+    memory_search_endpoint,
+    memory_status_endpoint,
+    memory_store_endpoint,
+)
 from .endpoints.parity import (
     admin_forget_endpoint,
     compile_article_endpoint,
@@ -1238,6 +1245,12 @@ def create_app() -> Starlette:
         # -----------------------------------------------------------------------
         # v2 Contentions endpoints
         # -----------------------------------------------------------------------
+        # Memory
+        Route(f"{API_V1}/memory", memory_list_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/memory", memory_store_endpoint, methods=["POST"]),
+        Route(f"{API_V1}/memory/search", memory_search_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/memory/status", memory_status_endpoint, methods=["GET"]),
+        Route(f"{API_V1}/memory/{{memory_id}}/forget", memory_forget_endpoint, methods=["POST"]),
         Route(f"{API_V1}/contentions", list_contentions_endpoint, methods=["GET"]),
         Route(f"{API_V1}/contentions/{{contention_id}}/resolve", resolve_contention_endpoint, methods=["POST"]),
         # -----------------------------------------------------------------------

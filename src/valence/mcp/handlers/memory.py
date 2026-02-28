@@ -364,3 +364,75 @@ def memory_forget(
         "forgotten": True,
         "reason": reason,
     }
+
+
+def memory_list(limit: int = 20, tags: list[str] | None = None) -> dict[str, Any]:
+    """List recent memories.
+
+    Args:
+        limit: Maximum results (1-200)
+        tags: Optional tag filter
+    """
+    import json as _json
+
+    from valence.core.db import get_cursor
+
+    limit = max(1, min(limit, 200))
+
+    with get_cursor() as cur:
+        if tags:
+            cur.execute(
+                """
+                SELECT s.id, s.title, s.content, s.metadata, s.created_at
+                FROM sources s
+                WHERE s.type = 'observation'
+                  AND s.metadata->>'memory' = 'true'
+                  AND s.metadata->'tags' ?| %s::text[]
+                ORDER BY s.created_at DESC
+                LIMIT %s
+                """,
+                (tags, limit),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT s.id, s.title, s.content, s.metadata, s.created_at
+                FROM sources s
+                WHERE s.type = 'observation'
+                  AND s.metadata->>'memory' = 'true'
+                ORDER BY s.created_at DESC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+
+        rows = cur.fetchall()
+
+    snippet_len = 200
+    memories = []
+    for row in rows:
+        metadata = row.get("metadata", {})
+        if isinstance(metadata, str):
+            metadata = _json.loads(metadata)
+
+        content = row.get("content", "")
+        if len(content) > snippet_len:
+            content = content[: snippet_len - 3] + "..."
+
+        memories.append(
+            {
+                "memory_id": str(row["id"]),
+                "title": row.get("title"),
+                "content_preview": content,
+                "importance": metadata.get("importance", 0.5),
+                "context": metadata.get("context"),
+                "tags": metadata.get("tags", []),
+                "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+            }
+        )
+
+    return {
+        "success": True,
+        "memories": memories,
+        "count": len(memories),
+    }

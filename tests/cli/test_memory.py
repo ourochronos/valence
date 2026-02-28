@@ -1,15 +1,14 @@
 """Tests for memory CLI commands.
 
 Tests cover:
-1. valence memory import <path> — imports a markdown file
-2. valence memory import-dir <dir> — imports directory of .md files
-3. valence memory list — lists memories
-4. valence memory search <query> — searches memories
+1. valence memory import <path> — imports a markdown file via REST
+2. valence memory import-dir <dir> — imports directory of .md files via REST
+3. valence memory list — lists memories via REST
+4. valence memory search <query> — searches memories via REST
 """
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -28,12 +27,12 @@ from valence.cli.commands.memory import (
 
 
 @pytest.fixture
-def mock_cursor():
-    """Mock cursor."""
-    cur = MagicMock()
-    cur.fetchone.return_value = None
-    cur.fetchall.return_value = []
-    return cur
+def mock_client():
+    """Mock ValenceClient."""
+    client = MagicMock()
+    client.get.return_value = {"success": True}
+    client.post.return_value = {"success": True, "memory_id": "test-id", "title": "Memory"}
+    return client
 
 
 @pytest.fixture
@@ -64,7 +63,7 @@ def tmp_md_dir(tmp_path):
 
 
 class TestMemoryImport:
-    def test_import_nonexistent_file(self, capsys):
+    def test_import_nonexistent_file(self):
         args = MagicMock()
         args.path = Path("/nonexistent/file.md")
         args.context = None
@@ -90,33 +89,27 @@ class TestMemoryImport:
             mock_err.assert_called_once()
             assert "not a file" in str(mock_err.call_args).lower()
 
-    def test_import_success(self, tmp_md_file):
+    def test_import_success(self, tmp_md_file, mock_client):
         args = MagicMock()
         args.path = tmp_md_file
         args.context = "test:import"
         args.importance = 0.7
         args.tags = ["test"]
 
-        with patch("valence.mcp.handlers.memory.memory_store") as mock_store:
-            mock_store.return_value = {
-                "success": True,
-                "memory_id": "test-id",
-                "title": "Test Memory",
-            }
-
+        with patch("valence.cli.commands.memory.get_client", return_value=mock_client):
             with patch("valence.cli.commands.memory.output_result") as mock_out:
                 code = cmd_memory_import(args)
                 assert code == 0
 
-                # Check memory_store was called
-                mock_store.assert_called_once()
-                call_kwargs = mock_store.call_args.kwargs
-                assert "Test Memory" in call_kwargs["content"]
-                assert call_kwargs["context"] == "test:import"
-                assert call_kwargs["importance"] == 0.7
-                assert call_kwargs["tags"] == ["test"]
+                # Check REST call was made
+                mock_client.post.assert_called_once()
+                call_kwargs = mock_client.post.call_args
+                body = call_kwargs.kwargs.get("body") or call_kwargs[1].get("body")
+                assert "Test Memory" in body["content"]
+                assert body["context"] == "test:import"
+                assert body["importance"] == 0.7
+                assert body["tags"] == ["test"]
 
-                # Check output
                 mock_out.assert_called_once()
 
 
@@ -171,7 +164,7 @@ class TestMemoryImportDir:
             mock_err.assert_called_once()
             assert "no .md files" in str(mock_err.call_args).lower()
 
-    def test_import_dir_success(self, tmp_md_dir):
+    def test_import_dir_success(self, tmp_md_dir, mock_client):
         args = MagicMock()
         args.directory = tmp_md_dir
         args.context = "test:batch"
@@ -179,27 +172,20 @@ class TestMemoryImportDir:
         args.tags = ["batch"]
         args.recursive = False
 
-        with patch("valence.mcp.handlers.memory.memory_store") as mock_store:
-            mock_store.return_value = {
-                "success": True,
-                "memory_id": "test-id",
-                "title": "Memory",
-            }
-
+        with patch("valence.cli.commands.memory.get_client", return_value=mock_client):
             with patch("valence.cli.commands.memory.output_result") as mock_out:
                 code = cmd_memory_import_dir(args)
                 assert code == 0
 
                 # Should import 2 files (not recursive)
-                assert mock_store.call_count == 2
+                assert mock_client.post.call_count == 2
 
-                # Check output
                 mock_out.assert_called_once()
                 result = mock_out.call_args[0][0]
                 assert result["imported_count"] == 2
                 assert result["failed_count"] == 0
 
-    def test_import_dir_recursive(self, tmp_md_dir):
+    def test_import_dir_recursive(self, tmp_md_dir, mock_client):
         args = MagicMock()
         args.directory = tmp_md_dir
         args.context = None
@@ -207,19 +193,13 @@ class TestMemoryImportDir:
         args.tags = None
         args.recursive = True
 
-        with patch("valence.mcp.handlers.memory.memory_store") as mock_store:
-            mock_store.return_value = {
-                "success": True,
-                "memory_id": "test-id",
-                "title": "Memory",
-            }
-
+        with patch("valence.cli.commands.memory.get_client", return_value=mock_client):
             with patch("valence.cli.commands.memory.output_result"):
                 code = cmd_memory_import_dir(args)
                 assert code == 0
 
                 # Should import 3 files (recursive)
-                assert mock_store.call_count == 3
+                assert mock_client.post.call_count == 3
 
 
 # ---------------------------------------------------------------------------
@@ -228,58 +208,49 @@ class TestMemoryImportDir:
 
 
 class TestMemoryList:
-    def test_list_success(self, mock_cursor):
+    def test_list_success(self, mock_client):
         args = MagicMock()
         args.limit = 20
         args.tags = None
 
-        mock_cursor.fetchall.return_value = [
-            {
-                "id": "mem-1",
-                "title": "Memory 1",
-                "content": "Content 1",
-                "metadata": json.dumps(
-                    {
-                        "memory": True,
-                        "importance": 0.8,
-                        "tags": ["test"],
-                    }
-                ),
-                "created_at": None,
-            }
-        ]
+        mock_client.get.return_value = {
+            "success": True,
+            "memories": [
+                {
+                    "memory_id": "mem-1",
+                    "title": "Memory 1",
+                    "content_preview": "Content 1",
+                    "importance": 0.8,
+                    "tags": ["test"],
+                }
+            ],
+            "count": 1,
+        }
 
-        with patch("valence.cli.commands.memory.get_cursor") as mock_gc:
-            mock_gc.return_value.__enter__ = lambda _: mock_cursor
-            mock_gc.return_value.__exit__ = lambda *_: None
-
+        with patch("valence.cli.commands.memory.get_client", return_value=mock_client):
             with patch("valence.cli.commands.memory.output_result") as mock_out:
                 code = cmd_memory_list(args)
                 assert code == 0
 
-                result = mock_out.call_args[0][0]
-                assert result["success"] is True
-                assert len(result["memories"]) == 1
-                assert result["memories"][0]["importance"] == 0.8
+                mock_client.get.assert_called_once_with("/memory", params={"limit": "20"})
+                mock_out.assert_called_once()
 
-    def test_list_with_tag_filter(self, mock_cursor):
+    def test_list_with_tag_filter(self, mock_client):
         args = MagicMock()
         args.limit = 20
         args.tags = ["infrastructure"]
 
-        mock_cursor.fetchall.return_value = []
+        mock_client.get.return_value = {"success": True, "memories": [], "count": 0}
 
-        with patch("valence.cli.commands.memory.get_cursor") as mock_gc:
-            mock_gc.return_value.__enter__ = lambda _: mock_cursor
-            mock_gc.return_value.__exit__ = lambda *_: None
-
+        with patch("valence.cli.commands.memory.get_client", return_value=mock_client):
             with patch("valence.cli.commands.memory.output_result"):
                 code = cmd_memory_list(args)
                 assert code == 0
 
-                # Verify query includes tag filter
-                sql = mock_cursor.execute.call_args[0][0]
-                assert "?|" in sql  # JSONB array overlap operator
+                # Verify tags are passed as comma-separated
+                call_args = mock_client.get.call_args
+                params = call_args.kwargs.get("params") or call_args[1]
+                assert params["tags"] == "infrastructure"
 
 
 # ---------------------------------------------------------------------------
@@ -288,52 +259,45 @@ class TestMemoryList:
 
 
 class TestMemorySearch:
-    def test_search_success(self):
+    def test_search_success(self, mock_client):
         args = MagicMock()
         args.query = "test query"
         args.limit = 10
         args.min_confidence = None
         args.tags = None
 
-        with patch("valence.mcp.handlers.memory.memory_recall") as mock_recall:
-            mock_recall.return_value = {
-                "success": True,
-                "memories": [
-                    {
-                        "memory_id": "mem-1",
-                        "content": "Test memory",
-                        "score": 0.9,
-                    }
-                ],
-                "count": 1,
-            }
+        mock_client.get.return_value = {
+            "success": True,
+            "memories": [{"memory_id": "mem-1", "content": "Test memory", "score": 0.9}],
+            "count": 1,
+        }
 
+        with patch("valence.cli.commands.memory.get_client", return_value=mock_client):
             with patch("valence.cli.commands.memory.output_result") as mock_out:
                 code = cmd_memory_search(args)
                 assert code == 0
 
-                mock_recall.assert_called_once_with(
-                    query="test query",
-                    limit=10,
-                    min_confidence=None,
-                    tags=None,
+                mock_client.get.assert_called_once_with(
+                    "/memory/search",
+                    params={"query": "test query", "limit": "10"},
                 )
                 mock_out.assert_called_once()
 
-    def test_search_with_filters(self):
+    def test_search_with_filters(self, mock_client):
         args = MagicMock()
         args.query = "important"
         args.limit = 5
         args.min_confidence = 0.7
         args.tags = ["critical"]
 
-        with patch("valence.mcp.handlers.memory.memory_recall") as mock_recall:
-            mock_recall.return_value = {"success": True, "memories": [], "count": 0}
+        mock_client.get.return_value = {"success": True, "memories": [], "count": 0}
 
+        with patch("valence.cli.commands.memory.get_client", return_value=mock_client):
             with patch("valence.cli.commands.memory.output_result"):
                 code = cmd_memory_search(args)
                 assert code == 0
 
-                call_kwargs = mock_recall.call_args.kwargs
-                assert call_kwargs["min_confidence"] == 0.7
-                assert call_kwargs["tags"] == ["critical"]
+                call_args = mock_client.get.call_args
+                params = call_args.kwargs.get("params") or call_args[1]
+                assert params["min_confidence"] == "0.7"
+                assert params["tags"] == "critical"

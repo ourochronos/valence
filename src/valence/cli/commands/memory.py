@@ -13,11 +13,10 @@ Commands:
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
+from typing import Any
 
-from valence.core.db import get_cursor
-
+from ..http_client import ValenceAPIError, ValenceConnectionError, get_client
 from ..output import output_error, output_result
 
 # Constants
@@ -169,8 +168,8 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
 
 def cmd_memory_import(args: argparse.Namespace) -> int:
-    """Import a markdown file as a memory source."""
-    from valence.mcp.handlers.memory import memory_store
+    """Import a markdown file as a memory source via REST API."""
+    client = get_client()
 
     path: Path = args.path
     if not path.exists():
@@ -187,20 +186,27 @@ def cmd_memory_import(args: argparse.Namespace) -> int:
         output_error(f"Failed to read {path}: {e}")
         return 1
 
-    result = memory_store(
-        content=content,
-        context=args.context,
-        importance=args.importance,
-        tags=args.tags,
-    )
+    body: dict[str, Any] = {"content": content}
+    if args.context:
+        body["context"] = args.context
+    if args.importance is not None:
+        body["importance"] = args.importance
+    if args.tags:
+        body["tags"] = args.tags
+
+    try:
+        result = client.post("/memory", body=body)
+    except (ValenceConnectionError, ValenceAPIError) as e:
+        output_error(str(e))
+        return 1
 
     output_result(result)
-    return 0 if result.get("success") else 1
+    return 0 if result.get("success", True) else 1
 
 
 def cmd_memory_import_dir(args: argparse.Namespace) -> int:
-    """Import all .md files from a directory as memories."""
-    from valence.mcp.handlers.memory import memory_store
+    """Import all .md files from a directory as memories via REST API."""
+    client = get_client()
 
     directory: Path = args.directory
     if not directory.exists():
@@ -226,16 +232,19 @@ def cmd_memory_import_dir(args: argparse.Namespace) -> int:
 
     for path in md_files:
         try:
-            content = path.read_text()
+            file_content = path.read_text()
+            body: dict[str, Any] = {
+                "content": file_content,
+                "context": args.context or f"file:{path.relative_to(directory)}",
+            }
+            if args.importance is not None:
+                body["importance"] = args.importance
+            if args.tags:
+                body["tags"] = args.tags
 
-            result = memory_store(
-                content=content,
-                context=args.context or f"file:{path.relative_to(directory)}",
-                importance=args.importance,
-                tags=args.tags,
-            )
+            result = client.post("/memory", body=body)
 
-            if result.get("success"):
+            if result.get("success", True):
                 imported.append(
                     {
                         "file": str(path.relative_to(directory)),
@@ -250,6 +259,13 @@ def cmd_memory_import_dir(args: argparse.Namespace) -> int:
                         "error": result.get("error"),
                     }
                 )
+        except (ValenceConnectionError, ValenceAPIError) as e:
+            failed.append(
+                {
+                    "file": str(path.relative_to(directory)),
+                    "error": str(e),
+                }
+            )
         except Exception as e:
             failed.append(
                 {
@@ -260,10 +276,9 @@ def cmd_memory_import_dir(args: argparse.Namespace) -> int:
 
     output_result(
         {
-            "success": True,
+            "success": len(failed) == 0,
             "imported": imported,
             "failed": failed,
-            "total_files": len(md_files),
             "imported_count": len(imported),
             "failed_count": len(failed),
         }
@@ -273,125 +288,99 @@ def cmd_memory_import_dir(args: argparse.Namespace) -> int:
 
 
 def cmd_memory_list(args: argparse.Namespace) -> int:
-    """List recent memories."""
-    limit = max(1, min(args.limit, 200))
-    tags = args.tags
+    """List recent memories via REST API."""
+    client = get_client()
+    params: dict[str, str] = {"limit": str(args.limit)}
+    if args.tags:
+        params["tags"] = ",".join(args.tags)
 
-    with get_cursor() as cur:
-        if tags:
-            # Filter by tags using JSONB containment
-            # Properly cast tags array for PostgreSQL JSONB ?| operator
-            cur.execute(
-                """
-                SELECT s.id, s.title, s.content, s.metadata, s.created_at
-                FROM sources s
-                WHERE s.type = 'observation'
-                  AND s.metadata->>'memory' = 'true'
-                  AND s.metadata->'tags' ?| %s::text[]
-                ORDER BY s.created_at DESC
-                LIMIT %s
-                """,
-                (tags, limit),
-            )
-        else:
-            cur.execute(
-                """
-                SELECT s.id, s.title, s.content, s.metadata, s.created_at
-                FROM sources s
-                WHERE s.type = 'observation'
-                  AND s.metadata->>'memory' = 'true'
-                ORDER BY s.created_at DESC
-                LIMIT %s
-                """,
-                (limit,),
-            )
-
-        rows = cur.fetchall()
-
-    memories = []
-    for row in rows:
-        metadata = row.get("metadata", {})
-        # JSONB should return dict directly from psycopg2; this isinstance check
-        # handles legacy data or non-JSONB columns that might return serialized strings
-        if isinstance(metadata, str):
-            metadata = json.loads(metadata)
-
-        # Truncate content for display
-        content = row.get("content", "")
-        if len(content) > SNIPPET_TRUNCATE_LENGTH:
-            content = content[: SNIPPET_TRUNCATE_LENGTH - 3] + "..."
-
-        memories.append(
-            {
-                "memory_id": str(row["id"]),
-                "title": row.get("title"),
-                "content_preview": content,
-                "importance": metadata.get("importance", 0.5),
-                "context": metadata.get("context"),
-                "tags": metadata.get("tags", []),
-                "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
-            }
-        )
-
-    output_result(
-        {
-            "success": True,
-            "memories": memories,
-            "count": len(memories),
-        }
-    )
-
-    return 0
+    try:
+        result = client.get("/memory", params=params)
+        output_result(result)
+        return 0 if result.get("success", True) else 1
+    except ValenceConnectionError as e:
+        output_error(str(e))
+        return 1
+    except ValenceAPIError as e:
+        output_error(e.message)
+        return 1
 
 
 def cmd_memory_search(args: argparse.Namespace) -> int:
-    """Search memories from CLI."""
-    from valence.mcp.handlers.memory import memory_recall
+    """Search memories via REST API."""
+    client = get_client()
+    params: dict[str, str] = {"query": args.query, "limit": str(args.limit)}
+    if args.min_confidence is not None:
+        params["min_confidence"] = str(args.min_confidence)
+    if args.tags:
+        params["tags"] = ",".join(args.tags)
 
-    result = memory_recall(
-        query=args.query,
-        limit=args.limit,
-        min_confidence=args.min_confidence,
-        tags=args.tags,
-    )
-
-    output_result(result)
-    return 0 if result.get("success") else 1
+    try:
+        result = client.get("/memory/search", params=params)
+        output_result(result)
+        return 0 if result.get("success", True) else 1
+    except ValenceConnectionError as e:
+        output_error(str(e))
+        return 1
+    except ValenceAPIError as e:
+        output_error(e.message)
+        return 1
 
 
 def cmd_memory_store(args: argparse.Namespace) -> int:
-    """Store a memory directly from a content string."""
-    from valence.mcp.handlers.memory import memory_store
+    """Store a memory via REST API."""
+    client = get_client()
+    body: dict[str, Any] = {"content": args.content}
+    if getattr(args, "context", None):
+        body["context"] = args.context
+    if getattr(args, "importance", None) is not None:
+        body["importance"] = args.importance
+    if getattr(args, "tags", None):
+        body["tags"] = args.tags
+    if getattr(args, "supersedes_id", None):
+        body["supersedes_id"] = args.supersedes_id
 
-    result = memory_store(
-        content=args.content,
-        context=getattr(args, "context", None),
-        importance=getattr(args, "importance", 0.5),
-        tags=getattr(args, "tags", None),
-        supersedes_id=getattr(args, "supersedes_id", None),
-    )
-
-    output_result(result)
-    return 0 if result.get("success") else 1
+    try:
+        result = client.post("/memory", body=body)
+        output_result(result)
+        return 0 if result.get("success", True) else 1
+    except ValenceConnectionError as e:
+        output_error(str(e))
+        return 1
+    except ValenceAPIError as e:
+        output_error(e.message)
+        return 1
 
 
 def cmd_memory_forget(args: argparse.Namespace) -> int:
-    """Mark a memory as forgotten (soft delete)."""
-    from valence.mcp.handlers.memory import memory_forget
+    """Mark a memory as forgotten via REST API."""
+    client = get_client()
+    body: dict[str, Any] = {}
+    if getattr(args, "reason", None):
+        body["reason"] = args.reason
 
-    result = memory_forget(
-        memory_id=args.memory_id,
-        reason=getattr(args, "reason", None),
-    )
-
-    output_result(result)
-    return 0 if result.get("success") else 1
+    try:
+        result = client.post(f"/memory/{args.memory_id}/forget", body=body)
+        output_result(result)
+        return 0 if result.get("success", True) else 1
+    except ValenceConnectionError as e:
+        output_error(str(e))
+        return 1
+    except ValenceAPIError as e:
+        output_error(e.message)
+        return 1
 
 
 def cmd_memory_status_cli(args: argparse.Namespace) -> int:
-    """Show memory system statistics."""
-    from valence.mcp.handlers.memory import memory_status
-
-    result = memory_status()
-    output_result(result)
-    return 0 if result.get("success") else 1
+    """Show memory system statistics via REST API."""
+    client = get_client()
+    try:
+        result = client.get("/memory/status")
+        output_result(result)
+        return 0 if result.get("success", True) else 1
+    except ValenceConnectionError as e:
+        output_error(str(e))
+        return 1
+    except ValenceAPIError as e:
+        output_error(e.message)
+        return 1
