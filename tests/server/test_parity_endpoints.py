@@ -68,7 +68,7 @@ class TestKnowledgeSearchEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
-        mock_search.assert_called_once_with(query="python", limit=10, include_sources=False, session_id=None)
+        mock_search.assert_called_once_with(query="python", limit=10, include_sources=False, session_id=None, temporal_mode="default")
 
     @patch("valence.mcp.handlers.articles.knowledge_search")
     def test_search_with_params(self, mock_search, client, auth_token):
@@ -80,7 +80,7 @@ class TestKnowledgeSearchEndpoint:
         )
 
         assert response.status_code == 200
-        mock_search.assert_called_once_with(query="test", limit=5, include_sources=True, session_id="abc")
+        mock_search.assert_called_once_with(query="test", limit=5, include_sources=True, session_id="abc", temporal_mode="default")
 
 
 class TestCompileArticleEndpoint:

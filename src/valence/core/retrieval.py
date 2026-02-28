@@ -44,6 +44,16 @@ GRACE_PERIOD_HOURS = 48
 # Maximum novelty boost multiplier (at creation, decays linearly to 1.0)
 NOVELTY_BOOST_MAX = 1.5
 
+# ---------------------------------------------------------------------------
+# Temporal mode weight presets
+# ---------------------------------------------------------------------------
+
+TEMPORAL_WEIGHT_PRESETS: dict[str, dict[str, float]] = {
+    "default": {"semantic": 0.50, "confidence": 0.35, "recency": 0.15},
+    "prefer_recent": {"semantic": 0.35, "confidence": 0.15, "recency": 0.50},
+    "prefer_stable": {"semantic": 0.40, "confidence": 0.45, "recency": 0.15},
+}
+
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -527,6 +537,7 @@ def _retrieve_sync(
     limit: int,
     include_sources: bool,
     session_id: str | None,
+    temporal_mode: str = "default",
 ) -> list[dict[str, Any]]:
     """Synchronous implementation of unified retrieval."""
     article_results = _search_articles_sync(query, limit)
@@ -550,11 +561,12 @@ def _retrieve_sync(
         r["_original_created_at"] = r.get("created_at")
         r["created_at"] = (now - timedelta(days=freshness_days)).isoformat()
 
+    weights = TEMPORAL_WEIGHT_PRESETS.get(temporal_mode, TEMPORAL_WEIGHT_PRESETS["default"])
     ranked = multi_signal_rank(
         all_results,
-        semantic_weight=0.50,
-        confidence_weight=0.35,
-        recency_weight=0.15,
+        semantic_weight=weights["semantic"],
+        confidence_weight=weights["confidence"],
+        recency_weight=weights["recency"],
     )
 
     # Restore original created_at
@@ -631,10 +643,15 @@ async def retrieve(
     limit: int = 10,
     include_sources: bool = False,
     session_id: str | None = None,
+    temporal_mode: str = "default",
 ) -> ValenceResponse:
     """Unified retrieval: search articles and ungrouped sources.
 
     Ranks results by: relevance * 0.5 + confidence * 0.35 + freshness * 0.15.
+    Use temporal_mode to adjust ranking weights:
+      - "default":       semantic=0.50, confidence=0.35, recency=0.15
+      - "prefer_recent": semantic=0.35, confidence=0.15, recency=0.50
+      - "prefer_stable": semantic=0.40, confidence=0.45, recency=0.15
 
     Ungrouped sources that match are surfaced with ``type="source"`` and trigger
     a ``recompile`` entry in the mutation_queue (deferred compilation).
@@ -670,5 +687,6 @@ async def retrieve(
         limit,
         include_sources,
         session_id,
+        temporal_mode,
     )
     return ok(data=results)
