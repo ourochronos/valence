@@ -439,6 +439,12 @@ and the foundation of its Python implementation.
 
 ---
 
-[Unreleased]: https://github.com/ourochronos/valence/compare/v0.1.0-alpha...HEAD
+[Unreleased]: https://github.com/ourochronos/valence/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/ourochronos/valence/compare/v1.0.1...v2.0.0
+[1.0.1]: https://github.com/ourochronos/valence/compare/v1.0.0...v1.0.1
+[1.0.0]: https://github.com/ourochronos/valence/compare/v0.3.0...v1.0.0
+[0.3.0]: https://github.com/ourochronos/valence/compare/v0.2.2...v0.3.0
+[0.2.2]: https://github.com/ourochronos/valence/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/ourochronos/valence/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/ourochronos/valence/compare/v0.1.0-alpha...v0.2.0
 [0.1.0-alpha]: https://github.com/ourochronos/valence/releases/tag/v0.1.0-alpha
-# CI trigger

@@ -147,3 +147,4 @@ module = [
     "asyncpg.*",
 ]
 ignore_missing_imports = true
+
