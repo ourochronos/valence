@@ -777,7 +777,7 @@ async def process_mutation_queue(batch_size: int = 10) -> ValenceResponse:
             SET status = 'processing'
             FROM claimed
             WHERE mq.id = claimed.id
-            RETURNING mq.id, mq.operation, mq.article_id, mq.source_id, mq.payload
+            RETURNING mq.id, mq.operation, mq.article_id, mq.payload
             """,
             (batch_size,),
         )
