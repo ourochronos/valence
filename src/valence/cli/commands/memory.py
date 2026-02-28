@@ -100,6 +100,10 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     )
     list_p.set_defaults(func=cmd_memory_list)
 
+    # --- status ---
+    status_p = memory_sub.add_parser("status", help="Memory system statistics")
+    status_p.set_defaults(func=cmd_memory_status_cli)
+
     # --- search ---
     search_p = memory_sub.add_parser("search", help="Search memories")
     search_p.add_argument("query", help="Search query")
@@ -380,5 +384,14 @@ def cmd_memory_forget(args: argparse.Namespace) -> int:
         reason=getattr(args, "reason", None),
     )
 
+    output_result(result)
+    return 0 if result.get("success") else 1
+
+
+def cmd_memory_status_cli(args: argparse.Namespace) -> int:
+    """Show memory system statistics."""
+    from valence.mcp.handlers.memory import memory_status
+
+    result = memory_status()
     output_result(result)
     return 0 if result.get("success") else 1
