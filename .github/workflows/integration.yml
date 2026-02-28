@@ -63,7 +63,6 @@ jobs:
           PGDATABASE: valence_test
         run: |
           psql -f migrations/schema.sql
-          psql -f src/valence/substrate/procedures.sql
 
       - name: Run database integration tests
         env:
@@ -227,7 +226,6 @@ jobs:
           PGDATABASE: valence_test
         run: |
           psql -f migrations/schema.sql
-          psql -f src/valence/substrate/procedures.sql
 
       - name: Start Valence server
         env:
