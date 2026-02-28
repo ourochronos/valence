@@ -27,6 +27,7 @@ from typing import Any
 
 from valence.core.db import get_cursor, serialize_row
 from valence.core.embeddings import generate_embedding
+from valence.core.sources import resolve_supersession_head_sync
 
 from .ranking import multi_signal_rank
 from .response import ValenceResponse, ok
@@ -360,7 +361,8 @@ txt AS (
     LIMIT %(search_limit)s
 )
 SELECT s.id, s.type, s.title, s.url, s.content, s.reliability,
-       s.fingerprint, s.created_at,
+       s.fingerprint, s.created_at, s.supersedes_id,
+       EXISTS (SELECT 1 FROM sources s2 WHERE s2.supersedes_id = s.id) AS is_superseded,
        COALESCE(v.vec_rank, %(default_rank)s) AS vec_rank,
        COALESCE(v.vec_score, 0) AS vec_score,
        COALESCE(t.text_rank, %(default_rank)s) AS text_rank,
@@ -377,7 +379,8 @@ LIMIT %(lim)s
 
 _SOURCE_TEXT_ONLY_SQL = """
 SELECT s.id, s.type, s.title, s.url, s.content, s.reliability,
-       s.fingerprint, s.created_at,
+       s.fingerprint, s.created_at, s.supersedes_id,
+       EXISTS (SELECT 1 FROM sources s2 WHERE s2.supersedes_id = s.id) AS is_superseded,
        ts_rank(s.content_tsv, websearch_to_tsquery('english', %(q)s)) AS text_score,
        0.0 AS vec_score,
        ROW_NUMBER() OVER (
@@ -433,7 +436,34 @@ def _search_ungrouped_sources_sync(query: str, limit: int) -> list[dict[str, Any
             d["freshness_score"] = _freshness_score(freshness_days)
             d["active_contentions"] = False
             d["provenance_summary"] = {"source_count": 1, "relationship_types": []}
+
+            # Supersession chain flattening: is_superseded comes from the SQL EXISTS
+            # subquery so no extra per-row query is needed.
+            source_id_str = str(d.get("id", ""))
+            d["is_superseded"] = bool(d.pop("is_superseded", False))
+            # supersession_head_id resolved lazily below after the loop
+            d["supersession_head_id"] = None
+
             results.append(d)
+
+        # Resolve supersession head IDs for superseded sources in a single cursor context.
+        superseded = [d for d in results if d.get("is_superseded")]
+        if superseded:
+            with get_cursor() as chain_cur:
+                for d in superseded:
+                    sid = str(d.get("id", ""))
+                    d["supersession_head_id"] = resolve_supersession_head_sync(sid, chain_cur) if sid else sid
+        # For non-superseded sources the head is themselves.
+        for d in results:
+            if not d.get("is_superseded"):
+                d["supersession_head_id"] = str(d.get("id", ""))
+
+        # De-rank superseded sources: halve their similarity score so the head
+        # of each chain floats to the top.
+        for d in results:
+            if d.get("is_superseded"):
+                d["similarity"] = d.get("similarity", 0.0) * 0.5
+                d["confidence"] = {"overall": d["confidence"]["overall"] * 0.5}
 
         return results
 
