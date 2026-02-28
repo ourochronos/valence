@@ -11,7 +11,6 @@ dist/
 *.egg-info/
 .eggs/
 infra/
-tests/
 docs/
 plugin/
 examples/
