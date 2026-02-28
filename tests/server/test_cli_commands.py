@@ -430,6 +430,7 @@ class TestCmdVerify:
 # ============================================================================
 
 
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 class TestMain:
     """Test the main CLI entry point."""
 
@@ -549,6 +550,7 @@ class TestMain:
 # ============================================================================
 
 
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 class TestArgumentValidation:
     """Test CLI argument validation."""
 
