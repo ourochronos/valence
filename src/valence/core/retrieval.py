@@ -29,7 +29,7 @@ from valence.core.db import get_cursor, serialize_row
 from valence.core.embeddings import generate_embedding
 from valence.core.sources import resolve_supersession_head_sync
 
-from .ranking import multi_signal_rank
+from .ranking import detect_query_intent, multi_signal_rank
 from .response import ValenceResponse, ok
 
 logger = logging.getLogger(__name__)
@@ -591,11 +591,13 @@ def _retrieve_sync(
         r["created_at"] = (now - timedelta(days=freshness_days)).isoformat()
 
     weights = TEMPORAL_WEIGHT_PRESETS.get(temporal_mode, TEMPORAL_WEIGHT_PRESETS["default"])
+    query_intent = detect_query_intent(query)
     ranked = multi_signal_rank(
         all_results,
         semantic_weight=weights["semantic"],
         confidence_weight=weights["confidence"],
         recency_weight=weights["recency"],
+        query_intent=query_intent,
     )
 
     # Restore original created_at
