@@ -11,11 +11,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 def test_compile_similarity_threshold():
     from valence.core.ingest_pipeline import COMPILE_SIMILARITY_THRESHOLD
+
     assert COMPILE_SIMILARITY_THRESHOLD == 0.65
 
 
 def test_auto_compile_min_cluster():
     from valence.core.ingest_pipeline import AUTO_COMPILE_MIN_CLUSTER
+
     assert AUTO_COMPILE_MIN_CLUSTER == 2
 
 
@@ -43,6 +45,7 @@ async def test_recompile_ungrouped_finds_and_compiles():
         mock_compile.return_value = fake_compile_result
 
         from valence.core.maintenance import recompile_ungrouped_sources
+
         result = await recompile_ungrouped_sources(limit=50)
 
     assert result["checked"] == 2
@@ -72,6 +75,7 @@ async def test_recompile_ungrouped_skips_already_processed():
         mock_compile.return_value = fake_compile_result
 
         from valence.core.maintenance import recompile_ungrouped_sources
+
         result = await recompile_ungrouped_sources(limit=50)
 
     assert mock_compile.call_count == 1
@@ -91,6 +95,7 @@ async def test_recompile_ungrouped_empty_results():
         mock_get_cursor.return_value.__exit__ = MagicMock(return_value=False)
 
         from valence.core.maintenance import recompile_ungrouped_sources
+
         result = await recompile_ungrouped_sources(limit=50)
 
     assert result == {"checked": 0, "compiled": 0, "articles_created": 0}
@@ -115,6 +120,7 @@ async def test_recompile_ungrouped_no_similar_found():
         mock_similar.return_value = []
 
         from valence.core.maintenance import recompile_ungrouped_sources
+
         result = await recompile_ungrouped_sources(limit=50)
 
     assert result["checked"] == 1
@@ -142,6 +148,7 @@ async def test_recompile_ungrouped_handles_compile_failure():
         mock_compile.return_value = MagicMock(success=False, error="LLM timeout")
 
         from valence.core.maintenance import recompile_ungrouped_sources
+
         result = await recompile_ungrouped_sources(limit=50)
 
     assert result["articles_created"] == 0
@@ -163,6 +170,7 @@ def test_admin_maintenance_recompile_ungrouped_calls_function():
         with patch("valence.core.maintenance.recompile_ungrouped_sources", new_callable=AsyncMock) as mock_fn:
             mock_fn.return_value = fake_stats
             from valence.mcp.handlers.admin import admin_maintenance
+
             result = admin_maintenance(recompile_ungrouped=True)
 
     assert result["success"] is True
