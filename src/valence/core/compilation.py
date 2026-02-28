@@ -20,6 +20,7 @@ from typing import Any
 
 from valence.core.confidence import ConfidenceResult, compute_confidence
 from valence.core.db import get_cursor, serialize_row
+from valence.core.embeddings import generate_embedding, vector_to_pgvector
 from valence.core.inference import (
     RELATIONSHIP_ENUM,
     TASK_COMPILE,
@@ -106,6 +107,8 @@ def _ensure_degraded_column() -> None:
 # Right-sizing config
 # ---------------------------------------------------------------------------
 
+DEDUP_SIMILARITY_THRESHOLD = 0.90
+
 DEFAULT_RIGHT_SIZING: dict[str, int] = {
     "max_tokens": 800,
     "min_tokens": 300,
@@ -160,6 +163,100 @@ def _get_prompt_limits() -> dict[str, int]:
 def _count_tokens(content: str) -> int:
     """Approximate token count: word_count × 1.3 (mirrors articles.py)."""
     return max(1, int(len(content.split()) * 1.3))
+
+
+# ---------------------------------------------------------------------------
+# Dedup helpers (issue #73)
+# ---------------------------------------------------------------------------
+
+async def _find_similar_article(content: str, threshold: float = DEDUP_SIMILARITY_THRESHOLD) -> dict | None:
+    """Find an existing active article with high embedding similarity to content.
+
+    Uses the OpenAI embedding provider to embed the content, then queries
+    articles table for cosine similarity > threshold.
+
+    Returns the best matching article dict, or None.
+    """
+    try:
+        vector = generate_embedding(content)
+    except Exception as exc:
+        logger.warning("Dedup: embedding failed, skipping dedup check: %s", exc)
+        return None
+
+    vec_str = vector_to_pgvector(vector)
+    try:
+        with get_cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, title, content, embedding
+                FROM articles
+                WHERE status = 'active'
+                  AND embedding IS NOT NULL
+                  AND 1 - (embedding <=> %s::vector) > %s
+                ORDER BY embedding <=> %s::vector
+                LIMIT 1
+                """,
+                (vec_str, threshold, vec_str),
+            )
+            row = cur.fetchone()
+            if row:
+                return dict(row)
+    except Exception as exc:
+        logger.warning("Dedup: DB query failed, skipping dedup check: %s", exc)
+    return None
+
+
+async def _update_existing_article(
+    article_id: str,
+    new_content: str,
+    new_title: str | None,
+    sources: list[dict],
+    relationships: dict[str, str],
+    epistemic_type: str,
+    conf: ConfidenceResult,
+) -> ValenceResponse:
+    """Update an existing article with new compiled content (dedup path)."""
+    token_count = _count_tokens(new_content)
+    max_tokens = _get_right_sizing()["max_tokens"]
+
+    with get_cursor() as cur:
+        cur.execute(
+            """
+            UPDATE articles
+            SET content = %s,
+                title = COALESCE(%s, title),
+                size_tokens = %s,
+                content_hash = md5(%s),
+                version = version + 1,
+                modified_at = NOW(),
+                compiled_at = NOW(),
+                confidence = %s::jsonb,
+                confidence_source = %s,
+                corroboration_count = %s,
+                epistemic_type = %s
+            WHERE id = %s
+            RETURNING *
+            """,
+            (new_content, new_title, token_count, new_content,
+             json.dumps(conf.to_jsonb()), round(conf.avg_reliability, 3),
+             conf.corroboration_count, epistemic_type, article_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            return err(f"Article {article_id} not found during dedup update")
+        updated = serialize_row(dict(row))
+
+        # Link new sources (additive, don't clear existing)
+        _link_sources(cur, article_id, sources, relationships)
+
+        cur.execute(
+            "INSERT INTO article_mutations (mutation_type, article_id, summary) VALUES ('updated', %s, %s)",
+            (article_id, f"Dedup: updated from {len(sources)} source(s) instead of creating duplicate"),
+        )
+        _maybe_queue_split(cur, article_id, token_count, max_tokens)
+
+    return ok(data=updated)
+
 
 
 # ---------------------------------------------------------------------------
@@ -550,6 +647,19 @@ async def compile_article(
     epistemic_type = first_data.get("epistemic_type", "semantic")
     if epistemic_type not in ("episodic", "semantic", "procedural"):
         epistemic_type = "semantic"
+
+    # --- Dedup check: update existing article if highly similar ---
+    existing = await _find_similar_article(article_content)
+    if existing:
+        logger.info(
+            "Dedup: found existing article %s ('%s') similar to new compilation, updating instead of creating",
+            existing["id"], existing.get("title"),
+        )
+        result = await _update_existing_article(
+            existing["id"], article_content, article_title, sources, relationships,
+            epistemic_type, conf,
+        )
+        return result
 
     token_count = _count_tokens(article_content)
 
