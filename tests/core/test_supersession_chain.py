@@ -209,8 +209,7 @@ class TestRetrievalDeRankingSuperseded:
             # First call: main search; second call: chain resolution
             yield chain_cur if call_count[0] > 1 else main_cur
 
-        with patch("valence.core.retrieval.get_cursor", _get_cursor), \
-             patch("valence.core.retrieval._try_generate_embedding", return_value=None):
+        with patch("valence.core.retrieval.get_cursor", _get_cursor), patch("valence.core.retrieval._try_generate_embedding", return_value=None):
             results = _search_ungrouped_sources_sync("test query", limit=10)
 
         assert len(results) == 1
@@ -230,8 +229,7 @@ class TestRetrievalDeRankingSuperseded:
         def _get_cursor(**kwargs):
             yield main_cur
 
-        with patch("valence.core.retrieval.get_cursor", _get_cursor), \
-             patch("valence.core.retrieval._try_generate_embedding", return_value=None):
+        with patch("valence.core.retrieval.get_cursor", _get_cursor), patch("valence.core.retrieval._try_generate_embedding", return_value=None):
             results = _search_ungrouped_sources_sync("test query", limit=10)
 
         assert len(results) == 1

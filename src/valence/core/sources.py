@@ -281,7 +281,6 @@ async def list_sources(
     return ok(data=[serialize_row(row) for row in rows])
 
 
-
 async def resolve_supersession_head(source_id: str, max_depth: int = 50) -> ValenceResponse:
     """Resolve a supersession chain to its head (authoritative) source.
 
