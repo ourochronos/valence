@@ -14,7 +14,28 @@ from uuid import uuid4
 
 import pytest
 
+
 import valence.core.compilation as compilation_mod
+
+# ---------------------------------------------------------------------------
+# Dedup suppression (PR #582)
+# ---------------------------------------------------------------------------
+# _find_similar_article() calls generate_embedding() which makes a real API
+# call.  All tests here focus on compilation logic, not dedup; dedup is
+# covered by test_compilation_dedup.py.  Suppress it globally with an
+# autouse fixture so every test in this file works without a live API.
+
+
+@pytest.fixture(autouse=True)
+def _no_dedup(monkeypatch):
+    """Disable dedup check in compilation tests (tested separately in test_compilation_dedup.py)."""
+
+    async def _no_match(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr("valence.core.compilation._find_similar_article", _no_match)
+
+
 from valence.core.compilation import (
     DEFAULT_PROMPT_LIMITS,
     _build_compilation_prompt,
