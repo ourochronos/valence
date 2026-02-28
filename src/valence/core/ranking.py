@@ -14,6 +14,7 @@ explicit freshness factor derived from source ages / article update times.
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -41,6 +42,98 @@ class RankingConfig:
 
 
 DEFAULT_RANKING = RankingConfig()
+
+# ---------------------------------------------------------------------------
+# Query intent detection (#70)
+# ---------------------------------------------------------------------------
+
+_DATE_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+_PROCEDURAL_PREFIXES = (
+    "how to",
+    "how should",
+    "steps to",
+    "process for",
+    "what's the process",
+    "whats the process",
+)
+_PROCEDURAL_CONTAINS = ("checklist", "workflow", "procedure")
+
+_EPISODIC_PREFIXES = (
+    "what happened",
+    "when did",
+)
+_EPISODIC_CONTAINS = ("session", "last time")
+
+
+def detect_query_intent(query: str) -> str:
+    """Detect the intent of a query: "procedural", "episodic", or "general".
+
+    Args:
+        query: The search query string.
+
+    Returns:
+        One of "procedural", "episodic", or "general".
+    """
+    q = query.strip().lower()
+
+    # Procedural checks
+    for prefix in _PROCEDURAL_PREFIXES:
+        if q.startswith(prefix):
+            return "procedural"
+    for term in _PROCEDURAL_CONTAINS:
+        if term in q:
+            return "procedural"
+
+    # Episodic checks
+    for prefix in _EPISODIC_PREFIXES:
+        if q.startswith(prefix):
+            return "episodic"
+    for term in _EPISODIC_CONTAINS:
+        if term in q:
+            return "episodic"
+    if _DATE_PATTERN.search(q):
+        return "episodic"
+
+    return "general"
+
+
+# ---------------------------------------------------------------------------
+# Cold-start helpers (#71)
+# ---------------------------------------------------------------------------
+
+_COLD_START_WINDOW_HOURS = 48
+_COLD_START_FLOOR_FULL = 0.3  # floor at creation -> 24h
+_COLD_START_FLOOR_HALF = 0.15  # floor at 24h -> 48h
+_COLD_START_MIN_CONFIDENCE = 0.7
+
+
+def _cold_start_floor(article: dict, confidence: float) -> float | None:
+    """Return the cold-start score floor for a qualifying article, or None."""
+    if confidence < _COLD_START_MIN_CONFIDENCE:
+        return None
+
+    created_at = article.get("created_at")
+    if created_at is None:
+        return None
+
+    if isinstance(created_at, str):
+        try:
+            created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return None
+
+    if isinstance(created_at, datetime):
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=UTC)
+        now = datetime.now(UTC)
+        age_hours = (now - created_at).total_seconds() / 3600.0
+        if age_hours <= 24:
+            return _COLD_START_FLOOR_FULL
+        elif age_hours <= 48:
+            return _COLD_START_FLOOR_HALF
+
+    return None
 
 
 def compute_confidence_score(article: dict) -> float:
@@ -147,6 +240,8 @@ def multi_signal_rank(
     decay_rate: float = 0.01,
     min_confidence: float | None = None,
     explain: bool = False,
+    query_intent: str | None = None,
+    cold_start_boost: bool = True,
 ) -> list[dict]:
     """Apply multi-signal ranking to query results.
 
@@ -164,6 +259,12 @@ def multi_signal_rank(
         decay_rate: Exponential decay rate for recency (default 0.01).
         min_confidence: Filter out articles below this confidence (optional).
         explain: Include score breakdown in each result dict.
+        query_intent: Detected query intent ("procedural", "episodic", "general", or None).
+            When an article's epistemic_type matches, apply 1.3x multiplier.
+            When it conflicts (procedural<->episodic), apply 0.85x.
+            "general" intent or "semantic" epistemic_type -> no adjustment.
+        cold_start_boost: When True, apply a score floor to fresh high-confidence articles
+            to prevent cold-start burial (default True).
 
     Returns:
         Sorted results with 'final_score' and optional 'score_breakdown'.
@@ -197,6 +298,21 @@ def multi_signal_rank(
 
         # Final score
         final_score = semantic_weight * semantic + confidence_weight * confidence + recency_weight * recency
+
+        # --- Epistemic type awareness (#70) ---
+        if query_intent and query_intent != "general":
+            epistemic_type = r.get("epistemic_type")
+            if epistemic_type and epistemic_type != "semantic":
+                if epistemic_type == query_intent:
+                    final_score *= 1.3
+                elif {epistemic_type, query_intent} == {"procedural", "episodic"}:
+                    final_score *= 0.85
+
+        # --- Cold-start boost (#71) ---
+        if cold_start_boost:
+            floor = _cold_start_floor(r, confidence)
+            if floor is not None:
+                final_score = max(final_score, floor)
 
         r["final_score"] = final_score
 
