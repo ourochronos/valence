@@ -520,7 +520,7 @@ def test_run_startup_checks_enabled():
         with patch("valence.mcp.server.init_schema"):
             with patch("valence.mcp.server.get_cursor", mock_get_cursor_ctx):
                 with patch("valence.core.maintenance.check_and_run_maintenance", return_value=None):
-                    with patch("valence.mcp.server.asyncio.run"):
+                    with patch("valence.mcp.server.asyncio.run", side_effect=lambda coro: coro.close()):
                         with patch("sys.argv", test_args):
                             run()
 
@@ -541,7 +541,7 @@ def test_run_skip_health_check():
         with patch("valence.mcp.server.init_schema"):
             with patch("valence.mcp.server.get_cursor", mock_get_cursor_ctx):
                 with patch("valence.core.maintenance.check_and_run_maintenance", return_value=None):
-                    with patch("valence.mcp.server.asyncio.run"):
+                    with patch("valence.mcp.server.asyncio.run", side_effect=lambda coro: coro.close()):
                         with patch("sys.argv", test_args):
                             run()
 
@@ -562,7 +562,7 @@ def test_run_initializes_schema():
         with patch("valence.mcp.server.init_schema") as mock_init:
             with patch("valence.mcp.server.get_cursor", mock_get_cursor_ctx):
                 with patch("valence.core.maintenance.check_and_run_maintenance", return_value=None):
-                    with patch("valence.mcp.server.asyncio.run"):
+                    with patch("valence.mcp.server.asyncio.run", side_effect=lambda coro: coro.close()):
                         with patch("sys.argv", test_args):
                             run()
 
@@ -587,7 +587,7 @@ def test_run_schema_init_failure_continues():
             with patch("valence.mcp.server.get_cursor", mock_get_cursor_ctx):
                 # Mock maintenance to avoid side effects
                 with patch("valence.core.maintenance.check_and_run_maintenance", return_value=None):
-                    with patch("valence.mcp.server.asyncio.run"):
+                    with patch("valence.mcp.server.asyncio.run", side_effect=lambda coro: coro.close()):
                         with patch("valence.mcp.server.logger") as mock_logger:
                             with patch("sys.argv", test_args):
                                 run()
@@ -614,7 +614,7 @@ def test_run_checks_scheduled_maintenance():
             with patch("valence.mcp.server.get_cursor", mock_get_cursor_ctx):
                 with patch("valence.core.maintenance.check_and_run_maintenance") as mock_maint:
                     mock_maint.return_value = {"timestamp": "2026-02-23T12:00:00"}
-                    with patch("valence.mcp.server.asyncio.run"):
+                    with patch("valence.mcp.server.asyncio.run", side_effect=lambda coro: coro.close()):
                         with patch("sys.argv", test_args):
                             run()
 
@@ -636,7 +636,7 @@ def test_run_maintenance_failure_continues():
             with patch("valence.mcp.server.get_cursor", mock_get_cursor_ctx):
                 with patch("valence.core.maintenance.check_and_run_maintenance", side_effect=Exception("Failed")):
                     with patch("valence.mcp.server.logger") as mock_logger:
-                        with patch("valence.mcp.server.asyncio.run"):
+                        with patch("valence.mcp.server.asyncio.run", side_effect=lambda coro: coro.close()):
                             with patch("sys.argv", test_args):
                                 run()
 
@@ -660,7 +660,7 @@ def test_run_starts_asyncio_server():
         with patch("valence.mcp.server.init_schema"):
             with patch("valence.mcp.server.get_cursor", mock_get_cursor_ctx):
                 with patch("valence.core.maintenance.check_and_run_maintenance", return_value=None):
-                    with patch("valence.mcp.server.asyncio.run") as mock_asyncio:
+                    with patch("valence.mcp.server.asyncio.run", side_effect=lambda coro: coro.close()) as mock_asyncio:
                         with patch("sys.argv", test_args):
                             run()
 
