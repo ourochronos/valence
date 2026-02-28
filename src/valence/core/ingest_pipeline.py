@@ -68,15 +68,16 @@ def _set_pipeline_status(source_id: str, status: str) -> None:
 def _enqueue_pipeline_task(source_id: str) -> None:
     """Add a source_pipeline task to mutation_queue for batch processing.
 
-    article_id is NOT NULL in the schema; we store source_id there for
-    source-pipeline tasks (the real source_id is also in payload).
+    Uses the source_id column (added in migration 008, issue #568).
+    article_id is left NULL for source-pipeline tasks; the CHECK constraint
+    mutation_queue_target_check ensures at least one of the two is non-null.
     """
     payload = json.dumps({"source_id": source_id})
     with get_cursor() as cur:
         cur.execute(
             """
-            INSERT INTO mutation_queue (operation, article_id, priority, payload)
-            SELECT 'source_pipeline', %s::uuid, 2, %s::jsonb
+            INSERT INTO mutation_queue (operation, source_id, priority, payload)
+            VALUES ('source_pipeline', %s::uuid, 2, %s::jsonb)
             """,
             (source_id, payload),
         )

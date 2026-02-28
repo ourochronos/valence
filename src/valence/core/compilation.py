@@ -777,7 +777,7 @@ async def process_mutation_queue(batch_size: int = 10) -> ValenceResponse:
             SET status = 'processing'
             FROM claimed
             WHERE mq.id = claimed.id
-            RETURNING mq.id, mq.operation, mq.article_id, mq.payload
+            RETURNING mq.id, mq.operation, mq.article_id, mq.source_id, mq.payload
             """,
             (batch_size,),
         )
@@ -787,7 +787,8 @@ async def process_mutation_queue(batch_size: int = 10) -> ValenceResponse:
     for item in items:
         item_id = str(item["id"])
         operation = item["operation"]
-        article_id = str(item["article_id"])
+        article_id = str(item["article_id"]) if item["article_id"] is not None else None
+        source_id = str(item["source_id"]) if item.get("source_id") is not None else None
         payload = item.get("payload") or {}
         if isinstance(payload, str):
             try:
@@ -796,15 +797,16 @@ async def process_mutation_queue(batch_size: int = 10) -> ValenceResponse:
                 payload = {}
 
         try:
-            await _process_mutation_item(operation, article_id, payload)
+            await _process_mutation_item(operation, article_id, payload, source_id=source_id)
             _set_queue_item_status(item_id, "completed")
             processed += 1
         except Exception as exc:
             logger.error(
-                "Mutation queue item %s (op=%s, article=%s) failed: %s",
+                "Mutation queue item %s (op=%s, article=%s, source=%s) failed: %s",
                 item_id,
                 operation,
                 article_id,
+                source_id,
                 exc,
             )
             _set_queue_item_status(item_id, "failed", error=str(exc))
@@ -812,7 +814,7 @@ async def process_mutation_queue(batch_size: int = 10) -> ValenceResponse:
     return ok(data=processed)
 
 
-async def _process_mutation_item(operation: str, article_id: str, payload: dict) -> None:
+async def _process_mutation_item(operation: str, article_id: str | None, payload: dict, *, source_id: str | None = None) -> None:
     """Execute a single mutation queue item. Raises on failure."""
 
     if operation in ("recompile", "recompile_degraded"):
@@ -926,7 +928,7 @@ async def _process_mutation_item(operation: str, article_id: str, payload: dict)
             )
 
     elif operation == "source_pipeline":
-        source_id = payload.get("source_id") or article_id
+        source_id = source_id or payload.get("source_id") or article_id
         if not source_id:
             raise ValueError("source_pipeline: missing source_id in payload")
         from valence.core.ingest_pipeline import run_source_pipeline
