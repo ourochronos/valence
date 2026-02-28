@@ -169,6 +169,7 @@ def _count_tokens(content: str) -> int:
 # Dedup helpers (issue #73)
 # ---------------------------------------------------------------------------
 
+
 async def _find_similar_article(content: str, threshold: float = DEDUP_SIMILARITY_THRESHOLD) -> dict | None:
     """Find an existing active article with high embedding similarity to content.
 
@@ -237,9 +238,17 @@ async def _update_existing_article(
             WHERE id = %s
             RETURNING *
             """,
-            (new_content, new_title, token_count, new_content,
-             json.dumps(conf.to_jsonb()), round(conf.avg_reliability, 3),
-             conf.corroboration_count, epistemic_type, article_id),
+            (
+                new_content,
+                new_title,
+                token_count,
+                new_content,
+                json.dumps(conf.to_jsonb()),
+                round(conf.avg_reliability, 3),
+                conf.corroboration_count,
+                epistemic_type,
+                article_id,
+            ),
         )
         row = cur.fetchone()
         if not row:
@@ -256,7 +265,6 @@ async def _update_existing_article(
         _maybe_queue_split(cur, article_id, token_count, max_tokens)
 
     return ok(data=updated)
-
 
 
 # ---------------------------------------------------------------------------
@@ -653,11 +661,17 @@ async def compile_article(
     if existing:
         logger.info(
             "Dedup: found existing article %s ('%s') similar to new compilation, updating instead of creating",
-            existing["id"], existing.get("title"),
+            existing["id"],
+            existing.get("title"),
         )
         result = await _update_existing_article(
-            existing["id"], article_content, article_title, sources, relationships,
-            epistemic_type, conf,
+            existing["id"],
+            article_content,
+            article_title,
+            sources,
+            relationships,
+            epistemic_type,
+            conf,
         )
         return result
 

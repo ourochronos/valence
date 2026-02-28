@@ -47,6 +47,7 @@ def _source_row(sid=None, content="Python is great.") -> dict:
 
 def _article_row(aid=None, content="Compiled content.", version=1, **kw) -> dict:
     from valence.core.compilation import _count_tokens
+
     defaults = {
         "id": aid or EXISTING_ARTICLE_ID,
         "content": content,
@@ -91,9 +92,7 @@ def _make_cursor(fetchone_seq=None, fetchall_seq=None):
 def _llm_ok(title="Compiled Title", content="Compiled content.", rels=None) -> str:
     if rels is None:
         rels = [{"source_id": SOURCE_ID_1, "relationship": "originates"}]
-    return json.dumps({
-        "articles": [{"title": title, "content": content, "source_relationships": rels}]
-    })
+    return json.dumps({"articles": [{"title": title, "content": content, "source_relationships": rels}]})
 
 
 _RS = {"max_tokens": 800, "min_tokens": 300, "target_tokens": 550}
@@ -140,9 +139,7 @@ class TestFindSimilarArticle:
 
     async def test_graceful_degradation_on_embedding_failure(self):
         """If embedding raises, return None (graceful degradation)."""
-        with patch.object(
-            compilation_mod, "generate_embedding", side_effect=ValueError("API key missing")
-        ):
+        with patch.object(compilation_mod, "generate_embedding", side_effect=ValueError("API key missing")):
             result = await _find_similar_article("some content")
         assert result is None
 
@@ -263,7 +260,8 @@ class TestCompileArticleDedupPath:
             patch.object(compilation_mod, "_get_prompt_limits", return_value=_PL),
             patch.object(compilation_mod, "_call_llm", side_effect=mock_llm),
             patch.object(
-                compilation_mod, "generate_embedding",
+                compilation_mod,
+                "generate_embedding",
                 side_effect=ValueError("OPENAI_API_KEY not set"),
             ),
             patch.object(type(compilation_mod._inference_provider), "available", new_callable=PropertyMock, return_value=True),
