@@ -6,9 +6,11 @@ ALTER TABLE public.sources
     ADD COLUMN IF NOT EXISTS pipeline_status TEXT DEFAULT 'pending' NOT NULL;
 
 -- Add check constraint for valid statuses
-ALTER TABLE public.sources
-    ADD CONSTRAINT IF NOT EXISTS sources_pipeline_status_check
+DO $$ BEGIN
+    ALTER TABLE public.sources ADD CONSTRAINT sources_pipeline_status_check
     CHECK (pipeline_status IN ('pending', 'indexed', 'complete', 'failed'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- Index for quick lookups of pending/failed sources
 CREATE INDEX IF NOT EXISTS idx_sources_pipeline_status
