@@ -104,8 +104,8 @@ ignore = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests"]
 pythonpath = ["src"]
+testpaths = ["tests"]
 markers = [
     "unit: Unit tests (fast, no external dependencies)",
     "integration: Integration tests (requires PostgreSQL database)",
