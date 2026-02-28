@@ -8,6 +8,8 @@ Pipeline stages (dependency-ordered):
     2. Embed sections — embed each tree node's content slice
     3. Compose source embedding — mean of section vectors (no truncation)
     4. Check compilation candidates — auto-compile clusters of 3+ ungrouped sources
+    5. Auto-compile if enough candidates
+    6. Contention detection — check new source against similar existing articles
 
 Usage::
     result = await run_source_pipeline(source_id)
@@ -50,6 +52,10 @@ AUTO_COMPILE_MIN_CLUSTER = 2
 # Cosine similarity threshold for compilation candidates
 COMPILE_SIMILARITY_THRESHOLD = 0.65
 
+# Cosine similarity threshold for contention detection candidates (lower to
+# catch contradictions between related but not identical content)
+CONTENTION_SIMILARITY_THRESHOLD = 0.6
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -84,6 +90,92 @@ def _enqueue_pipeline_task(source_id: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Stage 6: Contention detection
+# ---------------------------------------------------------------------------
+
+
+async def _check_contentions(source_id: str) -> list[dict]:
+    """Find articles that overlap with this source and run contention detection.
+
+    Uses the source's embedding to find similar articles via cosine similarity
+    (threshold: CONTENTION_SIMILARITY_THRESHOLD). Skips articles that the
+    source is already linked to via article_sources.
+
+    Args:
+        source_id: UUID of the ingested source.
+
+    Returns:
+        List of created contention dicts (may be empty).
+    """
+    from valence.core.contention import detect_contention
+
+    created: list[dict] = []
+
+    # Find article IDs this source is already linked to (skip those)
+    try:
+        with get_cursor() as cur:
+            cur.execute(
+                "SELECT article_id FROM article_sources WHERE source_id = %s::uuid",
+                (source_id,),
+            )
+            linked_ids = {str(row["article_id"]) for row in cur.fetchall()}
+    except Exception as exc:
+        logger.warning("Contention stage: failed to fetch linked articles for %s: %s", source_id, exc)
+        return created
+
+    # Find similar articles by cosine similarity against source embedding
+    try:
+        with get_cursor() as cur:
+            cur.execute(
+                """
+                SELECT a.id
+                FROM articles a
+                JOIN sources s ON s.id = %s::uuid
+                WHERE s.embedding IS NOT NULL
+                  AND a.embedding IS NOT NULL
+                  AND 1 - (a.embedding <=> s.embedding) > %s
+                ORDER BY a.embedding <=> s.embedding
+                LIMIT 5
+                """,
+                (source_id, CONTENTION_SIMILARITY_THRESHOLD),
+            )
+            candidate_article_ids = [str(row["id"]) for row in cur.fetchall()]
+    except Exception as exc:
+        logger.warning("Contention stage: failed to query similar articles for %s: %s", source_id, exc)
+        return created
+
+    for article_id in candidate_article_ids:
+        if article_id in linked_ids:
+            logger.debug("Contention stage: skipping article %s (source already linked)", article_id)
+            continue
+        try:
+            result = await detect_contention(article_id, source_id)
+            if result.success and result.data is not None:
+                logger.info(
+                    "Contention created: article=%s source=%s id=%s",
+                    article_id,
+                    source_id,
+                    result.data.get("id"),
+                )
+                created.append(result.data)
+            else:
+                logger.debug(
+                    "No contention detected between article=%s and source=%s",
+                    article_id,
+                    source_id,
+                )
+        except Exception as exc:
+            logger.warning(
+                "Contention stage: detect_contention raised for article=%s source=%s: %s",
+                article_id,
+                source_id,
+                exc,
+            )
+
+    return created
+
+
+# ---------------------------------------------------------------------------
 # Main pipeline entry point
 # ---------------------------------------------------------------------------
 
@@ -102,13 +194,14 @@ async def run_source_pipeline(
            embeddings.store_source_embedding
         5. Auto-compilation check via sources.find_similar_ungrouped +
            compilation.compile_article
+        6. Contention detection — check new source against similar articles
 
     Args:
         source_id: UUID of the source to process.
         batch_mode: If True, enqueue as mutation_queue task instead of running inline.
 
     Returns:
-        ValenceResponse with data = {source_id, sections_embedded, compiled}.
+        ValenceResponse with data = {source_id, sections_embedded, compiled, contentions}.
     """
     if batch_mode:
         try:
@@ -141,7 +234,7 @@ async def run_source_pipeline(
 
     if not content.strip():
         _set_pipeline_status(source_id, "complete")
-        return ok(data={"source_id": source_id, "sections_embedded": 0, "compiled": False})
+        return ok(data={"source_id": source_id, "sections_embedded": 0, "compiled": False, "contentions": []})
 
     # --- Stage 2: Tree index (build for large sources without existing tree) ---
     if len(content) >= SMALL_SOURCE_CHARS and not metadata.get("tree_index"):
@@ -212,7 +305,7 @@ async def run_source_pipeline(
             compile_result = await compile_article(candidate_ids[:10])
             if compile_result.success:
                 logger.info(
-                    "Auto-compiled %d sources (including %s) → article %s",
+                    "Auto-compiled %d sources (including %s) -> article %s",
                     len(candidate_ids),
                     source_id,
                     (compile_result.data or {}).get("id", "?"),
@@ -230,6 +323,18 @@ async def run_source_pipeline(
     except Exception as exc:
         logger.warning("Auto-compile stage failed for %s: %s (non-fatal)", source_id, exc)
 
+    # --- Stage 6: Contention detection ---
+    contentions: list[dict] = []
+    try:
+        contentions = await _check_contentions(source_id)
+        logger.info(
+            "Contention stage complete for %s: %d contention(s) created",
+            source_id,
+            len(contentions),
+        )
+    except Exception as exc:
+        logger.warning("Contention detection stage failed for %s: %s (non-fatal)", source_id, exc)
+
     _set_pipeline_status(source_id, "complete")
 
     return ok(
@@ -237,5 +342,6 @@ async def run_source_pipeline(
             "source_id": source_id,
             "sections_embedded": sections_embedded,
             "compiled": compiled,
+            "contentions": contentions,
         }
     )
