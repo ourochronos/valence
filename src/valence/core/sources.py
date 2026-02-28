@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from typing import Any
 
 from valence.core.db import get_cursor, serialize_row
 
@@ -323,7 +324,7 @@ async def resolve_supersession_head(source_id: str, max_depth: int = 50) -> Vale
     return ok(data={"head_id": head_id, "chain": chain, "depth": len(chain) - 1})
 
 
-def resolve_supersession_head_sync(source_id: str, cur: object, max_depth: int = 50) -> str:
+def resolve_supersession_head_sync(source_id: str, cur: Any, max_depth: int = 50) -> str:
     """Synchronous version for use inside existing DB cursor contexts.
 
     Returns the head_id (authoritative source UUID string).
