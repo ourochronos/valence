@@ -143,15 +143,22 @@ def memory_recall(
 
     results = result.get("results", [])
 
-    # Collect source IDs to batch fetch metadata
+    # Collect source IDs to batch fetch metadata.
+    # Sources surface as type="source" (whole) or "source_section" (tree-indexed chunk).
+    # For sections, the parent source ID is in the "source_id" field.
     source_ids = []
-    source_items = {}
+    source_items: dict[str, dict] = {}
     for item in results:
-        if item.get("type") == "source":
-            source_id = item.get("id")
-            if source_id:
-                source_ids.append(source_id)
-                source_items[source_id] = item
+        item_type = item.get("type")
+        if item_type == "source":
+            sid = item.get("id")
+        elif item_type == "source_section":
+            sid = item.get("source_id")
+        else:
+            continue
+        if sid and sid not in source_items:
+            source_ids.append(sid)
+            source_items[sid] = item
 
     # Batch fetch all source metadata to avoid N+1 queries
     source_metadata = {}
