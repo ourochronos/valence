@@ -439,7 +439,6 @@ def _search_ungrouped_sources_sync(query: str, limit: int) -> list[dict[str, Any
 
             # Supersession chain flattening: is_superseded comes from the SQL EXISTS
             # subquery so no extra per-row query is needed.
-            source_id_str = str(d.get("id", ""))
             d["is_superseded"] = bool(d.pop("is_superseded", False))
             # supersession_head_id resolved lazily below after the loop
             d["supersession_head_id"] = None
