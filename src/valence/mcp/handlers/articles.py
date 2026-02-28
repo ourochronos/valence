@@ -21,8 +21,15 @@ def knowledge_search(
     include_sources: bool = False,
     session_id: str | None = None,
     epistemic_type: str | None = None,
+    temporal_mode: str = "default",
 ) -> dict[str, Any]:
-    """Unified knowledge retrieval."""
+    """Unified knowledge retrieval.
+
+    temporal_mode controls ranking weights:
+      - "default":       semantic=0.50, confidence=0.35, recency=0.15
+      - "prefer_recent": semantic=0.35, confidence=0.15, recency=0.50
+      - "prefer_stable": semantic=0.40, confidence=0.45, recency=0.15
+    """
     if not query or not query.strip():
         return {"success": False, "error": "query must be non-empty"}
 
@@ -31,7 +38,7 @@ def knowledge_search(
     try:
         from valence.core.retrieval import retrieve
 
-        results = run_async(retrieve(query, limit=limit, include_sources=include_sources, session_id=session_id))
+        results = run_async(retrieve(query, limit=limit, include_sources=include_sources, session_id=session_id, temporal_mode=temporal_mode))
     except Exception as exc:
         logger.exception("knowledge_search failed for query %r: %s", query, exc)
         return {"success": False, "error": str(exc)}

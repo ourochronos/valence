@@ -43,6 +43,7 @@ async def knowledge_search_endpoint(request: Request) -> JSONResponse:
     limit = _parse_int(request.query_params.get("limit"), 10)
     include_sources = _parse_bool(request.query_params.get("include_sources"))
     session_id = request.query_params.get("session_id")
+    temporal_mode = request.query_params.get("temporal_mode", "default")
 
     try:
         from valence.mcp.handlers.articles import knowledge_search
@@ -52,6 +53,7 @@ async def knowledge_search_endpoint(request: Request) -> JSONResponse:
             limit=limit,
             include_sources=include_sources,
             session_id=session_id,
+            temporal_mode=temporal_mode,
         )
         status = 200 if result.get("success") else 400
         return JSONResponse(result, status_code=status)
