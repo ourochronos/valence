@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from typing import Any
 
 from valence.core.db import get_cursor, serialize_row
 
@@ -279,6 +280,74 @@ async def list_sources(
         rows = cur.fetchall()
 
     return ok(data=[serialize_row(row) for row in rows])
+
+
+async def resolve_supersession_head(source_id: str, max_depth: int = 50) -> ValenceResponse:
+    """Resolve a supersession chain to its head (authoritative) source.
+
+    Walks forward through the chain (who supersedes *source_id*, then who
+    supersedes that, etc.) until reaching a source that nothing supersedes.
+    Circular chains are detected and capped at *max_depth*.
+
+    Args:
+        source_id: UUID of the starting source.
+        max_depth: Maximum chain length to traverse (guards against cycles).
+
+    Returns:
+        ValenceResponse with data = {
+            "head_id": <UUID of the authoritative source>,
+            "chain": [<source_id>, ..., <head_id>],   # oldest → newest
+            "depth": int,
+        }
+        On error: success=False.
+    """
+    chain: list[str] = []
+    seen: set[str] = set()
+    current = source_id
+
+    with get_cursor() as cur:
+        while True:
+            if current in seen or len(chain) >= max_depth:
+                break
+            seen.add(current)
+            chain.append(current)
+            cur.execute(
+                "SELECT id::text FROM sources WHERE supersedes_id = %s::uuid LIMIT 1",
+                (current,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                break
+            current = str(row["id"]) if hasattr(row, "keys") else str(row[0])
+
+    head_id = chain[-1] if chain else source_id
+    return ok(data={"head_id": head_id, "chain": chain, "depth": len(chain) - 1})
+
+
+def resolve_supersession_head_sync(source_id: str, cur: Any, max_depth: int = 50) -> str:
+    """Synchronous version for use inside existing DB cursor contexts.
+
+    Returns the head_id (authoritative source UUID string).
+    """
+    chain: list[str] = []
+    seen: set[str] = set()
+    current = source_id
+
+    while True:
+        if current in seen or len(chain) >= max_depth:
+            break
+        seen.add(current)
+        chain.append(current)
+        cur.execute(
+            "SELECT id::text FROM sources WHERE supersedes_id = %s::uuid LIMIT 1",
+            (current,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            break
+        current = str(row["id"]) if hasattr(row, "keys") else str(row[0])
+
+    return chain[-1] if chain else source_id
 
 
 async def find_similar_ungrouped(
